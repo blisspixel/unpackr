@@ -1,17 +1,16 @@
-# unpackr
 Unpackr: Your Digital Declutterer - Automate, Organize, and Streamline Your Downloads with Ease
 
 ## Concept
 
 Problem: Imagine your download folder cluttered with numerous legally acquired files. Within this digital maze, you find not just the video files you desire but also a myriad of subfolders, irrelevant files, and complicated file formats like PAR and RAR. Navigating through this chaos to extract, repair, and organize the content you actually need can be overwhelming, consuming your valuable time and energy.
 
-Solution: This script comes to your rescue as a specialized tool for cleaning up your download folder, particularly focusing on video files. It automates the tedious tasks that come with handling a variety of file types and structures. By efficiently managing RAR file extraction, repairing files with PAR2, and relocating video files to a designated destination, the script turns a complex process into a seamless experience. It further ensures the integrity of your video files by performing health checks to detect any corruption.
+Solution: Unpackr is a specialized tool for cleaning up your download folder, with a focus on video files. It automates the tedious tasks associated with handling a variety of file types and structures. By efficiently managing RAR file extraction, repairing files with PAR2, and relocating video files to a designated destination, Unpackr turns a complex process into a seamless experience. Importantly, it also ensures the integrity of your video files by performing health checks using FFMPEG to detect any corruption, automatically deleting any corrupt files to maintain the quality of your collection.
 
-The script is designed to sift through the clutter, intelligently distinguishing video files from other content. It respects and leaves untouched folders containing only non-video files, like images or audio. This means you no longer have to manually dig through layers of folders; the script does the heavy lifting, letting you enjoy your legally acquired content without the hassle.
+The script is intelligently designed to sift through the clutter, distinguishing video files from other content. It respects and leaves untouched folders containing only non-video files, such as images or audio, allowing you to enjoy your legally acquired content without the hassle of manual organization.
 
 ## Disclaimer
 
-Use this script at your own risk. While it's designed to automate and simplify file management, it's crucial to understand that any form of automated file handling carries inherent risks, such as accidental deletion or misplacement of files. Ensure that you have backups of important data and review the script's actions closely. The developers are not responsible for any loss of data or damage resulting from the use of this script.
+Use Unpackr at your own risk. While it's designed to automate and simplify file management, it's important to understand that any form of automated file handling carries inherent risks, such as accidental deletion or misplacement of files. Always ensure that you have backups of important data and review the script's actions closely. The developers are not responsible for any loss of data or damage resulting from the use of this script.
 
 ## Features
 
@@ -19,8 +18,9 @@ Use this script at your own risk. While it's designed to automate and simplify f
 - Extracts RAR files using 7-Zip.
 - Repairs files with PAR2.
 - Moves processed video files to a specified destination.
+- Uses FFMPEG to perform health checks on video files, deleting any that are found to be corrupt.
 - Deletes folders after processing.
-- Displays progress using a dynamic progress bar (with `tqdm`).
+- Displays progress using a dynamic progress bar (with tqdm).
 - Provides detailed statistics on the processing, including the number of video files moved, folders deleted, and blank or non-video file containing folders.
 
 ## Requirements
