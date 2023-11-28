@@ -3,6 +3,7 @@ import shutil
 import logging
 import argparse
 import sys
+import re
 from tqdm import tqdm
 import time
 from pathlib import Path
@@ -10,8 +11,12 @@ import subprocess
 from colorama import init, Fore, Style
 
 # Constants
-LOG_FILE = Path('app.log')
+LOGS_FOLDER = Path('logs')
+LOG_FILE = LOGS_FOLDER / 'app.log'
 VIDEO_EXTENSIONS = ['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.mpg', '.mpeg', '.m4v', '.3gp', '.webm']
+
+# Add any allowed non-video file extensions here
+ALLOWED_NON_VIDEO_EXTENSIONS = ['.nzb', '.nfo']
 
 # Set up logging
 logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -77,6 +82,20 @@ def contains_non_video_files(folder: Path) -> bool:
     non_video_files = [file for file in all_files if file.suffix.lower() not in VIDEO_EXTENSIONS]
     return len(non_video_files) > 0
 
+def contains_unwanted_files(folder: Path) -> bool:
+    """
+    Checks if the folder contains files other than video, PAR2, RAR, and allowable non-video files.
+    """
+    for file in folder.rglob('*'):
+        if file.is_file() and not (
+            file.suffix.lower() in VIDEO_EXTENSIONS or
+            file.suffix.lower() in ALLOWED_NON_VIDEO_EXTENSIONS or
+            file.suffix.lower() == '.par2' or
+            file.suffix.lower() == '.rar'
+        ):
+            return True
+    return False
+
 def process_par2_files(folder: Path) -> bool:
     try:
         process = subprocess.run(['par2', 'r', str(folder / '*.par2')], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -114,11 +133,13 @@ def safe_delete_folder(folder: Path):
     """
     try:
         shutil.rmtree(folder)
+        logging.info(f"Successfully deleted folder {folder}")
     except Exception as e:
-        logging.error(f"Error deleting folder {folder}: {e}")
+        logging.error(f"Failed to delete folder {folder} on first attempt: {e}")
         time.sleep(5)  # Wait for a short period before trying again
         try:
             shutil.rmtree(folder)
+            logging.info(f"Successfully deleted folder {folder} on second attempt")
         except Exception as e:
             logging.error(f"Repeated error deleting folder {folder}: {e}")
 
@@ -148,6 +169,37 @@ def update_progress_bar(pbar, description):
     pbar.set_description(description)
     pbar.refresh()  # Refresh the progress bar to show the updated description immediately
 
+def is_folder_empty_or_removable(folder: Path) -> bool:
+    removable_extensions = ['.par2', '.sfv', '.nfo', '.rar', '.sfv', '.srr', '.srs', '.url']
+    jpg_count = 0
+
+    for file in folder.iterdir():
+        if file.is_dir():
+            logging.info(f"Folder '{folder}' not deleted: contains subdirectory '{file.name}'")
+            return False
+
+        file_ext = file.suffix.lower()
+        if file_ext in removable_extensions or (file_ext.startswith('.r') and file_ext[2:].isdigit()):
+            continue
+        if file_ext == '.jpg':
+            jpg_count += 1
+            if jpg_count > 1:
+                logging.info(f"Folder '{folder}' not deleted: contains more than one JPG file '{file.name}'")
+                return False
+        else:
+            logging.info(f"Folder '{folder}' not deleted: contains non-removable file '{file.name}'")
+            return False
+
+    return True if jpg_count <= 1 else False
+
+
+
+def is_shortcut(file: Path) -> bool:
+    """
+    Checks if a file is a shortcut (e.g., .lnk in Windows).
+    """
+    return file.suffix.lower() in ['.lnk', '.url']  # Add other shortcut types if needed
+
 def process_folder(folder: Path, destination_dir: Path, pbar):
     """
     Processes the given folder for video, PAR2, and RAR files.
@@ -172,9 +224,6 @@ def process_folder(folder: Path, destination_dir: Path, pbar):
             except Exception as e:
                 logging.error(f"Error moving file {video_file}: {e}")
         update_progress_bar(pbar, f"Finished moving video files from {folder.name}")
-        safe_delete_folder(folder)
-        logging.info(f"Moved video file(s) and deleted folder: {folder}")
-        return
 
     has_par2 = any(file.suffix == '.par2' for file in folder.iterdir())
     if has_par2:
@@ -203,10 +252,16 @@ def process_folder(folder: Path, destination_dir: Path, pbar):
             except Exception as e:
                 logging.error(f"Error moving file {video_file}: {e}")
         update_progress_bar(pbar, f"Finished moving extracted video files from {folder.name}")
+
+    # Enhanced logging to check folder status
+    logging.info(f"Checking if folder '{folder}' can be deleted")
+
+    # Check if folder is empty or contains only removable files
+    if is_folder_empty_or_removable(folder):
         safe_delete_folder(folder)
-        logging.info(f"Moved extracted video file(s) and deleted folder: {folder}")
+        logging.info(f"Deleted folder after processing: {folder}")
     else:
-        logging.info(f"No video files found after processing, folder not deleted: {folder}")
+        logging.info(f"Folder not deleted: {folder} (contains non-removable files or not empty)")
 
     update_progress_bar(pbar, f"Finished processing {folder.name}")
 
@@ -256,12 +311,16 @@ def main():
     total_folders_deleted = 0
     blank_folders = 0
     folders_with_non_video_files = 0
+    folders_with_unwanted_files = 0
 
     with tqdm(total=len(folders), unit="folder") as pbar:
         for folder in folders:
             video_files_before = len(find_video_files(folder))
             if video_files_before == 0:
                 blank_folders += 1
+
+            if contains_unwanted_files(folder):
+                folders_with_unwanted_files += 1
 
             process_folder(folder, destination_dir, pbar)
 
@@ -280,6 +339,7 @@ def main():
     print(f"Total folders deleted: {total_folders_deleted}")
     print(f"Blank folders: {blank_folders}")
     print(f"Folders with non-video files: {folders_with_non_video_files}")
+    print(f"Folders with unwanted files: {folders_with_unwanted_files}")
 
 if __name__ == '__main__':
     main()
