@@ -15,9 +15,6 @@ LOGS_FOLDER = Path('logs')
 LOG_FILE = LOGS_FOLDER / 'app.log'
 VIDEO_EXTENSIONS = ['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.mpg', '.mpeg', '.m4v', '.3gp', '.webm']
 
-# Add any allowed non-video file extensions here
-ALLOWED_NON_VIDEO_EXTENSIONS = ['.nzb', '.nfo']
-
 # Set up logging
 logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -89,7 +86,6 @@ def contains_unwanted_files(folder: Path) -> bool:
     for file in folder.rglob('*'):
         if file.is_file() and not (
             file.suffix.lower() in VIDEO_EXTENSIONS or
-            file.suffix.lower() in ALLOWED_NON_VIDEO_EXTENSIONS or
             file.suffix.lower() == '.par2' or
             file.suffix.lower() == '.rar'
         ):
@@ -170,7 +166,7 @@ def update_progress_bar(pbar, description):
     pbar.refresh()  # Refresh the progress bar to show the updated description immediately
 
 def is_folder_empty_or_removable(folder: Path) -> bool:
-    removable_extensions = ['.par2', '.sfv', '.nfo', '.rar', '.sfv', '.srr', '.srs', '.url']
+    removable_extensions = ['.par2', '.sfv', '.nfo', '.rar', '.sfv', '.srr', '.srs', '.url', '.db', '.nzb']
     jpg_count = 0
 
     for file in folder.iterdir():
