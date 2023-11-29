@@ -7,8 +7,10 @@ import sys
 import re
 from tqdm import tqdm
 import time
+import psutil
 from pathlib import Path
 import subprocess
+import tempfile
 from colorama import init, Fore, Style
 
 # Constants
@@ -123,7 +125,7 @@ def process_par2_files(folder: Path) -> bool:
         stdout, stderr = process.communicate()
         if process.returncode != 0:
             logging.error(f"PAR2 processing error for {folder}:\nStdout: {stdout}\nStderr: {stderr}")
-            return False
+            return False  # Indicate a PAR2 processing error occurred
         return True
     except Exception as e:
         logging.error(f"Unexpected error during PAR2 processing for {folder}: {e}")
@@ -147,6 +149,24 @@ def process_rar_files(folder: Path) -> bool:
         logging.error(f"Unexpected error during RAR extraction for {folder}: {e}")
         return False
 
+def wait_for_file_release(file_path, max_attempts=10, delay=1):
+    for attempt in range(max_attempts):
+        is_locked = False
+        for proc in psutil.process_iter(attrs=['pid', 'name']):
+            try:
+                if file_path in (f.path for f in proc.open_files()):
+                    is_locked = True
+                    break
+            except (psutil.AccessDenied, psutil.NoSuchProcess):
+                continue  # Ignore processes that cannot be accessed
+
+        if not is_locked:
+            return True
+
+        time.sleep(delay)  # Wait before retrying
+
+    return False
+
 def safe_delete_folder(folder: Path):
     """
     Attempts to safely delete a folder, handling any exceptions.
@@ -164,23 +184,58 @@ def safe_delete_folder(folder: Path):
             logging.error(f"Repeated error deleting folder {folder}: {e}")
 
 def check_video_health(video_file: Path) -> bool:
-    """
-    Checks the health of a video file using ffmpeg.
-    Returns True if the video is healthy, False if corrupt.
-    """
     try:
-        result = subprocess.run(['ffmpeg', '-v', 'error', '-i', str(video_file), '-f', 'null', '-'],
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        if result.returncode != 0 or result.stderr:
-            logging.error(f"Corrupt video file detected: {video_file}\n{result.stderr}")
-            return False
-        return True
+        # Create a temporary file
+        with tempfile.TemporaryFile(mode='w+') as temp_output:
+            result = subprocess.run(['ffmpeg', '-v', 'error', '-i', str(video_file), '-f', 'null', '-'],
+                                    stdout=temp_output, stderr=temp_output, text=True)
+
+            # Check if ffmpeg found errors
+            temp_output.seek(0)  # Go to the start of the file to read content
+            output = temp_output.read()
+            if result.returncode != 0:
+                logging.error(f"Corrupt video file detected: {video_file}\n{output}")
+                return False
+            return True
     except FileNotFoundError:
         logging.warning("FFMPEG is not installed. Skipping health check.")
         return True
     except Exception as e:
         logging.error(f"Error during FFMPEG health check: {e}")
-        return True
+        return False
+
+def is_file_in_use(file_path: Path) -> bool:
+    """
+    Checks if the file is currently in use by any process.
+    """
+    for proc in psutil.process_iter():
+        try:
+            for item in proc.open_files():
+                if file_path == Path(item.path):
+                    return True
+        except Exception:
+            continue
+    return False
+
+def delete_video_file_with_retry(file_path, max_attempts=5):
+    for attempt in range(max_attempts):
+        try:
+            # Try to open the file in exclusive mode
+            with open(file_path, 'a+') as f:
+                pass
+            # If successful, delete the file
+            os.remove(file_path)
+            logging.info(f"Successfully deleted video file: {file_path}")
+            return True
+        except PermissionError:
+            logging.error(f"Attempt {attempt + 1} - Error deleting video file {file_path}: Access is denied")
+        except FileNotFoundError:
+            logging.error(f"Attempt {attempt + 1} - Error deleting video file {file_path}: File not found")
+        except Exception as e:
+            logging.error(f"Attempt {attempt + 1} - Error deleting video file {file_path}: {e}")
+        time.sleep(1)  # Wait before retrying
+    logging.error(f"Failed to delete video file {file_path} after {max_attempts} attempts.")
+    return False
 
 def update_progress_bar(pbar, description):
     """
@@ -189,8 +244,12 @@ def update_progress_bar(pbar, description):
     pbar.set_description(description)
     pbar.refresh()  # Refresh the progress bar to show the updated description immediately
 
-def is_folder_empty_or_removable(folder: Path) -> bool:
-    removable_extensions = ['.par2', '.sfv', '.nfo', '.rar', '.sfv', '.srr', '.srs', '.url', '.db', '.nzb']
+def is_folder_empty_or_removable(folder: Path, par2_error: bool, rar_error: bool) -> bool:
+    """
+    Checks if the folder is empty or contains only files that can be removed.
+    This includes checking for errors in PAR2 and RAR processing.
+    """
+    removable_extensions = ['.sfv', '.nfo', '.sfv', '.srr', '.srs', '.url', '.db', '.nzb', '.txt']
     jpg_count = 0
 
     for file in folder.iterdir():
@@ -199,26 +258,97 @@ def is_folder_empty_or_removable(folder: Path) -> bool:
             return False
 
         file_ext = file.suffix.lower()
-        if file_ext in removable_extensions or (file_ext.startswith('.r') and file_ext[2:].isdigit()):
-            continue
         if file_ext == '.jpg':
             jpg_count += 1
             if jpg_count > 1:
                 logging.info(f"Folder '{folder}' not deleted: contains more than one JPG file '{file.name}'")
                 return False
+        elif file_ext in removable_extensions or (file_ext.startswith('.r') and file_ext[2:].isdigit()):
+            continue
+        elif (file_ext == '.par2' and par2_error) or (file_ext == '.rar' and rar_error):
+            continue  # Treat PAR2 or RAR files as removable if there were processing errors
         else:
             logging.info(f"Folder '{folder}' not deleted: contains non-removable file '{file.name}'")
             return False
 
+    # If a PAR2 or RAR error occurred and only removable files are present, the folder can be deleted
     return True if jpg_count <= 1 else False
-
-
 
 def is_shortcut(file: Path) -> bool:
     """
     Checks if a file is a shortcut (e.g., .lnk in Windows).
     """
     return file.suffix.lower() in ['.lnk', '.url']  # Add other shortcut types if needed
+
+def terminate_related_processes(file_name, allowed_processes=['ffmpeg', '7z']):
+    """
+    Terminates processes that might be using the file.
+    """
+    for process in psutil.process_iter():
+        try:
+            process_info = process.as_dict(attrs=['pid', 'name'])
+            if process_info['name'] in allowed_processes and file_name in process.cmdline():
+                process.terminate()
+                logging.info(f"Terminated process {process_info['name']} (PID: {process_info['pid']}) that was using file {file_name}")
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            pass
+
+def process_subfolder(subfolder: Path, destination_dir: Path, pbar):
+    """
+    Recursive function to process each subfolder.
+    """
+    for sub in subfolder.iterdir():
+        if sub.is_dir():
+            process_subfolder(sub, destination_dir, pbar)  # Recursive call for deeper subfolders
+        else:
+            process_file(sub, destination_dir, pbar)
+
+    # Check if the subfolder can be deleted after processing its contents
+    if is_folder_empty_or_removable(subfolder, False, False):  # Assuming no PAR2 or RAR files in subfolders
+        safe_delete_folder(subfolder)
+        logging.info(f"Deleted subfolder after processing: {subfolder}")
+
+def process_file(file: Path, destination_dir: Path, pbar):
+    """
+    Processes individual files within folders and subfolders.
+    """
+    if file.suffix.lower() in VIDEO_EXTENSIONS:
+        if check_video_health(file):
+            try:
+                destination_file = destination_dir / file.name
+                shutil.move(str(file), str(destination_file))
+                logging.info(f"Video file verified and moved: {destination_file}")
+            except Exception as e:
+                logging.error(f"Error moving file {file}: {e}")
+        else:
+            try:
+                file.unlink(missing_ok=True)
+                logging.error(f"Corrupt video file detected and deleted: {file}")
+            except Exception as e:
+                logging.error(f"Error deleting corrupt video file {file}: {e}")
+    elif file.suffix.lower() in ['.jpg'] and len(list(file.parent.glob('*.jpg'))) == 1:  # Single JPG file in folder
+        try:
+            file.unlink(missing_ok=True)
+            logging.info(f"Deleted single JPG file: {file}")
+        except Exception as e:
+            logging.error(f"Error deleting JPG file {file}: {e}")
+
+def delete_video_file_with_retry(video_file: Path, max_attempts: int = 5, retry_delay_seconds: int = 1):
+    for attempt in range(max_attempts):
+        terminate_related_processes(str(video_file))
+        try:
+            # Wait before retrying deletion
+            if attempt > 0:
+                time.sleep(retry_delay_seconds)
+
+            video_file.unlink(missing_ok=True)
+            logging.info(f"Successfully deleted video file: {video_file}")
+            return True
+        except Exception as e:
+            logging.error(f"Attempt {attempt + 1} - Error deleting video file {video_file}: {e}")
+
+    logging.error(f"Failed to delete video file {video_file} after {max_attempts} attempts.")
+    return False
 
 def process_folder(folder: Path, destination_dir: Path, pbar):
     """
@@ -229,55 +359,63 @@ def process_folder(folder: Path, destination_dir: Path, pbar):
     update_progress_bar(pbar, f"Starting processing for {folder.name}")
 
     initial_video_files = find_video_files(folder)
-    if initial_video_files:
-        update_progress_bar(pbar, f"Moving video files from {folder.name}")
-        for video_file in initial_video_files:
+    processed_files = set()  # Track processed files
+    par2_error, rar_error = False, False
+
+    # Process initial video files
+    for video_file in initial_video_files:
+        update_progress_bar(pbar, f"Checking health of video file {video_file.name}")
+        if check_video_health(video_file):
             try:
                 destination_file = destination_dir / video_file.name
                 shutil.move(str(video_file), str(destination_file))
-                update_progress_bar(pbar, f"Checking health of video file {video_file.name}")
-                if not check_video_health(destination_file):
-                    destination_file.unlink(missing_ok=True)
-                    logging.error(f"Corrupt video file detected and deleted: {destination_file}")
-                else:
-                    logging.info(f"Video file verified and moved: {destination_file}")
+                logging.info(f"Video file verified and moved: {destination_file}")
+                processed_files.add(video_file)  # Mark as processed
             except Exception as e:
                 logging.error(f"Error moving file {video_file}: {e}")
-        update_progress_bar(pbar, f"Finished moving video files from {folder.name}")
+        else:
+            # Before attempting to delete the file, wait for it to be released
+            if wait_for_file_release(str(video_file)):
+                success = delete_video_file_with_retry(video_file)
+                if success:
+                    processed_files.add(video_file)  # Mark as processed
+            else:
+                logging.error(f"Timeout waiting for file release: {video_file}")
 
-    has_par2 = any(file.suffix == '.par2' for file in folder.iterdir())
-    if has_par2:
+    # Process PAR2 files if they exist
+    if any(file.suffix == '.par2' for file in folder.iterdir()):
         update_progress_bar(pbar, f"Repairing PAR2 files in {folder.name}")
-        process_par2_files(folder)
-        update_progress_bar(pbar, f"Finished repairing PAR2 files in {folder.name}")
+        par2_error = not process_par2_files(folder)
 
-    has_rar = any(file.suffix == '.rar' for file in folder.iterdir())
-    if has_rar:
+    # Process RAR files if they exist
+    if any(file.suffix == '.rar' for file in folder.iterdir()):
         update_progress_bar(pbar, f"Extracting RAR files in {folder.name}")
-        process_rar_files(folder)
-        update_progress_bar(pbar, f"Finished extracting RAR files in {folder.name}")
+        rar_error = not process_rar_files(folder)
 
+    # Process each subfolder
+    for subfolder in folder.iterdir():
+        if subfolder.is_dir():
+            process_subfolder(subfolder, destination_dir, pbar)
+
+    # Recheck for video files that might have been extracted
     post_process_video_files = find_video_files(folder)
-    if post_process_video_files:
-        update_progress_bar(pbar, f"Moving extracted video files from {folder.name}")
-        for video_file in post_process_video_files:
-            try:
-                destination_file = destination_dir / video_file.name
-                shutil.move(str(video_file), str(destination_file))
-                if not check_video_health(destination_file):
-                    destination_file.unlink(missing_ok=True)
-                    logging.error(f"Corrupt video file detected and deleted: {destination_file}")
-                else:
+    for video_file in post_process_video_files:
+        if video_file not in processed_files:  # Skip already processed files
+            update_progress_bar(pbar, f"Verifying extracted video file {video_file.name}")
+            if check_video_health(video_file):
+                try:
+                    destination_file = destination_dir / video_file.name
+                    shutil.move(str(video_file), str(destination_file))
                     logging.info(f"Video file verified and moved: {destination_file}")
-            except Exception as e:
-                logging.error(f"Error moving file {video_file}: {e}")
-        update_progress_bar(pbar, f"Finished moving extracted video files from {folder.name}")
+                except Exception as e:
+                    logging.error(f"Error moving file {video_file}: {e}")
+            else:
+                if wait_for_file_release(str(video_file)):
+                    delete_video_file_with_retry(video_file)
 
-    # Enhanced logging to check folder status
-    logging.info(f"Checking if folder '{folder}' can be deleted")
-
-    # Check if folder is empty or contains only removable files
-    if is_folder_empty_or_removable(folder):
+    # Final folder check
+    update_progress_bar(pbar, f"Finalizing folder {folder.name}")
+    if is_folder_empty_or_removable(folder, par2_error, rar_error):
         safe_delete_folder(folder)
         logging.info(f"Deleted folder after processing: {folder}")
     else:
@@ -307,8 +445,9 @@ def main():
     print(Style.BRIGHT + Fore.RED + "IMPORTANT WARNING:" + Style.RESET_ALL)
     print(f"The process will scan the directory: {Fore.CYAN}{download_dir}{Style.RESET_ALL}")
     print("Actions to be performed:")
-    print(Fore.YELLOW + " - Scan for video, PAR2, and RAR files." + Style.RESET_ALL)
-    print(Fore.YELLOW + " - Move video files to: " + str(destination_dir) + Style.RESET_ALL)
+    print(Fore.YELLOW + " - Scan for videos, check their health with ffmpeg." + Style.RESET_ALL)
+    print(Fore.YELLOW + " - Scan for PAR2 and RAR files." + Style.RESET_ALL)
+    print(Fore.YELLOW + " - Move healthy video files to: " + str(destination_dir) + Style.RESET_ALL)
     print(Fore.YELLOW + " - Repair files using PAR2 and extract RAR archives." + Style.RESET_ALL)
     print(Fore.YELLOW + " - Delete folders that have been processed." + Style.RESET_ALL)
     print("This action is irreversible and may lead to data loss. Ensure you have backups if necessary.")
