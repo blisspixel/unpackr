@@ -1,6 +1,7 @@
 import os
 import shutil
 import logging
+from logging.handlers import RotatingFileHandler
 import argparse
 import sys
 import re
@@ -15,8 +16,17 @@ LOGS_FOLDER = Path('logs')
 LOG_FILE = LOGS_FOLDER / 'app.log'
 VIDEO_EXTENSIONS = ['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.mpg', '.mpeg', '.m4v', '.3gp', '.webm']
 
-# Set up logging
-logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+# Ensure the logs directory exists
+os.makedirs(LOGS_FOLDER, exist_ok=True)
+
+# Set up logging with RotatingFileHandler
+log_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+log_handler = RotatingFileHandler(LOG_FILE, maxBytes=1048576, backupCount=10)
+log_handler.setFormatter(log_formatter)
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+logger.addHandler(log_handler)
 
 init()
 
@@ -30,6 +40,16 @@ ascii_art = r"""
              |_|        
 
 """
+
+def log_subprocess_error(error, process_name):
+    """
+    Logs detailed error information for a CalledProcessError exception.
+    """
+    logging.error(f"{process_name} failed with return code {error.returncode}")
+    logging.error(f"Command: {error.cmd}")
+    if error.output:
+        logging.error(f"Output:\n{error.output}")
+    logging.error("Traceback:\n" + traceback.format_exc())
 
 def get_user_input(prompt: str) -> Path:
     """
@@ -94,12 +114,19 @@ def contains_unwanted_files(folder: Path) -> bool:
 
 def process_par2_files(folder: Path) -> bool:
     try:
-        process = subprocess.run(['par2', 'r', str(folder / '*.par2')], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        for line in process.stdout.splitlines():
-            print(line)
+        process = subprocess.Popen(['par2', 'r', str(folder / '*.par2')],
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE,
+                                   text=True,
+                                   encoding='utf-8',
+                                   errors='replace')
+        stdout, stderr = process.communicate()
+        if process.returncode != 0:
+            logging.error(f"PAR2 processing error for {folder}:\nStdout: {stdout}\nStderr: {stderr}")
+            return False
         return True
-    except subprocess.CalledProcessError as e:
-        logging.error(f"PAR2 processing error for {folder}: {e}")
+    except Exception as e:
+        logging.error(f"Unexpected error during PAR2 processing for {folder}: {e}")
         return False
 
 def process_rar_files(folder: Path) -> bool:
@@ -111,16 +138,13 @@ def process_rar_files(folder: Path) -> bool:
                                        text=True, 
                                        encoding='utf-8', 
                                        errors='replace')
-            if process.stdout:
-                for line in iter(process.stdout.readline, ''):
-                    print(line, end='')
-            process.wait()
+            stdout, stderr = process.communicate()
             if process.returncode != 0:
-                logging.error(f"RAR extraction error for {folder}")
+                logging.error(f"RAR extraction error for {folder}:\nStdout: {stdout}\nStderr: {stderr}")
                 return False
         return True
-    except subprocess.CalledProcessError as e:
-        logging.error(f"RAR extraction error for {folder}: {e}")
+    except Exception as e:
+        logging.error(f"Unexpected error during RAR extraction for {folder}: {e}")
         return False
 
 def safe_delete_folder(folder: Path):
