@@ -1,7 +1,6 @@
 import os
 import shutil
 import logging
-from logging.handlers import RotatingFileHandler
 import argparse
 import sys
 import re
@@ -14,6 +13,7 @@ import tempfile
 import datetime
 import glob
 from colorama import init, Fore, Style
+import traceback
 
 # Constants
 LOGS_FOLDER = Path('logs')
@@ -28,7 +28,7 @@ current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 LOG_FILE = LOGS_FOLDER / f'unpackr-{current_time}.log'
 
 # Delete old log files if more than 5 exist
-existing_logs = sorted(glob.glob(str(LOGS_FOLDER / 'app-*.log')))
+existing_logs = sorted(glob.glob(str(LOGS_FOLDER / 'unpackr-*.log')))
 while len(existing_logs) > 5:
     os.remove(existing_logs.pop(0))
 
@@ -40,6 +40,11 @@ log_handler.setFormatter(log_formatter)
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 logger.addHandler(log_handler)
+
+# Also log to console
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setFormatter(log_formatter)
+logger.addHandler(console_handler)
 
 init()
 
@@ -114,32 +119,44 @@ def contains_non_video_files(folder: Path) -> bool:
 
 def contains_unwanted_files(folder: Path) -> bool:
     """
-    Checks if the folder contains files other than video, PAR2, RAR, and allowable non-video files.
+    Checks if the folder contains files other than allowed ones (video, archives, and common auxiliary files).
     """
+    removable_extensions = ['.sfv', '.nfo', '.srr', '.srs', '.url', '.db', '.nzb', '.txt', '.xml', '.dat', '.exe', '.htm', '.log']
     for file in folder.rglob('*'):
-        if file.is_file() and not (
-            file.suffix.lower() in VIDEO_EXTENSIONS or
-            file.suffix.lower() == '.par2' or
-            file.suffix.lower() == '.rar'
+        if not file.is_file():
+            continue
+        suffix = file.suffix.lower()
+        if (
+            suffix in VIDEO_EXTENSIONS or
+            suffix == '.par2' or
+            suffix == '.rar' or
+            (suffix.startswith('.r') and len(suffix) == 4 and suffix[2:].isdigit()) or
+            suffix in removable_extensions or
+            suffix == '.jpg'
         ):
-            return True
+            continue
+        return True
     return False
 
 def process_par2_files(folder: Path) -> bool:
     try:
-        process = subprocess.Popen(['par2', 'r', str(folder / '*.par2')],
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE,
-                                   text=True,
-                                   encoding='utf-8',
-                                   errors='replace')
-        stdout, stderr = process.communicate()
-        if process.returncode != 0:
-            logging.error(f"PAR2 processing error for {folder}:\nStdout: {stdout}\nStderr: {stderr}")
-            # Indicate a PAR2 processing error occurred but continue to delete files
+        par2_files = sorted(folder.glob('*.par2'))
+        if not par2_files:
+            return True
+        for par2_file in par2_files:
+            result = subprocess.run(
+                ['par2', 'r', str(par2_file)],
+                capture_output=True,
+                text=True,
+                encoding='utf-8'
+            )
+            if result.returncode != 0:
+                logging.error(
+                    f"PAR2 processing error for {par2_file}:\nStdout: {result.stdout}\nStderr: {result.stderr}"
+                )
         # Delete PAR2 files irrespective of the result
         delete_files_by_extension(folder, '.par2')
-        return True  # Return true to indicate completion of the process
+        return True
     except Exception as e:
         logging.error(f"Unexpected error during PAR2 processing for {folder}: {e}")
         return False
@@ -154,23 +171,30 @@ def delete_files_by_extension(folder: Path, extension: str):
 
 def process_rar_files(folder: Path) -> bool:
     try:
+        rar_candidates = []
         for file in folder.glob('*.rar'):
-            process = subprocess.Popen(['7z', 'x', str(file), f'-o{folder}', '-aoa'], 
-                                       stdout=subprocess.PIPE, 
-                                       stderr=subprocess.PIPE, 
-                                       text=True, 
-                                       encoding='utf-8', 
-                                       errors='replace')
-            stdout, stderr = process.communicate()
-            if process.returncode != 0:
-                logging.error(f"RAR extraction error for {folder}:\nStdout: {stdout}\nStderr: {stderr}")
-                # Continue to delete files even if there's an extraction error
-        # Delete RAR files after extraction attempt
+            name = file.name.lower()
+            # Pick only .part1.rar entries or plain .rar that is not partN
+            if re.search(r'\.part0*1\.rar$', name):
+                rar_candidates.append(file)
+            elif not re.search(r'\.part\d+\.rar$', name):
+                rar_candidates.append(file)
+        for archive in rar_candidates:
+            result = subprocess.run(
+                ['7z', 'x', str(archive), f'-o{folder}', '-aoa'],
+                capture_output=True,
+                text=True,
+                encoding='utf-8'
+            )
+            if result.returncode != 0:
+                logging.error(
+                    f"RAR extraction error for {archive}:\nStdout: {result.stdout}\nStderr: {result.stderr}"
+                )
+        # Cleanup typical multi-part volumes after attempt
         delete_files_by_extension(folder, '.rar')
-        # Also delete related files like .r00, .r01, etc.
-        for ext in ['.r' + str(i).zfill(2) for i in range(100)]:
+        for ext in [f'.r{str(i).zfill(2)}' for i in range(100)]:
             delete_files_by_extension(folder, ext)
-        return True  # Return true to indicate completion of the process
+        return True
     except Exception as e:
         logging.error(f"Unexpected error during RAR extraction for {folder}: {e}")
         return False
@@ -253,23 +277,20 @@ def is_file_in_use(file_path: Path) -> bool:
             continue
     return False
 
-def delete_video_file_with_retry(file_path, max_attempts=5):
+def delete_video_file_with_retry(file_path: Path, max_attempts: int = 5, retry_delay_seconds: int = 1) -> bool:
     for attempt in range(max_attempts):
+        terminate_related_processes(str(file_path))
         try:
-            # Try to open the file in exclusive mode
-            with open(file_path, 'a+') as f:
-                pass
-            # If successful, delete the file
-            os.remove(file_path)
+            # Wait before retrying deletion
+            if attempt > 0:
+                time.sleep(retry_delay_seconds)
+
+            file_path.unlink(missing_ok=True)
             logging.info(f"Successfully deleted video file: {file_path}")
             return True
-        except PermissionError:
-            logging.error(f"Attempt {attempt + 1} - Error deleting video file {file_path}: Access is denied")
-        except FileNotFoundError:
-            logging.error(f"Attempt {attempt + 1} - Error deleting video file {file_path}: File not found")
         except Exception as e:
             logging.error(f"Attempt {attempt + 1} - Error deleting video file {file_path}: {e}")
-        time.sleep(1)  # Wait before retrying
+
     logging.error(f"Failed to delete video file {file_path} after {max_attempts} attempts.")
     return False
 
@@ -316,10 +337,12 @@ def is_shortcut(file: Path) -> bool:
     """
     return file.suffix.lower() in ['.lnk', '.url']  # Add other shortcut types if needed
 
-def terminate_related_processes(file_name, allowed_processes=['ffmpeg', '7z']):
+def terminate_related_processes(file_name, allowed_processes=None):
     """
     Terminates processes that might be using the file.
     """
+    if allowed_processes is None:
+        allowed_processes = ['ffmpeg', '7z']
     for process in psutil.process_iter():
         try:
             process_info = process.as_dict(attrs=['pid', 'name'])
@@ -333,6 +356,13 @@ def process_subfolder(subfolder: Path, destination_dir: Path, pbar):
     """
     Recursive function to process each subfolder.
     """
+    # First, handle archives and repairs within this subfolder
+    rar_error = not process_rar_files(subfolder)
+    par2_error = False
+    if any(file.suffix.lower() == '.par2' for file in subfolder.iterdir() if file.is_file()):
+        update_progress_bar(pbar, f"Repairing PAR2 files in {subfolder.name}")
+        par2_error = not process_par2_files(subfolder)
+
     for sub in subfolder.iterdir():
         if sub.is_dir():
             process_subfolder(sub, destination_dir, pbar)  # Recursive call for deeper subfolders
@@ -340,7 +370,7 @@ def process_subfolder(subfolder: Path, destination_dir: Path, pbar):
             process_file(sub, destination_dir, pbar)
 
     # Check if the subfolder can be deleted after processing its contents
-    if is_folder_empty_or_removable(subfolder, False, False):  # Assuming no PAR2 or RAR files in subfolders
+    if is_folder_empty_or_removable(subfolder, par2_error, rar_error):
         safe_delete_folder(subfolder)
         logging.info(f"Deleted subfolder after processing: {subfolder}")
 
@@ -369,23 +399,6 @@ def process_file(file: Path, destination_dir: Path, pbar):
         except Exception as e:
             logging.error(f"Error deleting JPG file {file}: {e}")
 
-def delete_video_file_with_retry(video_file: Path, max_attempts: int = 5, retry_delay_seconds: int = 1):
-    for attempt in range(max_attempts):
-        terminate_related_processes(str(video_file))
-        try:
-            # Wait before retrying deletion
-            if attempt > 0:
-                time.sleep(retry_delay_seconds)
-
-            video_file.unlink(missing_ok=True)
-            logging.info(f"Successfully deleted video file: {video_file}")
-            return True
-        except Exception as e:
-            logging.error(f"Attempt {attempt + 1} - Error deleting video file {video_file}: {e}")
-
-    logging.error(f"Failed to delete video file {video_file} after {max_attempts} attempts.")
-    return False
-
 def process_folder(folder: Path, destination_dir: Path, pbar):
     """
     Processes the given folder for video, PAR2, and RAR files.
@@ -398,9 +411,8 @@ def process_folder(folder: Path, destination_dir: Path, pbar):
     rar_error = not process_rar_files(folder)
 
     # Process PAR2 files regardless of RAR extraction outcome
-    # This ensures PAR2 files are always processed
     par2_error = False
-    if any(file.suffix == '.par2' for file in folder.iterdir()):
+    if any(file.suffix.lower() == '.par2' for file in folder.iterdir() if file.is_file()):
         update_progress_bar(pbar, f"Repairing PAR2 files in {folder.name}")
         par2_error = not process_par2_files(folder)
 
@@ -458,6 +470,9 @@ def main():
         download_dir = get_user_input("Enter the path to your downloads directory: ")
         destination_dir = get_user_input("Enter the path to your destination directory: ")
 
+    # Baseline count of videos in destination to compute how many we move
+    dest_video_count_before = len([f for f in destination_dir.glob('*') if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS])
+
     print(Style.BRIGHT + Fore.RED + "IMPORTANT WARNING:" + Style.RESET_ALL)
     print(f"The process will scan the directory: {Fore.CYAN}{download_dir}{Style.RESET_ALL}")
     print(f"Video files will be moved to the destination directory: {Fore.CYAN}{destination_dir}{Style.RESET_ALL}")
@@ -483,14 +498,25 @@ def main():
 
     print(Fore.GREEN + "\nProcessing..." + Style.RESET_ALL)
 
-    folders = [folder for folder in download_dir.iterdir() if folder.is_dir()]
-    total_video_files_moved = 0
+    entries = list(download_dir.iterdir())
+    folders = [entry for entry in entries if entry.is_dir()]
+    root_files = [entry for entry in entries if entry.is_file()]
     total_folders_deleted = 0
     blank_folders = 0
     folders_with_non_video_files = 0
     folders_with_unwanted_files = 0
 
     with tqdm(total=len(folders), unit="folder") as pbar:
+        # First, process root-level archives and PAR2 files
+        update_progress_bar(pbar, f"Processing root-level archives in {download_dir.name}")
+        _rar_error_root = not process_rar_files(download_dir)
+        _par2_error_root = not process_par2_files(download_dir)
+
+        # Then process files directly under the source directory
+        for root_file in root_files:
+            update_progress_bar(pbar, f"Processing root file {root_file.name}")
+            process_file(root_file, destination_dir, pbar)
+
         for folder in folders:
             video_files_before = len(find_video_files(folder))
             if video_files_before == 0:
@@ -504,11 +530,14 @@ def main():
             if folder.exists() and contains_non_video_files(folder):
                 folders_with_non_video_files += 1
 
-            total_video_files_moved += video_files_before
             if not folder.exists():
                 total_folders_deleted += 1
 
             pbar.update(1)
+
+    # Compute moved count by destination delta
+    dest_video_count_after = len([f for f in destination_dir.glob('*') if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS])
+    total_video_files_moved = max(0, dest_video_count_after - dest_video_count_before)
 
     print(Fore.GREEN + "\nProcessing complete." + Style.RESET_ALL)
     print(f"Total folders processed: {len(folders)}")

@@ -37,14 +37,14 @@ Use Unpackr at your own risk. While it's designed to automate and simplify file 
 
 1. Clone the repository or download the script.
 2. Ensure Python 3.x is installed on your system.
-3. Install the required Python dependency:
-pip install tqdm
+3. Install the required Python dependencies:
+pip install -r requirements.txt
 4. Make sure 7-Zip, par2cmdline, and FFMPEG are installed and available in the system PATH.
 
 ## Usage
 
 Run the script from the command line:
-python unpacker.py
+python unpackr.py
 
 Follow the on-screen prompts to enter the path to your downloads directory and the destination directory for processed video files.
 
