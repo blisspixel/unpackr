@@ -41,6 +41,11 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 logger.addHandler(log_handler)
 
+# Also log to console
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setFormatter(log_formatter)
+logger.addHandler(console_handler)
+
 init()
 
 # ASCII Art
@@ -114,15 +119,23 @@ def contains_non_video_files(folder: Path) -> bool:
 
 def contains_unwanted_files(folder: Path) -> bool:
     """
-    Checks if the folder contains files other than video, PAR2, RAR, and allowable non-video files.
+    Checks if the folder contains files other than allowed ones (video, archives, and common auxiliary files).
     """
+    removable_extensions = ['.sfv', '.nfo', '.srr', '.srs', '.url', '.db', '.nzb', '.txt', '.xml', '.dat', '.exe', '.htm', '.log']
     for file in folder.rglob('*'):
-        if file.is_file() and not (
-            file.suffix.lower() in VIDEO_EXTENSIONS or
-            file.suffix.lower() == '.par2' or
-            file.suffix.lower() == '.rar'
+        if not file.is_file():
+            continue
+        suffix = file.suffix.lower()
+        if (
+            suffix in VIDEO_EXTENSIONS or
+            suffix == '.par2' or
+            suffix == '.rar' or
+            (suffix.startswith('.r') and len(suffix) == 4 and suffix[2:].isdigit()) or
+            suffix in removable_extensions or
+            suffix == '.jpg'
         ):
-            return True
+            continue
+        return True
     return False
 
 def process_par2_files(folder: Path) -> bool:
@@ -457,6 +470,9 @@ def main():
         download_dir = get_user_input("Enter the path to your downloads directory: ")
         destination_dir = get_user_input("Enter the path to your destination directory: ")
 
+    # Baseline count of videos in destination to compute how many we move
+    dest_video_count_before = len([f for f in destination_dir.glob('*') if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS])
+
     print(Style.BRIGHT + Fore.RED + "IMPORTANT WARNING:" + Style.RESET_ALL)
     print(f"The process will scan the directory: {Fore.CYAN}{download_dir}{Style.RESET_ALL}")
     print(f"Video files will be moved to the destination directory: {Fore.CYAN}{destination_dir}{Style.RESET_ALL}")
@@ -485,14 +501,18 @@ def main():
     entries = list(download_dir.iterdir())
     folders = [entry for entry in entries if entry.is_dir()]
     root_files = [entry for entry in entries if entry.is_file()]
-    total_video_files_moved = 0
     total_folders_deleted = 0
     blank_folders = 0
     folders_with_non_video_files = 0
     folders_with_unwanted_files = 0
 
     with tqdm(total=len(folders), unit="folder") as pbar:
-        # Process files directly under the source directory
+        # First, process root-level archives and PAR2 files
+        update_progress_bar(pbar, f"Processing root-level archives in {download_dir.name}")
+        _rar_error_root = not process_rar_files(download_dir)
+        _par2_error_root = not process_par2_files(download_dir)
+
+        # Then process files directly under the source directory
         for root_file in root_files:
             update_progress_bar(pbar, f"Processing root file {root_file.name}")
             process_file(root_file, destination_dir, pbar)
@@ -510,11 +530,14 @@ def main():
             if folder.exists() and contains_non_video_files(folder):
                 folders_with_non_video_files += 1
 
-            total_video_files_moved += video_files_before
             if not folder.exists():
                 total_folders_deleted += 1
 
             pbar.update(1)
+
+    # Compute moved count by destination delta
+    dest_video_count_after = len([f for f in destination_dir.glob('*') if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS])
+    total_video_files_moved = max(0, dest_video_count_after - dest_video_count_before)
 
     print(Fore.GREEN + "\nProcessing complete." + Style.RESET_ALL)
     print(f"Total folders processed: {len(folders)}")
