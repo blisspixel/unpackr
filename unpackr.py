@@ -1,55 +1,31 @@
-import os
-import shutil
-import logging
-import argparse
+"""
+Unpackr: Your Digital Declutterer
+Automate, Organize, and Streamline Your Downloads with Ease
+
+A specialized tool for cleaning up download folders from Usenet/newsgroups.
+Extracts archives, repairs files, validates videos, and removes garbage.
+"""
+
 import sys
-import re
-from tqdm import tqdm
 import time
-import psutil
+import argparse
+import logging
 from pathlib import Path
-import subprocess
-import tempfile
-import datetime
-import glob
+from datetime import datetime, timedelta
 from colorama import init, Fore, Style
-import traceback
 
-# Constants
-LOGS_FOLDER = Path('logs')
-LOG_FILE = LOGS_FOLDER / 'app.log'
-VIDEO_EXTENSIONS = ['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.mpg', '.mpeg', '.m4v', '.3gp', '.webm']
+from core import Config, setup_logging
+from core.file_handler import FileHandler
+from core.archive_processor import ArchiveProcessor
+from core.video_processor import VideoProcessor
+from utils.system_check import SystemCheck
+from utils.safety import (GLOBAL_RUNTIME_LIMIT, LoopSafety, RecursionSafety, 
+                          SafetyLimits, StuckDetector)
+from utils.defensive import InputValidator, StateValidator, ValidationError
 
-# Ensure the logs directory exists
-os.makedirs(LOGS_FOLDER, exist_ok=True)
-
-# Generate a unique log file name
-current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-LOG_FILE = LOGS_FOLDER / f'unpackr-{current_time}.log'
-
-# Delete old log files if more than 5 exist
-existing_logs = sorted(glob.glob(str(LOGS_FOLDER / 'unpackr-*.log')))
-while len(existing_logs) > 5:
-    os.remove(existing_logs.pop(0))
-
-# Set up logging
-log_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-log_handler = logging.FileHandler(LOG_FILE)
-log_handler.setFormatter(log_formatter)
-
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-logger.addHandler(log_handler)
-
-# Also log to console
-console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setFormatter(log_formatter)
-logger.addHandler(console_handler)
-
-init()
 
 # ASCII Art
-ascii_art = r"""
+ASCII_ART = r"""
                                _         
   _   _ _ __  _ __   __ _  ___| | ___ __ 
  | | | | '_ \| '_ \ / _` |/ __| |/ / '__|
@@ -59,493 +35,536 @@ ascii_art = r"""
 
 """
 
-def log_subprocess_error(error, process_name):
+
+class WorkPlan:
+    """Represents the work plan from pre-scan analysis."""
+    
+    def __init__(self):
+        self.video_folders = []
+        self.content_folders = []
+        self.loose_videos = []
+        self.total_videos = 0
+        self.total_rars = 0
+        self.total_par2s = 0
+        self.estimated_time = 0
+        
+    def add_video_folder(self, folder: Path, videos: int, rars: int, par2s: int):
+        """Add a video folder to the plan."""
+        self.video_folders.append({
+            'path': folder,
+            'videos': videos,
+            'rars': rars,
+            'par2s': par2s
+        })
+        self.total_videos += videos
+        self.total_rars += rars
+        self.total_par2s += par2s
+        
+    def add_content_folder(self, folder: Path):
+        """Add a content folder to keep."""
+        self.content_folders.append(folder)
+        
+    def add_loose_video(self, video: Path):
+        """Add a loose video file."""
+        self.loose_videos.append(video)
+        self.total_videos += 1
+        
+    def calculate_time_estimate(self):
+        """Calculate estimated processing time."""
+        # Rough estimates:
+        # - 5 seconds per video check
+        # - 10 seconds per RAR extraction
+        # - 15 seconds per PAR2 repair
+        # - 2 seconds per folder operation
+        
+        time_estimate = 0
+        time_estimate += self.total_videos * 5  # Video health checks
+        time_estimate += self.total_rars * 10   # RAR extractions
+        time_estimate += self.total_par2s * 15  # PAR2 repairs
+        time_estimate += len(self.video_folders) * 2  # Folder operations
+        
+        self.estimated_time = time_estimate
+        return time_estimate
+        
+    def display(self):
+        """Display the work plan."""
+        # Compact single-line summary
+        eta = timedelta(seconds=self.estimated_time)
+        eta_str = str(eta).split('.')[0]
+        
+        print(f"[PLAN] {Fore.YELLOW}{len(self.video_folders)}{Style.RESET_ALL} folders, "
+              f"{Fore.YELLOW}{self.total_videos}{Style.RESET_ALL} videos, "
+              f"{Fore.YELLOW}{self.total_rars}{Style.RESET_ALL} RARs, "
+              f"{Fore.YELLOW}{self.total_par2s}{Style.RESET_ALL} PAR2s | "
+              f"ETA: {Fore.CYAN}{eta_str}{Style.RESET_ALL} | "
+              f"{Fore.GREEN}{len(self.content_folders)}{Style.RESET_ALL} folders preserved")
+
+
+class UnpackrApp:
+    """Main application class for Unpackr."""
+    
+    def __init__(self, config: Config):
+        """
+        Initialize the application.
+        
+        Args:
+            config: Configuration instance
+        """
+        self.config = config
+        self.file_handler = FileHandler(config)
+        self.archive_processor = ArchiveProcessor()
+        self.video_processor = VideoProcessor()
+        self.stats = {
+            'folders_processed': 0,
+            'videos_moved': 0,
+            'videos_failed': 0,
+            'folders_deleted': 0,
+            'rars_extracted': 0,
+            'par2s_repaired': 0,
+            'safety_stops': 0
+        }
+        self.start_time = None
+        self.work_plan = None
+        self.recursion_guard = RecursionSafety(SafetyLimits.MAX_SUBFOLDERS_DEPTH, "Subfolder processing")
+        self.stuck_detector = StuckDetector(timeout=300, check_interval=30)  # 5min without progress
+        
+    def scan_and_plan(self, source_dir: Path) -> WorkPlan:
+        """
+        Scan source directory and create a work plan.
+        
+        Args:
+            source_dir: Source directory to scan
+            
+        Returns:
+            WorkPlan instance
+        """
+        plan = WorkPlan()
+        folders = [f for f in source_dir.iterdir() if f.is_dir()]
+        
+        # Show progress during scan
+        for i, folder in enumerate(folders, 1):
+            sys.stdout.write(f"\r[PRE-SCAN] Analyzing {i}/{len(folders)} folders...")
+            sys.stdout.flush()
+            
+            # Count videos, RARs, PAR2s
+            videos = list(folder.glob('*.mp4')) + list(folder.glob('*.avi')) + \
+                    list(folder.glob('*.mkv')) + list(folder.glob('*.mov'))
+            rars = list(folder.glob('*.rar')) + list(folder.glob('*.r[0-9][0-9]'))
+            par2s = list(folder.glob('*.par2'))
+            
+            if videos or rars:
+                # This is a video folder
+                plan.add_video_folder(folder, len(videos), len(rars), len(par2s))
+            else:
+                # This is a content folder (music, docs, etc.)
+                plan.add_content_folder(folder)
+        
+        # Check for loose video files
+        for ext in ['.mp4', '.avi', '.mkv', '.mov']:
+            for video in source_dir.glob(f'*{ext}'):
+                if video.is_file():
+                    plan.add_loose_video(video)
+        
+        sys.stdout.write("\r" + " "*80 + "\r")
+        
+        plan.calculate_time_estimate()
+        self.work_plan = plan
+        return plan
+    
+    def process_folder(self, folder: Path, destination_dir: Path, current: int, total: int) -> int:
+        """
+        Process a single folder.
+        
+        Args:
+            folder: Path to folder to process
+            destination_dir: Destination for video files
+            current: Current folder number
+            total: Total folders to process
+            
+        Returns:
+            Number of videos successfully moved
+        """
+        moved_count = 0
+        
+        # Update progress header
+        self._update_progress(current, total, f"Processing: {folder.name[:40]}")
+        
+        # Process RAR files first
+        rar_files = list(folder.glob('*.rar'))
+        if rar_files:
+            self._update_progress(current, total, f"Extracting RAR: {folder.name[:40]}")
+            if self.archive_processor.process_rar_files(folder):
+                self.stats['rars_extracted'] += 1
+            rar_error = False
+        else:
+            rar_error = False
+        
+        # Process PAR2 files
+        par2_files = list(folder.glob('*.par2'))
+        if par2_files:
+            self._update_progress(current, total, f"Repairing PAR2: {folder.name[:40]}")
+            if self.archive_processor.process_par2_files(folder):
+                self.stats['par2s_repaired'] += 1
+            par2_error = False
+        else:
+            par2_error = False
+        
+        # Process subfolders
+        for subfolder in folder.iterdir():
+            if subfolder.is_dir():
+                self._process_subfolder(subfolder, destination_dir)
+        
+        # Process video files
+        video_files = self.file_handler.find_video_files(folder)
+        
+        for video_file in video_files:
+            self._update_progress(current, total, f"Checking video: {video_file.name[:35]}")
+            
+            if self.video_processor.check_video_health(video_file):
+                if self.file_handler.move_file(video_file, destination_dir):
+                    moved_count += 1
+                    self.stats['videos_moved'] += 1
+            else:
+                # Delete corrupt video
+                self.stats['videos_failed'] += 1
+                if self.file_handler.wait_for_file_release(str(video_file)):
+                    self.file_handler.delete_video_file_with_retry(video_file)
+        
+        # Clean up folder if possible
+        if self.file_handler.is_folder_empty_or_removable(folder, par2_error, rar_error):
+            self.file_handler.safe_delete_folder(folder)
+            self.stats['folders_deleted'] += 1
+        
+        self.stats['folders_processed'] += 1
+        return moved_count
+    
+    def _update_progress(self, current: int, total: int, action: str):
+        """
+        Update progress display.
+        
+        Args:
+            current: Current item number
+            total: Total items
+            action: Current action description
+        """
+        # Calculate percentage and ETA
+        percent = int((current / total) * 100)
+        
+        if self.start_time:
+            elapsed = time.time() - self.start_time
+            if current > 0:
+                avg_time = elapsed / current
+                remaining = (total - current) * avg_time
+                eta = str(timedelta(seconds=int(remaining))).split('.')[0]
+            else:
+                eta = "calculating..."
+        else:
+            eta = "calculating..."
+        
+        # Progress bar
+        bar_length = 30
+        filled = int(bar_length * current / total)
+        bar = '█' * filled + '░' * (bar_length - filled)
+        
+        # Clear line and print
+        sys.stdout.write('\r' + ' '*100 + '\r')
+        progress_line = (f"{Fore.CYAN}[{bar}] {percent}%{Style.RESET_ALL} | "
+                        f"{Fore.YELLOW}{current}/{total}{Style.RESET_ALL} | "
+                        f"ETA: {Fore.GREEN}{eta}{Style.RESET_ALL} | "
+                        f"{action[:40]}")
+        sys.stdout.write(progress_line)
+        sys.stdout.flush()
+    
+    def _process_subfolder(self, subfolder: Path, destination_dir: Path):
+        """
+        Recursively process subfolder.
+        
+        Args:
+            subfolder: Path to subfolder
+            destination_dir: Destination for video files
+        """
+        # Safety: prevent infinite recursion
+        if not self.recursion_guard.enter():
+            logging.error(f"[SAFETY] Max recursion depth reached at {subfolder}")
+            self.stats['safety_stops'] += 1
+            return
+        
+        try:
+            for sub in subfolder.iterdir():
+                if sub.is_dir():
+                    self._process_subfolder(sub, destination_dir)
+            
+            # Check if subfolder can be deleted
+            if self.file_handler.is_folder_empty_or_removable(subfolder, False, False):
+                self.file_handler.safe_delete_folder(subfolder)
+        finally:
+            self.recursion_guard.exit()
+    
+    def run(self, source_dir: Path, destination_dir: Path):
+        """
+        Run the main processing loop.
+        
+        Args:
+            source_dir: Source directory to process
+            destination_dir: Destination for video files
+        """
+        # Get video folders from work plan
+        if not self.work_plan:
+            print(Fore.RED + "No work plan available. Run scan_and_plan() first." + Style.RESET_ALL)
+            return
+            
+        video_folders = [item['path'] for item in self.work_plan.video_folders]
+        
+        if not video_folders:
+            print(Fore.YELLOW + "No video folders found to process." + Style.RESET_ALL)
+            return
+        
+        self.start_time = time.time()
+        total = len(video_folders)
+        
+        # Safety: loop guard for folder processing
+        loop_guard = LoopSafety(SafetyLimits.MAX_VIDEOS_PER_FOLDER * 2, "Folder processing loop")
+        
+        try:
+            for i, folder in enumerate(video_folders, 1):
+                # Safety checks
+                if not loop_guard.tick():
+                    logging.error("[SAFETY] Folder processing loop exceeded safety limit")
+                    self.stats['safety_stops'] += 1
+                    break
+                
+                if not GLOBAL_RUNTIME_LIMIT.check():
+                    logging.error("[SAFETY] Global runtime limit exceeded - stopping")
+                    self.stats['safety_stops'] += 1
+                    break
+                
+                if not self.stuck_detector.check():
+                    logging.error("[SAFETY] Process appears stuck - stopping")
+                    self.stats['safety_stops'] += 1
+                    break
+                
+                # Process folder
+                self.process_folder(folder, destination_dir, i, total)
+                
+                # Mark progress for stuck detection
+                self.stuck_detector.mark_progress()
+        
+        finally:
+            # Clear progress line
+            sys.stdout.write('\r' + ' '*100 + '\r')
+            sys.stdout.flush()
+    
+    def display_summary(self):
+        """Display processing summary."""
+        elapsed = time.time() - self.start_time if self.start_time else 0
+        elapsed_str = str(timedelta(seconds=int(elapsed))).split('.')[0]
+        
+        summary = (f"\n[DONE] Time: {Fore.CYAN}{elapsed_str}{Style.RESET_ALL} | "
+              f"Folders: {Fore.GREEN}{self.stats['folders_processed']}{Style.RESET_ALL} processed, "
+              f"{Fore.YELLOW}{self.stats['folders_deleted']}{Style.RESET_ALL} deleted | "
+              f"Videos: {Fore.GREEN}{self.stats['videos_moved']}{Style.RESET_ALL} moved")
+        
+        if self.stats['videos_failed'] > 0:
+            summary += f", {Fore.RED}{self.stats['videos_failed']}{Style.RESET_ALL} failed"
+        if self.stats['rars_extracted'] > 0:
+            summary += f" | RARs: {self.stats['rars_extracted']}"
+        if self.stats['par2s_repaired'] > 0:
+            summary += f" | PAR2s: {self.stats['par2s_repaired']}"
+        if self.stats['safety_stops'] > 0:
+            summary += f" | {Fore.RED}SAFETY STOPS: {self.stats['safety_stops']}{Style.RESET_ALL}"
+        
+        print(summary)
+
+
+def clean_path(path_str: str) -> str:
     """
-    Logs detailed error information for a CalledProcessError exception.
+    Clean path string by removing quotes and extra whitespace.
+    
+    Args:
+        path_str: Raw path string
+        
+    Returns:
+        Cleaned path string
     """
-    logging.error(f"{process_name} failed with return code {error.returncode}")
-    logging.error(f"Command: {error.cmd}")
-    if error.output:
-        logging.error(f"Output:\n{error.output}")
-    logging.error("Traceback:\n" + traceback.format_exc())
+    cleaned = path_str.strip()
+    # Remove surrounding quotes (single or double)
+    if (cleaned.startswith('"') and cleaned.endswith('"')) or \
+       (cleaned.startswith("'") and cleaned.endswith("'")):
+        cleaned = cleaned[1:-1]
+    return cleaned.strip()
+
 
 def get_user_input(prompt: str) -> Path:
     """
-    Prompts the user for a directory path and returns a Path object.
-    Ensures that the provided path is a valid directory.
+    Prompt user for directory path with validation.
+    
+    Args:
+        prompt: Prompt message
+        
+    Returns:
+        Valid directory path
     """
     while True:
         user_input = input(prompt).strip()
-        if os.path.isdir(user_input):
-            return Path(user_input)
+        cleaned = clean_path(user_input)
+        path = Path(cleaned)
+        
+        if path.is_dir():
+            return path
         else:
-            print("Invalid path. Please enter a valid directory path.")
+            print(Fore.RED + f"Invalid path. Please enter a valid directory path." + Style.RESET_ALL)
+            if user_input != cleaned:
+                print(Fore.YELLOW + f"Tip: Path was cleaned to: {cleaned}" + Style.RESET_ALL)
 
-def confirm_action() -> bool:
+
+def countdown_prompt(seconds: int = 10) -> bool:
     """
-    Asks the user for confirmation to proceed with the action.
-    Ensures that the user is aware that this process will manipulate files and folders.
-    """
-    prompt = (
-        "WARNING: This process will search the specified directory for video, PAR2, and RAR files. "
-        "It will move video files to a destination folder, repair files using PAR2, extract RAR archives, "
-        "and delete folders that have been processed. This action cannot be undone. "
-        "Type 'y' or 'yes' to confirm and proceed, or any other key to cancel: "
-    )
-    confirmation = input(prompt).strip().lower()
-    return confirmation in ['y', 'yes']
-
-def count_all_files(folder: Path) -> int:
-    """
-    Counts all files in the given folder.
-    """
-    return len([file for file in folder.rglob('*') if file.is_file()])
-
-def find_video_files(folder: Path) -> list:
-    """
-    Recursively finds video files in the given folder.
-    Returns a list of paths to video files.
-    """
-    video_files = [file for file in folder.rglob('*') if file.suffix.lower() in VIDEO_EXTENSIONS]
-    return video_files
-
-def contains_non_video_files(folder: Path) -> bool:
-    """
-    Checks if the folder contains files other than the specified video files.
-    """
-    all_files = [file for file in folder.rglob('*') if file.is_file()]
-    non_video_files = [file for file in all_files if file.suffix.lower() not in VIDEO_EXTENSIONS]
-    return len(non_video_files) > 0
-
-def contains_unwanted_files(folder: Path) -> bool:
-    """
-    Checks if the folder contains files other than allowed ones (video, archives, and common auxiliary files).
-    """
-    removable_extensions = ['.sfv', '.nfo', '.srr', '.srs', '.url', '.db', '.nzb', '.txt', '.xml', '.dat', '.exe', '.htm', '.log']
-    for file in folder.rglob('*'):
-        if not file.is_file():
-            continue
-        suffix = file.suffix.lower()
-        if (
-            suffix in VIDEO_EXTENSIONS or
-            suffix == '.par2' or
-            suffix == '.rar' or
-            (suffix.startswith('.r') and len(suffix) == 4 and suffix[2:].isdigit()) or
-            suffix in removable_extensions or
-            suffix == '.jpg'
-        ):
-            continue
-        return True
-    return False
-
-def process_par2_files(folder: Path) -> bool:
-    try:
-        par2_files = sorted(folder.glob('*.par2'))
-        if not par2_files:
-            return True
-        for par2_file in par2_files:
-            result = subprocess.run(
-                ['par2', 'r', str(par2_file)],
-                capture_output=True,
-                text=True,
-                encoding='utf-8'
-            )
-            if result.returncode != 0:
-                logging.error(
-                    f"PAR2 processing error for {par2_file}:\nStdout: {result.stdout}\nStderr: {result.stderr}"
-                )
-        # Delete PAR2 files irrespective of the result
-        delete_files_by_extension(folder, '.par2')
-        return True
-    except Exception as e:
-        logging.error(f"Unexpected error during PAR2 processing for {folder}: {e}")
-        return False
-
-def delete_files_by_extension(folder: Path, extension: str):
-    for file in folder.glob('*' + extension):
-        try:
-            file.unlink()
-            logging.info(f"Deleted file: {file}")
-        except Exception as e:
-            logging.error(f"Failed to delete file {file}: {e}")
-
-def process_rar_files(folder: Path) -> bool:
-    try:
-        rar_candidates = []
-        for file in folder.glob('*.rar'):
-            name = file.name.lower()
-            # Pick only .part1.rar entries or plain .rar that is not partN
-            if re.search(r'\.part0*1\.rar$', name):
-                rar_candidates.append(file)
-            elif not re.search(r'\.part\d+\.rar$', name):
-                rar_candidates.append(file)
-        for archive in rar_candidates:
-            result = subprocess.run(
-                ['7z', 'x', str(archive), f'-o{folder}', '-aoa'],
-                capture_output=True,
-                text=True,
-                encoding='utf-8'
-            )
-            if result.returncode != 0:
-                logging.error(
-                    f"RAR extraction error for {archive}:\nStdout: {result.stdout}\nStderr: {result.stderr}"
-                )
-        # Cleanup typical multi-part volumes after attempt
-        delete_files_by_extension(folder, '.rar')
-        for ext in [f'.r{str(i).zfill(2)}' for i in range(100)]:
-            delete_files_by_extension(folder, ext)
-        return True
-    except Exception as e:
-        logging.error(f"Unexpected error during RAR extraction for {folder}: {e}")
-        return False
-
-def wait_for_file_release(file_path, max_attempts=10, delay=1):
-    for attempt in range(max_attempts):
-        is_locked = False
-        for proc in psutil.process_iter(attrs=['pid', 'name']):
-            try:
-                if file_path in (f.path for f in proc.open_files()):
-                    is_locked = True
-                    break
-            except (psutil.AccessDenied, psutil.NoSuchProcess):
-                continue  # Ignore processes that cannot be accessed
-
-        if not is_locked:
-            return True
-
-        time.sleep(delay)  # Wait before retrying
-
-    return False
-
-def safe_delete_folder(folder: Path):
-    """
-    Attempts to safely delete a folder, handling any exceptions.
+    Display countdown before starting.
+    
+    Args:
+        seconds: Countdown duration
+        
+    Returns:
+        True if user didn't cancel, False if cancelled
     """
     try:
-        shutil.rmtree(folder)
-        logging.info(f"Successfully deleted folder {folder}")
-    except Exception as e:
-        logging.error(f"Failed to delete folder {folder} on first attempt: {e}")
-        time.sleep(5)  # Wait for a short period before trying again
-        try:
-            shutil.rmtree(folder)
-            logging.info(f"Successfully deleted folder {folder} on second attempt")
-        except Exception as e:
-            logging.error(f"Repeated error deleting folder {folder}: {e}")
-
-def check_video_health(video_file: Path) -> bool:
-    # Check if file size is 0 (0 KB)
-    if video_file.stat().st_size == 0:
-        logging.error(f"0 KB file detected and will be deleted: {video_file}")
-        try:
-            video_file.unlink()  # Delete the 0 KB file
-            logging.info(f"Successfully deleted 0 KB file: {video_file}")
-        except Exception as e:
-            logging.error(f"Error deleting 0 KB file {video_file}: {e}")
-        return False
-
-    try:
-        # Create a temporary file
-        with tempfile.TemporaryFile(mode='w+') as temp_output:
-            result = subprocess.run(['ffmpeg', '-v', 'error', '-i', str(video_file), '-f', 'null', '-'],
-                                    stdout=temp_output, stderr=temp_output, text=True)
-
-            # Check if ffmpeg found errors
-            temp_output.seek(0)  # Go to the start of the file to read content
-            output = temp_output.read()
-            if result.returncode != 0:
-                logging.error(f"Corrupt video file detected: {video_file}\n{output}")
-                return False
-            return True
-    except FileNotFoundError:
-        logging.warning("FFMPEG is not installed. Skipping health check.")
-        return True
-    except Exception as e:
-        logging.error(f"Error during FFMPEG health check: {e}")
-        return False
-
-def is_file_in_use(file_path: Path) -> bool:
-    """
-    Checks if the file is currently in use by any process.
-    """
-    for proc in psutil.process_iter():
-        try:
-            for item in proc.open_files():
-                if file_path == Path(item.path):
-                    return True
-        except Exception:
-            continue
-    return False
-
-def delete_video_file_with_retry(file_path: Path, max_attempts: int = 5, retry_delay_seconds: int = 1) -> bool:
-    for attempt in range(max_attempts):
-        terminate_related_processes(str(file_path))
-        try:
-            # Wait before retrying deletion
-            if attempt > 0:
-                time.sleep(retry_delay_seconds)
-
-            file_path.unlink(missing_ok=True)
-            logging.info(f"Successfully deleted video file: {file_path}")
-            return True
-        except Exception as e:
-            logging.error(f"Attempt {attempt + 1} - Error deleting video file {file_path}: {e}")
-
-    logging.error(f"Failed to delete video file {file_path} after {max_attempts} attempts.")
-    return False
-
-def update_progress_bar(pbar, description):
-    """
-    Updates the progress bar with a custom description.
-    """
-    pbar.set_description(description)
-    pbar.refresh()  # Refresh the progress bar to show the updated description immediately
-
-def is_folder_empty_or_removable(folder: Path, par2_error: bool, rar_error: bool) -> bool:
-    """
-    Checks if the folder is empty or contains only files that can be removed.
-    This includes checking for errors in PAR2 and RAR processing.
-    """
-    removable_extensions = ['.sfv', '.nfo', '.sfv', '.srr', '.srs', '.url', '.db', '.nzb', '.txt', '.xml', '.dat', '.exe', '.htm', '.log']
-    jpg_count = 0
-
-    for file in folder.iterdir():
-        if file.is_dir():
-            logging.info(f"Folder '{folder}' not deleted: contains subdirectory '{file.name}'")
-            return False
-
-        file_ext = file.suffix.lower()
-        if file_ext == '.jpg':
-            jpg_count += 1
-            if jpg_count > 1:
-                logging.info(f"Folder '{folder}' not deleted: contains more than one JPG file '{file.name}'")
-                return False
-        elif file_ext in removable_extensions or (file_ext.startswith('.r') and file_ext[2:].isdigit()):
-            continue
-        elif (file_ext == '.par2' and par2_error) or (file_ext == '.rar' and rar_error):
-            continue  # Treat PAR2 or RAR files as removable if there were processing errors
-        else:
-            logging.info(f"Folder '{folder}' not deleted: contains non-removable file '{file.name}'")
-            return False
-
-    # If a PAR2 or RAR error occurred and only removable files are present, the folder can be deleted
-    return True if jpg_count <= 1 else False
-
-def is_shortcut(file: Path) -> bool:
-    """
-    Checks if a file is a shortcut (e.g., .lnk in Windows).
-    """
-    return file.suffix.lower() in ['.lnk', '.url']  # Add other shortcut types if needed
-
-def terminate_related_processes(file_name, allowed_processes=None):
-    """
-    Terminates processes that might be using the file.
-    """
-    if allowed_processes is None:
-        allowed_processes = ['ffmpeg', '7z']
-    for process in psutil.process_iter():
-        try:
-            process_info = process.as_dict(attrs=['pid', 'name'])
-            if process_info['name'] in allowed_processes and file_name in process.cmdline():
-                process.terminate()
-                logging.info(f"Terminated process {process_info['name']} (PID: {process_info['pid']}) that was using file {file_name}")
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-            pass
-
-def process_subfolder(subfolder: Path, destination_dir: Path, pbar):
-    """
-    Recursive function to process each subfolder.
-    """
-    # First, handle archives and repairs within this subfolder
-    rar_error = not process_rar_files(subfolder)
-    par2_error = False
-    if any(file.suffix.lower() == '.par2' for file in subfolder.iterdir() if file.is_file()):
-        update_progress_bar(pbar, f"Repairing PAR2 files in {subfolder.name}")
-        par2_error = not process_par2_files(subfolder)
-
-    for sub in subfolder.iterdir():
-        if sub.is_dir():
-            process_subfolder(sub, destination_dir, pbar)  # Recursive call for deeper subfolders
-        else:
-            process_file(sub, destination_dir, pbar)
-
-    # Check if the subfolder can be deleted after processing its contents
-    if is_folder_empty_or_removable(subfolder, par2_error, rar_error):
-        safe_delete_folder(subfolder)
-        logging.info(f"Deleted subfolder after processing: {subfolder}")
-
-def process_file(file: Path, destination_dir: Path, pbar):
-    """
-    Processes individual files within folders and subfolders.
-    """
-    if file.suffix.lower() in VIDEO_EXTENSIONS:
-        if check_video_health(file):
-            try:
-                destination_file = destination_dir / file.name
-                shutil.move(str(file), str(destination_file))
-                logging.info(f"Video file verified and moved: {destination_file}")
-            except Exception as e:
-                logging.error(f"Error moving file {file}: {e}")
-        else:
-            try:
-                file.unlink(missing_ok=True)
-                logging.error(f"Corrupt video file detected and deleted: {file}")
-            except Exception as e:
-                logging.error(f"Error deleting corrupt video file {file}: {e}")
-    elif file.suffix.lower() in ['.jpg'] and len(list(file.parent.glob('*.jpg'))) == 1:  # Single JPG file in folder
-        try:
-            file.unlink(missing_ok=True)
-            logging.info(f"Deleted single JPG file: {file}")
-        except Exception as e:
-            logging.error(f"Error deleting JPG file {file}: {e}")
-
-def process_folder(folder: Path, destination_dir: Path, pbar):
-    """
-    Processes the given folder for video, PAR2, and RAR files.
-    Moves video files to a specified destination and cleans up the folder.
-    Performs a health check on video files using FFMPEG.
-    """
-    update_progress_bar(pbar, f"Starting processing for {folder.name}")
-
-    # Process RAR files first
-    rar_error = not process_rar_files(folder)
-
-    # Process PAR2 files regardless of RAR extraction outcome
-    par2_error = False
-    if any(file.suffix.lower() == '.par2' for file in folder.iterdir() if file.is_file()):
-        update_progress_bar(pbar, f"Repairing PAR2 files in {folder.name}")
-        par2_error = not process_par2_files(folder)
-
-    # Process each subfolder
-    for subfolder in folder.iterdir():
-        if subfolder.is_dir():
-            process_subfolder(subfolder, destination_dir, pbar)
-
-    # Retrieve all video files after RAR and PAR2 processing
-    all_video_files = find_video_files(folder)
-
-    # Process all video files (including newly extracted ones)
-    for video_file in all_video_files:
-        update_progress_bar(pbar, f"Checking health of video file {video_file.name}")
-        if check_video_health(video_file):
-            try:
-                destination_file = destination_dir / video_file.name
-                shutil.move(str(video_file), str(destination_file))
-                logging.info(f"Video file verified and moved: {destination_file}")
-            except Exception as e:
-                logging.error(f"Error moving file {video_file}: {e}")
-        else:
-            # Before attempting to delete the file, wait for it to be released
-            if wait_for_file_release(str(video_file)):
-                delete_video_file_with_retry(video_file)
-            else:
-                logging.error(f"Timeout waiting for file release: {video_file}")
-
-    # Final folder check
-    update_progress_bar(pbar, f"Finalizing folder {folder.name}")
-    if is_folder_empty_or_removable(folder, par2_error, rar_error):
-        safe_delete_folder(folder)
-        logging.info(f"Deleted folder after processing: {folder}")
-    else:
-        logging.info(f"Folder not deleted: {folder} (contains non-removable files or not empty)")
-
-    update_progress_bar(pbar, f"Finished processing {folder.name}")
-
-def main():
-    print(Fore.YELLOW + ascii_art + Style.RESET_ALL)
-
-    parser = argparse.ArgumentParser(description="Automated video file processing script.")
-    parser.add_argument('--source', help='Path to the source downloads directory.', required=False)
-    parser.add_argument('--destination', help='Path to the destination directory.', required=False)
-    args = parser.parse_args()
-
-    if args.source and args.destination:
-        download_dir = Path(args.source)
-        destination_dir = Path(args.destination)
-        if not download_dir.is_dir() or not destination_dir.is_dir():
-            print(Fore.RED + "Invalid source or destination path. Please enter valid directory paths." + Style.RESET_ALL)
-            sys.exit(1)
-    else:
-        print(Style.BRIGHT + Fore.YELLOW + "This script requires 'par2cmdline' (par2.exe) in the script directory and 7-Zip installed and available in PATH." + Style.RESET_ALL)
-        download_dir = get_user_input("Enter the path to your downloads directory: ")
-        destination_dir = get_user_input("Enter the path to your destination directory: ")
-
-    # Baseline count of videos in destination to compute how many we move
-    dest_video_count_before = len([f for f in destination_dir.glob('*') if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS])
-
-    print(Style.BRIGHT + Fore.RED + "IMPORTANT WARNING:" + Style.RESET_ALL)
-    print(f"The process will scan the directory: {Fore.CYAN}{download_dir}{Style.RESET_ALL}")
-    print(f"Video files will be moved to the destination directory: {Fore.CYAN}{destination_dir}{Style.RESET_ALL}")
-    print("Actions to be performed:")
-    print(Fore.YELLOW + " - Scan for videos, check their health with ffmpeg." + Style.RESET_ALL)
-    print(Fore.YELLOW + " - Scan for PAR2 and RAR files." + Style.RESET_ALL)
-    print(Fore.YELLOW + " - Move healthy video files to: " + str(destination_dir) + Style.RESET_ALL)
-    print(Fore.YELLOW + " - Repair files using PAR2 and extract RAR archives." + Style.RESET_ALL)
-    print(Fore.YELLOW + " - Delete folders that have been processed." + Style.RESET_ALL)
-    print("This action is irreversible and may lead to data loss. Ensure you have backups if necessary.")
-    print("All actions will be logged to: " + str(LOG_FILE))
-    print("\nProcessing will automatically start in 10 seconds. To cancel, press Ctrl+C now.")
-
-    try:
-        for i in range(10, 0, -1):
-            sys.stdout.write(f"\r{Fore.GREEN}Starting in {i} seconds... (Press Ctrl+C to cancel) {Style.RESET_ALL}")
+        for i in range(seconds, 0, -1):
+            sys.stdout.write(f"\r{Fore.GREEN}Starting in {i} seconds... "
+                           f"(Press Ctrl+C to cancel) {Style.RESET_ALL}")
             sys.stdout.flush()
             time.sleep(1)
         sys.stdout.write("\r" + " " * 60 + "\r")
+        return True
     except KeyboardInterrupt:
-        print(Fore.RED + "\nOperation cancelled by user." + Style.RESET_ALL)
+        print(Fore.RED + "\n\nOperation cancelled by user." + Style.RESET_ALL)
+        return False
+
+
+def main():
+    """Main entry point with defensive error handling."""
+    init()  # Initialize colorama
+    
+    print(Fore.YELLOW + ASCII_ART + Style.RESET_ALL)
+    
+    try:
+        # Parse arguments
+        parser = argparse.ArgumentParser(
+            description="Automated video file processing and cleanup tool.")
+        parser.add_argument('--source', help='Path to source downloads directory', required=False)
+        parser.add_argument('--destination', help='Path to destination directory', required=False)
+        parser.add_argument('--config', help='Path to config.json file', required=False)
+        args = parser.parse_args()
+        
+        # Load configuration defensively
+        config_path = Path(args.config) if args.config else Path('config_files/config.json')
+        
+        try:
+            config = Config(config_path if config_path.exists() else None)
+        except Exception as e:
+            print(Fore.RED + f"Error loading config: {e}" + Style.RESET_ALL)
+            logging.error(f"Config load failed: {e}", exc_info=True)
+            sys.exit(1)
+        
+        # Set up logging
+        try:
+            log_file = setup_logging(config.log_folder, config.max_log_files)
+            logging.info("="*70)
+            logging.info("Unpackr started")
+            logging.info(f"Log file: {log_file}")
+        except Exception as e:
+            print(Fore.RED + f"Error setting up logging: {e}" + Style.RESET_ALL)
+            sys.exit(1)
+        
+        # Get and validate source and destination paths
+        if args.source and args.destination:
+            # Clean and validate paths defensively
+            try:
+                source_str = clean_path(args.source)
+                dest_str = clean_path(args.destination)
+                
+                source_dir = InputValidator.validate_path(source_str, must_exist=True, must_be_dir=True)
+                destination_dir = InputValidator.validate_path(dest_str, must_exist=True, must_be_dir=True)
+                
+            except ValidationError as e:
+                print(Fore.RED + f"Path validation failed: {e}" + Style.RESET_ALL)
+                logging.error(f"Path validation: {e}")
+                sys.exit(1)
+                
+        else:
+            # Interactive mode - get paths from user
+            print(Style.BRIGHT + Fore.YELLOW + 
+                  "This script requires par2cmdline and 7-Zip installed and available in PATH." + 
+                  Style.RESET_ALL)
+            print(Fore.CYAN + "\nEnter paths with or without quotes." + Style.RESET_ALL)
+            source_dir = get_user_input("\nEnter the path to your downloads directory: ")
+            destination_dir = get_user_input("Enter the path to your destination directory: ")
+        
+        # Defensive: Additional checks on paths
+        if not StateValidator.check_dir_writable(destination_dir):
+            print(Fore.RED + f"Destination directory is not writable: {destination_dir}" + Style.RESET_ALL)
+            logging.error(f"Destination not writable: {destination_dir}")
+            sys.exit(1)
+        
+        if not StateValidator.check_disk_space(destination_dir, required_mb=1000):
+            print(Fore.YELLOW + f"Warning: Low disk space in destination directory" + Style.RESET_ALL)
+            logging.warning("Low disk space warning")
+    
+        # Check system requirements
+        print(f"[TOOLS] Checking requirements...", end=" ")
+        tools_status = SystemCheck.check_all_tools()
+        if not SystemCheck.display_tool_status(tools_status):
+            logging.error("Required tools missing")
+            sys.exit(1)
+        
+        # Create app and scan first
+        try:
+            app = UnpackrApp(config)
+        except Exception as e:
+            print(Fore.RED + f"Error initializing application: {e}" + Style.RESET_ALL)
+            logging.error(f"App init failed: {e}", exc_info=True)
+            logging.error(f"App init failed: {e}", exc_info=True)
+            sys.exit(1)
+        
+        # Scan and plan
+        try:
+            work_plan = app.scan_and_plan(source_dir)
+        except Exception as e:
+            print(Fore.RED + f"Error during scan: {e}" + Style.RESET_ALL)
+            logging.error(f"Scan failed: {e}", exc_info=True)
+            sys.exit(1)
+        
+        # Display work plan (compact single line)
+        work_plan.display()
+        
+        # Display confirmation (compact)
+        print(f"[INFO] Source: {Fore.CYAN}{source_dir}{Style.RESET_ALL} -> Dest: {Fore.CYAN}{destination_dir}{Style.RESET_ALL}")
+        print(f"[WARN] {Fore.RED}Processed folders will be DELETED{Style.RESET_ALL} | Log: {log_file.name}")
+        
+        if not countdown_prompt(10):
+            logging.info("User cancelled operation")
+            sys.exit(0)
+        
+        # Run the application
+        print()  # Blank line before progress
+        try:
+            app.run(source_dir, destination_dir)
+            app.display_summary()
+            logging.info("Unpackr completed successfully")
+        except Exception as e:
+            print(Fore.RED + f"\nFatal error during processing: {e}" + Style.RESET_ALL)
+            logging.error(f"Processing failed: {e}", exc_info=True)
+            app.display_summary()  # Show what we accomplished
+            sys.exit(1)
+    
+    except KeyboardInterrupt:
+        print(Fore.YELLOW + "\n\nOperation interrupted by user" + Style.RESET_ALL)
+        logging.info("User interrupted operation")
+        sys.exit(0)
+    except Exception as e:
+        print(Fore.RED + f"\nUnexpected error: {e}" + Style.RESET_ALL)
+        logging.error(f"Unexpected error: {e}", exc_info=True)
         sys.exit(1)
 
-    print(Fore.GREEN + "\nProcessing..." + Style.RESET_ALL)
-
-    entries = list(download_dir.iterdir())
-    folders = [entry for entry in entries if entry.is_dir()]
-    root_files = [entry for entry in entries if entry.is_file()]
-    total_folders_deleted = 0
-    blank_folders = 0
-    folders_with_non_video_files = 0
-    folders_with_unwanted_files = 0
-
-    with tqdm(total=len(folders), unit="folder") as pbar:
-        # First, process root-level archives and PAR2 files
-        update_progress_bar(pbar, f"Processing root-level archives in {download_dir.name}")
-        _rar_error_root = not process_rar_files(download_dir)
-        _par2_error_root = not process_par2_files(download_dir)
-
-        # Then process files directly under the source directory
-        for root_file in root_files:
-            update_progress_bar(pbar, f"Processing root file {root_file.name}")
-            process_file(root_file, destination_dir, pbar)
-
-        for folder in folders:
-            video_files_before = len(find_video_files(folder))
-            if video_files_before == 0:
-                blank_folders += 1
-
-            if contains_unwanted_files(folder):
-                folders_with_unwanted_files += 1
-
-            process_folder(folder, destination_dir, pbar)
-
-            if folder.exists() and contains_non_video_files(folder):
-                folders_with_non_video_files += 1
-
-            if not folder.exists():
-                total_folders_deleted += 1
-
-            pbar.update(1)
-
-    # Compute moved count by destination delta
-    dest_video_count_after = len([f for f in destination_dir.glob('*') if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS])
-    total_video_files_moved = max(0, dest_video_count_after - dest_video_count_before)
-
-    print(Fore.GREEN + "\nProcessing complete." + Style.RESET_ALL)
-    print(f"Total folders processed: {len(folders)}")
-    print(f"Total video files moved: {total_video_files_moved}")
-    print(f"Total folders deleted: {total_folders_deleted}")
-    print(f"Blank folders: {blank_folders}")
-    print(f"Folders with non-video files: {folders_with_non_video_files}")
-    print(f"Folders with unwanted files: {folders_with_unwanted_files}")
 
 if __name__ == '__main__':
     main()

@@ -1,0 +1,15 @@
+{
+    "video_extensions": [".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".mpg", ".mpeg", ".m4v", ".3gp", ".webm"],
+    "music_extensions": [".mp3", ".flac", ".wav", ".aac", ".m4a", ".ogg", ".wma"],
+    "image_extensions": [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp", ".raw", ".cr2", ".nef"],
+    "document_extensions": [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".rtf", ".odt"],
+    "ebook_extensions": [".epub", ".mobi", ".azw", ".azw3", ".pdf"],
+    "archive_extensions": [".zip", ".7z", ".rar"],
+    "removable_extensions": [".sfv", ".nfo", ".srr", ".srs", ".url", ".db", ".nzb", ".txt", ".xml", ".dat", ".exe", ".htm", ".log"],
+    "min_music_files": 3,
+    "min_image_files": 5,
+    "min_documents": 1,
+    "min_sample_size_mb": 50,
+    "max_log_files": 5,
+    "log_folder": "logs"
+}

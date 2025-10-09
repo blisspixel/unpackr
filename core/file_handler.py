@@ -1,0 +1,317 @@
+"""
+File handling operations for Unpackr.
+Manages file operations, folder cleanup, and content classification.
+"""
+
+import os
+import shutil
+import logging
+import time
+import psutil
+from pathlib import Path
+from typing import List, Tuple, Optional
+import sys
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from utils.defensive import InputValidator, StateValidator, ErrorRecovery, ValidationError
+
+
+class FileHandler:
+    """Handles file and folder operations."""
+    
+    def __init__(self, config):
+        """
+        Initialize the file handler.
+        
+        Args:
+            config: Config instance with file extensions and settings
+        """
+        # Defensive: validate config
+        if config is None:
+            raise ValidationError("Config cannot be None")
+        
+        self.config = config
+        
+        # Defensive: verify config has required attributes
+        required_attrs = ['video_extensions', 'removable_extensions']
+        for attr in required_attrs:
+            if not hasattr(config, attr):
+                raise ValidationError(f"Config missing required attribute: {attr}")
+    
+    def find_video_files(self, folder: Path) -> List[Path]:
+        """
+        Recursively find video files in the given folder.
+        
+        Args:
+            folder: Path to search
+            
+        Returns:
+            List of paths to video files (empty list if error)
+        """
+        # Defensive: validate inputs
+        try:
+            folder = InputValidator.validate_path(folder, must_exist=True, must_be_dir=True)
+        except ValidationError as e:
+            logging.error(f"Invalid folder path: {e}")
+            return []
+        
+        try:
+            video_extensions = self.config.video_extensions
+            
+            # Defensive: validate extensions list
+            if not video_extensions or not isinstance(video_extensions, list):
+                logging.error("Invalid video_extensions config")
+                return []
+            
+            # Defensive: check folder is accessible
+            if not StateValidator.check_file_accessible(folder / '.'):
+                logging.warning(f"Folder not accessible: {folder}")
+                return []
+            
+            return [f for f in folder.rglob('*') if f.suffix.lower() in video_extensions]
+            
+        except Exception as e:
+            logging.error(f"Error finding video files in {folder}: {e}")
+            return []
+    
+    def contains_non_video_files(self, folder: Path) -> bool:
+        """
+        Check if folder contains files other than video files.
+        
+        Args:
+            folder: Path to check
+            
+        Returns:
+            True if non-video files exist, False otherwise
+        """
+        all_files = [f for f in folder.rglob('*') if f.is_file()]
+        video_extensions = self.config.video_extensions
+        non_video_files = [f for f in all_files if f.suffix.lower() not in video_extensions]
+        return len(non_video_files) > 0
+    
+    def contains_unwanted_files(self, folder: Path) -> bool:
+        """
+        Check if folder contains files other than video, PAR2, or RAR files.
+        
+        Args:
+            folder: Path to check
+            
+        Returns:
+            True if unwanted files exist, False otherwise
+        """
+        video_extensions = self.config.video_extensions
+        
+        for file in folder.rglob('*'):
+            if file.is_file() and not (
+                file.suffix.lower() in video_extensions or
+                file.suffix.lower() == '.par2' or
+                file.suffix.lower() == '.rar'
+            ):
+                return True
+        return False
+    
+    def is_folder_empty_or_removable(self, folder: Path, par2_error: bool = False, 
+                                     rar_error: bool = False) -> bool:
+        """
+        Check if folder is empty or contains only removable files.
+        
+        Args:
+            folder: Path to check
+            par2_error: Whether PAR2 processing had errors
+            rar_error: Whether RAR processing had errors
+            
+        Returns:
+            True if folder can be safely deleted, False otherwise
+        """
+        removable_extensions = self.config.removable_extensions
+        jpg_count = 0
+        
+        for file in folder.iterdir():
+            if file.is_dir():
+                logging.info(f"Folder '{folder}' not deleted: contains subdirectory '{file.name}'")
+                return False
+            
+            file_ext = file.suffix.lower()
+            
+            if file_ext == '.jpg':
+                jpg_count += 1
+                if jpg_count > 1:
+                    logging.info(f"Folder '{folder}' not deleted: contains more than one JPG file")
+                    return False
+            elif file_ext in removable_extensions or (file_ext.startswith('.r') and file_ext[2:].isdigit()):
+                continue
+            elif (file_ext == '.par2' and par2_error) or (file_ext == '.rar' and rar_error):
+                continue  # Treat PAR2/RAR as removable if processing failed
+            else:
+                logging.info(f"Folder '{folder}' not deleted: contains non-removable file '{file.name}'")
+                return False
+        
+        return jpg_count <= 1
+    
+    def safe_delete_folder(self, folder: Path, max_attempts: int = 2):
+        """
+        Safely delete a folder with retry logic.
+        
+        Args:
+            folder: Path to folder to delete
+            max_attempts: Maximum number of deletion attempts
+        """
+        for attempt in range(max_attempts):
+            try:
+                shutil.rmtree(folder)
+                logging.info(f"Successfully deleted folder {folder}")
+                return
+            except Exception as e:
+                logging.error(f"Failed to delete folder {folder} on attempt {attempt + 1}: {e}")
+                if attempt < max_attempts - 1:
+                    time.sleep(5)
+        
+        logging.error(f"Could not delete folder {folder} after {max_attempts} attempts")
+    
+    def move_file(self, source: Path, destination_dir: Path) -> bool:
+        """
+        Move a file to the destination directory.
+        
+        Args:
+            source: Path to source file
+            destination_dir: Path to destination directory
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        # Defensive: validate inputs
+        try:
+            source = InputValidator.validate_path(source, must_exist=True, must_be_file=True)
+            destination_dir = InputValidator.validate_path(destination_dir, must_exist=True, must_be_dir=True)
+        except ValidationError as e:
+            logging.error(f"Invalid path in move_file: {e}")
+            return False
+        
+        # Defensive: check source is accessible
+        if not StateValidator.check_file_accessible(source):
+            logging.error(f"Source file not accessible: {source}")
+            return False
+        
+        # Defensive: check destination is writable
+        if not StateValidator.check_dir_writable(destination_dir):
+            logging.error(f"Destination directory not writable: {destination_dir}")
+            return False
+        
+        # Defensive: check disk space
+        try:
+            file_size_mb = source.stat().st_size / (1024 * 1024)
+            if not StateValidator.check_disk_space(destination_dir, required_mb=int(file_size_mb * 1.1)):
+                logging.error(f"Insufficient disk space for {source.name}")
+                return False
+        except Exception as e:
+            logging.warning(f"Cannot check disk space: {e}")
+        
+        # Perform move with defensive error recovery
+        try:
+            destination_file = destination_dir / source.name
+            
+            # Defensive: check if destination already exists
+            if destination_file.exists():
+                logging.warning(f"Destination file already exists: {destination_file}")
+                # Create unique name
+                base = destination_file.stem
+                suffix = destination_file.suffix
+                counter = 1
+                while destination_file.exists():
+                    destination_file = destination_dir / f"{base}_{counter}{suffix}"
+                    counter += 1
+                logging.info(f"Using unique name: {destination_file.name}")
+            
+            # Use error recovery helper
+            if ErrorRecovery.safe_move(source, destination_file):
+                logging.info(f"Moved file: {source.name} -> {destination_file}")
+                return True
+            else:
+                logging.error(f"Failed to move file: {source}")
+                return False
+                
+        except Exception as e:
+            logging.error(f"Error moving file {source}: {e}", exc_info=True)
+            return False
+    
+    def delete_video_file_with_retry(self, video_file: Path, max_attempts: int = 5, 
+                                    retry_delay: int = 1) -> bool:
+        """
+        Delete a video file with retry logic.
+        
+        Args:
+            video_file: Path to video file
+            max_attempts: Maximum deletion attempts
+            retry_delay: Delay between attempts in seconds
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        for attempt in range(max_attempts):
+            self._terminate_related_processes(str(video_file))
+            
+            try:
+                if attempt > 0:
+                    time.sleep(retry_delay)
+                
+                video_file.unlink(missing_ok=True)
+                logging.info(f"Successfully deleted video file: {video_file}")
+                return True
+            except Exception as e:
+                logging.error(f"Attempt {attempt + 1} - Error deleting video file {video_file}: {e}")
+        
+        logging.error(f"Failed to delete video file {video_file} after {max_attempts} attempts")
+        return False
+    
+    def wait_for_file_release(self, file_path: str, max_attempts: int = 10, 
+                             delay: int = 1) -> bool:
+        """
+        Wait for a file to be released by other processes.
+        
+        Args:
+            file_path: Path to file as string
+            max_attempts: Maximum wait attempts
+            delay: Delay between checks in seconds
+            
+        Returns:
+            True if file is released, False if timeout
+        """
+        for attempt in range(max_attempts):
+            is_locked = False
+            
+            for proc in psutil.process_iter(attrs=['pid', 'name']):
+                try:
+                    if file_path in (f.path for f in proc.open_files()):
+                        is_locked = True
+                        break
+                except (psutil.AccessDenied, psutil.NoSuchProcess):
+                    continue
+            
+            if not is_locked:
+                return True
+            
+            time.sleep(delay)
+        
+        return False
+    
+    def _terminate_related_processes(self, file_name: str, 
+                                    allowed_processes: List[str] = None):
+        """
+        Terminate processes that might be using the file.
+        
+        Args:
+            file_name: Name of the file
+            allowed_processes: List of process names to terminate
+        """
+        if allowed_processes is None:
+            allowed_processes = ['ffmpeg', '7z']
+        
+        for process in psutil.process_iter():
+            try:
+                process_info = process.as_dict(attrs=['pid', 'name'])
+                if process_info['name'] in allowed_processes and file_name in process.cmdline():
+                    process.terminate()
+                    logging.info(f"Terminated process {process_info['name']} "
+                               f"(PID: {process_info['pid']}) using file {file_name}")
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                pass
