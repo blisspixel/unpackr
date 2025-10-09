@@ -4,6 +4,7 @@ Checks availability of required external tools.
 """
 
 import subprocess
+import os
 from typing import Dict
 from colorama import Fore, Style
 
@@ -32,8 +33,11 @@ class SystemCheck:
         }
     }
     
-    @staticmethod
-    def check_tool(tool_key: str) -> bool:
+    def __init__(self, config=None):
+        """Initialize SystemCheck with optional config containing tool paths."""
+        self.config = config or {}
+    
+    def check_tool(self, tool_key: str) -> bool:
         """
         Check if a specific tool is available.
         
@@ -43,13 +47,33 @@ class SystemCheck:
         Returns:
             True if tool is available, False otherwise
         """
-        tool_info = SystemCheck.REQUIRED_TOOLS.get(tool_key)
+        tool_info = self.REQUIRED_TOOLS.get(tool_key)
         if not tool_info:
             return False
         
+        # Get tool path from config if available
+        tool_paths = self.config.get('tool_paths', {})
+        custom_path = tool_paths.get(tool_key)
+        
+        if custom_path:
+            # Use custom path from config
+            if os.path.isfile(custom_path):
+                # Full path to executable
+                command = [custom_path]
+                if tool_key == 'ffmpeg':
+                    command.append('-version')
+            else:
+                # Command name (still try it)
+                command = [custom_path]
+                if tool_key == 'ffmpeg':
+                    command.append('-version')
+        else:
+            # Use default command
+            command = tool_info['command'][:]
+        
         try:
             subprocess.run(
-                tool_info['command'],
+                command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 timeout=2
@@ -58,8 +82,7 @@ class SystemCheck:
         except (FileNotFoundError, subprocess.TimeoutExpired):
             return False
     
-    @staticmethod
-    def check_all_tools() -> Dict[str, bool]:
+    def check_all_tools(self) -> Dict[str, bool]:
         """
         Check all required tools.
         
@@ -67,12 +90,11 @@ class SystemCheck:
             Dictionary mapping tool keys to availability status
         """
         results = {}
-        for tool_key in SystemCheck.REQUIRED_TOOLS:
-            results[tool_key] = SystemCheck.check_tool(tool_key)
+        for tool_key in self.REQUIRED_TOOLS:
+            results[tool_key] = self.check_tool(tool_key)
         return results
     
-    @staticmethod
-    def display_tool_status(tools_status: Dict[str, bool]) -> bool:
+    def display_tool_status(self, tools_status: Dict[str, bool]) -> bool:
         """
         Display status of all tools and check if we can proceed.
         
@@ -86,7 +108,7 @@ class SystemCheck:
         status_parts = []
         
         for tool_key, is_available in tools_status.items():
-            tool_info = SystemCheck.REQUIRED_TOOLS[tool_key]
+            tool_info = self.REQUIRED_TOOLS[tool_key]
             
             if is_available:
                 status_parts.append(f"{Fore.GREEN}{tool_info['name']}: OK{Style.RESET_ALL}")
@@ -101,5 +123,31 @@ class SystemCheck:
         
         if not can_proceed:
             print(Fore.RED + "ERROR: Critical tools missing! Cannot continue." + Style.RESET_ALL)
+            print(f"{Fore.YELLOW}TIP: Edit config_files/config.json and set correct paths in 'tool_paths' section{Style.RESET_ALL}")
         
         return can_proceed
+    
+    def get_tool_command(self, tool_key: str) -> list:
+        """
+        Get the command to run for a specific tool.
+        
+        Args:
+            tool_key: Key from REQUIRED_TOOLS dict
+            
+        Returns:
+            List of command parts to execute
+        """
+        tool_info = self.REQUIRED_TOOLS.get(tool_key)
+        if not tool_info:
+            return []
+        
+        # Get tool path from config if available
+        tool_paths = self.config.get('tool_paths', {})
+        custom_path = tool_paths.get(tool_key)
+        
+        if custom_path:
+            # Use custom path from config
+            return [custom_path]
+        else:
+            # Use default command (first part only, no arguments)
+            return [tool_info['command'][0]]

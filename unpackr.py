@@ -112,8 +112,8 @@ class UnpackrApp:
         """
         self.config = config
         self.file_handler = FileHandler(config)
-        self.archive_processor = ArchiveProcessor()
-        self.video_processor = VideoProcessor()
+        self.archive_processor = ArchiveProcessor(config)
+        self.video_processor = VideoProcessor(config)
         self.stats = {
             'folders_processed': 0,
             'videos_moved': 0,
@@ -511,8 +511,9 @@ def main():
     
         # Check system requirements
         print(f"[TOOLS] Checking requirements...", end=" ")
-        tools_status = SystemCheck.check_all_tools()
-        if not SystemCheck.display_tool_status(tools_status):
+        system_check = SystemCheck(config)
+        tools_status = system_check.check_all_tools()
+        if not system_check.display_tool_status(tools_status):
             logging.error("Required tools missing")
             sys.exit(1)
         

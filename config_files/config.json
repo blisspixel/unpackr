@@ -11,5 +11,10 @@
     "min_documents": 1,
     "min_sample_size_mb": 50,
     "max_log_files": 5,
-    "log_folder": "logs"
+    "log_folder": "logs",
+    "tool_paths": {
+        "7z": "C:\\Program Files\\7-Zip\\7z.exe",
+        "par2": "par2",
+        "ffmpeg": "ffmpeg"
+    }
 }

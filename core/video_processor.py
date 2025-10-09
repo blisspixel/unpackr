@@ -11,14 +11,16 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.safety import SubprocessSafety, SafetyLimits
+from utils.system_check import SystemCheck
 
 
 class VideoProcessor:
     """Handles video file validation and health checks."""
     
-    def __init__(self):
+    def __init__(self, config=None):
         """Initialize the video processor."""
-        pass
+        self.config = config or {}
+        self.system_check = SystemCheck(config)
     
     def check_video_health(self, video_file: Path) -> bool:
         """
@@ -42,9 +44,14 @@ class VideoProcessor:
         
         # Use ffmpeg to check video integrity with timeout
         try:
+            # Get ffmpeg command from config
+            ffmpeg_cmd = self.system_check.get_tool_command('ffmpeg')
+            if not ffmpeg_cmd:
+                ffmpeg_cmd = ['ffmpeg']
+            
             # Use safe subprocess with timeout
             success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
-                ['ffmpeg', '-v', 'error', '-i', str(video_file), '-f', 'null', '-'],
+                ffmpeg_cmd + ['-v', 'error', '-i', str(video_file), '-f', 'null', '-'],
                 timeout=SafetyLimits.VIDEO_CHECK_TIMEOUT,
                 operation=f"Video health check: {video_file.name}"
             )

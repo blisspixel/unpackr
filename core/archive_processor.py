@@ -11,14 +11,16 @@ from typing import Tuple
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.safety import SubprocessSafety, SafetyLimits, LoopSafety
+from utils.system_check import SystemCheck
 
 
 class ArchiveProcessor:
     """Handles archive extraction and repair operations."""
     
-    def __init__(self):
+    def __init__(self, config=None):
         """Initialize the archive processor."""
-        pass
+        self.config = config or {}
+        self.system_check = SystemCheck(config)
     
     def process_rar_files(self, folder: Path) -> bool:
         """
@@ -45,9 +47,14 @@ class ArchiveProcessor:
                     break
                 
                 try:
+                    # Get 7z command from config
+                    sevenzip_cmd = self.system_check.get_tool_command('7z')
+                    if not sevenzip_cmd:
+                        sevenzip_cmd = ['7z']
+                    
                     # Use safe subprocess with timeout
                     success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
-                        ['7z', 'x', str(rar_file), f'-o{folder}', '-aoa'],
+                        sevenzip_cmd + ['x', str(rar_file), f'-o{folder}', '-aoa'],
                         timeout=SafetyLimits.RAR_EXTRACTION_TIMEOUT,
                         cwd=folder,
                         operation=f"RAR extraction: {rar_file.name}"
@@ -86,9 +93,14 @@ class ArchiveProcessor:
             # Use the first PAR2 file found (usually the main one)
             par2_file = par2_files[0]
             
+            # Get par2 command from config
+            par2_cmd = self.system_check.get_tool_command('par2')
+            if not par2_cmd:
+                par2_cmd = ['par2']
+            
             # Use safe subprocess with timeout
             success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
-                ['par2', 'r', str(par2_file)],
+                par2_cmd + ['r', str(par2_file)],
                 timeout=SafetyLimits.PAR2_REPAIR_TIMEOUT,
                 cwd=folder,
                 operation=f"PAR2 repair: {par2_file.name}"

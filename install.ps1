@@ -261,8 +261,9 @@ if ($success) {
 
 🎯 NEXT STEPS:
    1. Restart your terminal/PowerShell
-   2. Test with: unpackr --help  
-   3. Run: unpackr --source C:\Downloads --destination D:\Videos
+   2. Configure tools: python configure_tools.py
+   3. Test with: unpackr --help  
+   4. Run: unpackr --source C:\Downloads --destination D:\Videos
 
 📚 DOCUMENTATION:
    - README.md - Full documentation

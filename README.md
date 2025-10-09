@@ -82,7 +82,7 @@ pip install -r requirements.txt
 
 This installs: tqdm, psutil, colorama
 
-### Step 2: Ensure External Tools Available
+### Step 2: Configure External Tools
 
 Required:
 - **7-Zip** - For RAR extraction ([download](https://www.7-zip.org/))
@@ -91,7 +91,27 @@ Optional but recommended:
 - **par2cmdline** - For file repair
 - **ffmpeg** - For video validation
 
-The script checks for these on startup and warns if missing.
+**Easy Configuration:**
+```powershell
+# Run the tool configurator
+python configure_tools.py
+# OR
+configure_tools.bat
+```
+
+**Manual Configuration:**
+Edit `config_files/config.json` and set the `tool_paths` section:
+```json
+{
+  "tool_paths": {
+    "7z": "C:\\Program Files\\7-Zip\\7z.exe",
+    "par2": "par2",
+    "ffmpeg": "ffmpeg"
+  }
+}
+```
+
+The script will automatically use these paths instead of requiring tools in your PATH.
 
 ### Step 3 (Optional): Install as Command
 
