@@ -26,6 +26,15 @@ Video processing utility that automates the tedious process of:
 
 ## Quick Start
 
+### Automated Installation (Recommended)
+```powershell
+# Run the installer script
+.\install.ps1        # PowerShell version (full-featured)
+# OR
+.\install.bat        # Batch version (simple)
+```
+
+### Manual Installation
 ```powershell
 # Install dependencies
 pip install -r requirements.txt
