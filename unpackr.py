@@ -450,9 +450,9 @@ def main():
         # Parse arguments
         parser = argparse.ArgumentParser(
             description="Automated video file processing and cleanup tool.")
-        parser.add_argument('--source', help='Path to source downloads directory', required=False)
-        parser.add_argument('--destination', help='Path to destination directory', required=False)
-        parser.add_argument('--config', help='Path to config.json file', required=False)
+        parser.add_argument('--source', '-s', help='Path to source downloads directory', required=False)
+        parser.add_argument('--destination', '-d', help='Path to destination directory', required=False)
+        parser.add_argument('--config', '-c', help='Path to config.json file', required=False)
         args = parser.parse_args()
         
         # Load configuration defensively

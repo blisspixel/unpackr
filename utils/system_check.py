@@ -53,34 +53,46 @@ class SystemCheck:
         
         # Get tool path from config if available
         tool_paths = self.config.get('tool_paths', {})
-        custom_path = tool_paths.get(tool_key)
+        custom_paths = tool_paths.get(tool_key)
         
-        if custom_path:
-            # Use custom path from config
-            if os.path.isfile(custom_path):
-                # Full path to executable
-                command = [custom_path]
-                if tool_key == 'ffmpeg':
-                    command.append('-version')
-            else:
-                # Command name (still try it)
-                command = [custom_path]
-                if tool_key == 'ffmpeg':
-                    command.append('-version')
-        else:
-            # Use default command
-            command = tool_info['command'][:]
+        # Convert single path to list for uniform handling
+        if isinstance(custom_paths, str):
+            custom_paths = [custom_paths]
+        elif custom_paths is None:
+            custom_paths = []
         
-        try:
-            subprocess.run(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=2
-            )
-            return True
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            return False
+        # Add default command as fallback
+        if not custom_paths:
+            custom_paths = [tool_info['command'][0]]
+        
+        # Try each path until one works
+        for custom_path in custom_paths:
+            try:
+                if os.path.isfile(custom_path):
+                    # Full path to executable
+                    command = [custom_path]
+                    if tool_key == 'ffmpeg':
+                        command.append('-version')
+                else:
+                    # Command name (still try it)
+                    command = [custom_path]
+                    if tool_key == 'ffmpeg':
+                        command.append('-version')
+                
+                subprocess.run(
+                    command,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=2
+                )
+                # If we get here, it worked - store the working path
+                self._working_paths = getattr(self, '_working_paths', {})
+                self._working_paths[tool_key] = custom_path
+                return True
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                continue
+        
+        return False
     
     def check_all_tools(self) -> Dict[str, bool]:
         """
@@ -141,13 +153,24 @@ class SystemCheck:
         if not tool_info:
             return []
         
+        # Use working path if we found one during check
+        working_paths = getattr(self, '_working_paths', {})
+        if tool_key in working_paths:
+            return [working_paths[tool_key]]
+        
         # Get tool path from config if available
         tool_paths = self.config.get('tool_paths', {})
-        custom_path = tool_paths.get(tool_key)
+        custom_paths = tool_paths.get(tool_key)
         
-        if custom_path:
-            # Use custom path from config
-            return [custom_path]
+        # Convert single path to list for uniform handling
+        if isinstance(custom_paths, str):
+            custom_paths = [custom_paths]
+        elif custom_paths is None:
+            custom_paths = []
+        
+        # Try first available path, or fall back to default
+        if custom_paths:
+            return [custom_paths[0]]
         else:
             # Use default command (first part only, no arguments)
             return [tool_info['command'][0]]

@@ -155,12 +155,17 @@ python unpackr.py
 
 Specify source and destination:
 ```powershell
+# Long format
 python unpackr.py --source "C:\Downloads" --destination "D:\Videos"
+
+# Short format  
+python unpackr.py -s "C:\Downloads" -d "D:\Videos"
 ```
 
 Or if installed as command:
 ```powershell
 unpackr --source "C:\Downloads" --destination "D:\Videos"
+unpackr -s "C:\Downloads" -d "D:\Videos"
 ```
 
 ### Custom Configuration
