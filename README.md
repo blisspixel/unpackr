@@ -1,345 +1,209 @@
-# Unpackr# Unpackr
+# Unpackr
 
+Your Digital Declutterer - Automate, Organize, and Streamline Your Downloads
 
+## What It Does
 
-Automated video file processor that extracts, validates, and organizes your downloads.Your Digital Declutterer - Automate, Organize, and Streamline Your Downloads
+Video processing utility that automates the tedious process of:
 
+1. **Extracting** RAR archives (using 7-Zip)
+2. **Repairing** damaged files (using PAR2)
+3. **Validating** video health (using FFmpeg)
+4. **Moving** good videos to your destination
+5. **Deleting** corrupt files and samples
+6. **Cleaning up** junk files and empty folders
 
-
-## What It Does## What It Does
-
-
-
-This utility automates the tedious process of:Video processing utility that:
-
-1. **Extracting** RAR archives (using 7-Zip)- Extracts RAR archives (7-Zip)
-
-2. **Repairing** damaged files (using PAR2)- Repairs files with PAR2
-
-3. **Validating** video health (using FFmpeg)- Validates video health (FFmpeg)
-
-4. **Moving** good videos to your destination- Organizes downloaded content
-
-5. **Deleting** corrupt files and samples- Cleans up aggressively
-
-6. **Cleaning up** junk files and empty folders- Includes timeout protection to handle edge cases
-
-
-
-**Smart Detection:**## Quick Start
-
+**Smart Detection:**
 - Preserves folders with music, documents, or images
-
-- Removes sample files and junk (NFO, SFV, URL files)```powershell
-
-- Skips folders that only contain non-video content# Install dependencies
-
-pip install -r requirements.txt
+- Removes sample files and junk (NFO, SFV, URL files)
+- Skips folders that only contain non-video content
 
 **Safety Features:**
-
-- Timeout protection on all operations (won't hang forever)# Run interactive mode
-
-- Loop guards and recursion limitspython unpackr.py
-
+- Timeout protection on all operations (won't hang forever)
+- Loop guards and recursion limits
 - Input validation and disk space checks
+- Comprehensive error logging
 
-- Comprehensive error logging# Run with arguments
+## Quick Start
 
+```powershell
+# Install dependencies
+pip install -r requirements.txt
+
+# Run interactive mode
+python unpackr.py
+
+# Run with arguments
 python unpackr.py --source "G:\Downloads" --destination "G:\Videos"
+```
 
-## Installation```
+## The Problem
 
-
-
-### Step 1: Install Python Dependencies## The Problem
-
-
-
-```powershellDownload folders cluttered with:
-
-pip install -r requirements.txt- Nested subfolders
-
-```- PAR2/RAR archives
-
+Download folders cluttered with:
+- Nested subfolders
+- PAR2/RAR archives
 - NFO/SFV junk files
-
-This installs: tqdm, psutil, colorama- Sample videos
-
+- Sample videos
 - Corrupt files
-
-### Step 2: Ensure External Tools Available
 
 Manually extracting, validating, and organizing wastes time.
 
-Required:
+## The Solution
 
-- **7-Zip** - For RAR extraction ([download](https://www.7-zip.org/))## The Solution
-
-
-
-Optional but recommended:Unpackr automates everything:
-
-- **par2cmdline** - For file repair1. Extracts RAR archives
-
-- **ffmpeg** - For video validation2. Repairs damaged files (PAR2)
-
+Unpackr automates everything:
+1. Extracts RAR archives
+2. Repairs damaged files (PAR2)
 3. Validates video health (FFmpeg)
-
-The script checks for these on startup and warns if missing.4. Moves good videos to destination
-
+4. Moves good videos to destination
 5. Deletes corrupt files
+6. Cleans up junk and empty folders
 
-### Step 3 (Optional): Install as Command6. Cleans up junk and empty folders
-
-
-
-If you want to run `unpackr` from anywhere (instead of `python unpackr.py`):Smart Detection:
-
+Smart Detection:
 - Preserves music/document folders
+- Removes sample files
+- Skips content-only folders
 
-**Simple Method (Requires Admin):**- Removes sample files
+## Installation
 
-```powershell- Skips content-only folders
-
-copy unpackr.bat C:\Windows\System32\
-
-```## Project Structure
-
-
-
-Now you can run from any directory:```
-
-```powershellunpackr.py              # Run this
-
-cd C:\README.md               # This file
-
-unpackr --source "C:\Downloads" --destination "D:\Videos"requirements.txt        # Dependencies
-
-```bin/                    # Executables
-
-config_files/           # Configuration
-
-**Alternative (No Admin Required):**scripts/                # Utilities
-
-Add `G:\Unpackr` to your PATH environment variable:core/                   # Business logic
-
-1. Open Start > "Environment Variables"utils/                  # Helpers
-
-2. Edit "Path" under User variablestests/                  # Test suites
-
-3. Add `G:\Unpackr`docs/                   # Documentation
-
-4. Restart terminallogs/                   # Runtime logs
-
-archive/                # Historical versions
-
-**Build Standalone .exe (Advanced):**```
+### Step 1: Install Python Dependencies
 
 ```powershell
-
-pip install pyinstallerSee docs/PROJECT_STRUCTURE.md for details.
-
-python build.py
-
-# Creates dist/unpackr.exe (~20-50 MB)## Safety Features
-
+pip install -r requirements.txt
 ```
 
-Timeout Protection:
+This installs: tqdm, psutil, colorama
 
-## Usage- RAR extraction: 5 minutes
+### Step 2: Ensure External Tools Available
 
-- PAR2 repair: 10 minutes
+Required:
+- **7-Zip** - For RAR extraction ([download](https://www.7-zip.org/))
 
-### Interactive Mode- Video validation: 60 seconds
+Optional but recommended:
+- **par2cmdline** - For file repair
+- **ffmpeg** - For video validation
 
-- Global runtime: 4 hours
+The script checks for these on startup and warns if missing.
+
+### Step 3 (Optional): Install as Command
+
+If you want to run `unpackr` from anywhere (instead of `python unpackr.py`):
+
+**Simple Method (Requires Admin):**
+```powershell
+copy unpackr.bat C:\Windows\System32\
+```
+
+Now you can run from any directory:
+```powershell
+cd C:\
+unpackr --source "C:\Downloads" --destination "D:\Videos"
+```
+
+**Alternative (No Admin Required):**
+Add your Unpackr folder to your PATH environment variable:
+1. Open Start > "Environment Variables"
+2. Edit "Path" under User variables
+3. Add your Unpackr folder path
+4. Restart terminal
+
+**Build Standalone .exe (Advanced):**
+```powershell
+pip install pyinstaller
+python build.py
+# Creates dist/unpackr.exe (~20-50 MB)
+```
+
+## Usage
+
+### Interactive Mode
 
 Just run without arguments and it will prompt you:
-
-Loop Guards:
-
-```powershell- Max iterations with auto-breaks
-
-python unpackr.py- Recursion limits (10 levels)
-
-```- Stuck detection (5min)
-
-
-
-### Command-Line ModeInput Validation:
-
-- Path validation (null bytes, traversal)
-
-Specify source and destination:- State checks (disk space, permissions)
-
-- Error recovery with retries
-
 ```powershell
-
-python unpackr.py --source "C:\Downloads" --destination "D:\Videos"Designed to handle errors gracefully and avoid common hanging scenarios.
-
+python unpackr.py
 ```
 
-## Quick Reference
+### Command-Line Mode
+
+Specify source and destination:
+```powershell
+python unpackr.py --source "C:\Downloads" --destination "D:\Videos"
+```
 
 Or if installed as command:
-
 ```powershell
-
-```powershell# Interactive mode
-
-unpackr --source "C:\Downloads" --destination "D:\Videos"python unpackr.py
-
+unpackr --source "C:\Downloads" --destination "D:\Videos"
 ```
 
-# Command-line mode
+### Custom Configuration
 
-### Custom Configurationpython unpackr.py --source "G:\Downloads" --destination "G:\Videos"
-
-
-
-Use a different config file:# Custom config
-
+Use a different config file:
+```powershell
 python unpackr.py --config "custom_config.json"
+```
 
-```powershell```
+### Path Handling
 
-python unpackr.py --config "my_config.json"
-
-```## Configuration
-
-
-
-### Path HandlingEdit config_files/config.json to customize:
-
-- File extensions (video/music/image/docs)
-
-Paths work with or without quotes:- Folder classification thresholds
-
-- Sample size detection
-
-```powershell- Log retention
-
+Paths work with or without quotes:
+```powershell
 # With quotes (if spaces in path)
+python unpackr.py --source "C:\My Downloads" --destination "D:\My Videos"
 
-python unpackr.py --source "C:\My Downloads" --destination "D:\My Videos"## Requirements
-
-
-
-# Without quotes (if no spaces)Python Dependencies:
-
-python unpackr.py --source C:\Downloads --destination D:\Videos- tqdm>=4.62.0
-
-```- psutil>=5.8.0
-
-- colorama>=0.4.4
+# Without quotes (if no spaces)
+python unpackr.py --source C:\Downloads --destination D:\Videos
+```
 
 ## What Happens During Processing
 
-External Tools:
-
-### 1. Pre-Scan Analysis- 7-Zip (required)
-
-```- par2cmdline (optional)
-
-[PRE-SCAN] Analyzing directories...- ffmpeg (optional)
-
+### 1. Pre-Scan Analysis
+```
+[PRE-SCAN] Analyzing directories...
 Videos: 12 | Archives: 5 | Junk: 127 | Content Folders: 2
-
-```## Testing
-
+```
 Quickly scans to show what will be processed.
 
-```powershell
+### 2. Stage 1: Process Archives
+- Finds all RAR files
+- Extracts them (5 min timeout per archive)
+- Repairs with PAR2 if available (10 min timeout)
 
-### 2. Stage 1: Process Archivespython tests/test_comprehensive.py
-
-- Finds all RAR filespython tests/test_safety.py
-
-- Extracts them (5 min timeout per archive)python tests/test_defensive.py
-
-- Repairs with PAR2 if available (10 min timeout)```
-
-
-
-### 3. Stage 2: Find VideosTotal: 80+ tests
-
+### 3. Stage 2: Find Videos
 - Scans for video files
-
-- Detects sample files (< 50 MB by default)## Install as Command (Optional)
-
+- Detects sample files (< 50 MB by default)
 - Identifies content folders (music/docs/images)
 
-To run `unpackr` from anywhere (instead of `python unpackr.py`):
-
 ### 4. Stage 3: Validate Videos
-
-- Checks video health with FFmpeg (60 sec timeout)```powershell
-
-- Flags corrupt files for deletion# Copy batch file to PATH (requires admin)
-
-copy unpackr.bat C:\Windows\System32\
+- Checks video health with FFmpeg (60 sec timeout)
+- Flags corrupt files for deletion
 
 ### 5. Stage 4: Move Videos
-
-- Moves good videos to destination# Now run from anywhere:
-
-- Preserves folder structure if neededcd C:\
-
-- Skips duplicatesunpackr --source "C:\Downloads" --destination "D:\Videos"
-
-```
+- Moves good videos to destination
+- Preserves folder structure if needed
+- Skips duplicates
 
 ### 6. Stage 5: Cleanup
-
-- Deletes junk files (NFO, SFV, URL, etc.)See `INSTALL.md` for other installation options (no admin, PATH setup, PowerShell alias).
-
+- Deletes junk files (NFO, SFV, URL, etc.)
 - Removes empty folders
-
-- Deletes corrupt videosFor building standalone .exe, see `docs/BUILD.md`.
-
+- Deletes corrupt videos
 - Preserves content folders (music/docs)
 
-## Documentation
-
 ### Final Summary
+```
+Moved: 10 | Deleted: 127 files | Videos: 10 | Folders: 5
+```
 
-```- README.md - This file
+## Configuration
 
-Moved: 10 | Deleted: 127 files | Videos: 10 | Folders: 5- INSTALL.md - Install as command guide
+Edit `config_files/config.json` to customize:
 
-```- docs/QUICK_REFERENCE.md - Quick start
-
-- docs/PROJECT_STRUCTURE.md - Organization
-
-## Configuration- docs/BUILD.md - Build standalone .exe
-
-
-
-Edit `config_files/config.json` to customize:## Disclaimer
-
-
-
-```jsonUse at your own risk. Always back up important data.
-
+```json
 {
-
-  "video_extensions": [".mp4", ".avi", ".mkv", ".mov", ...],## License
-
-  "music_extensions": [".mp3", ".flac", ".wav", ...],
-
-  "removable_extensions": [".nfo", ".sfv", ".url", ...],Use freely. No warranties.
-
+  "video_extensions": [".mp4", ".avi", ".mkv", ".mov", "..."],
+  "music_extensions": [".mp3", ".flac", ".wav", "..."],
+  "removable_extensions": [".nfo", ".sfv", ".url", "..."],
   "min_sample_size_mb": 50,
-
-  "max_log_files": 5,---
-
+  "max_log_files": 5,
   "log_folder": "logs"
-
-}A personal utility project for automating video downloads cleanup.
-
+}
 ```
 
 **What You Can Customize:**
@@ -368,54 +232,47 @@ python unpackr.py --source "\\NAS\downloads" --destination "D:\Videos"
 ```
 Works with network paths.
 
-## Safety & Timeouts
+## Safety Features
 
-**Why Timeouts Matter:**
-Some archives or videos can hang extraction/validation. Timeouts prevent infinite hangs.
-
-**Configured Timeouts:**
+### Timeout Protection
 - RAR extraction: 5 minutes per archive
 - PAR2 repair: 10 minutes per operation
 - Video validation: 60 seconds per file
 - Global runtime: 4 hours total
 
-**Additional Safeguards:**
-- Loop iteration limits (won't loop forever)
-- Recursion depth limits (max 10 subfolder levels)
-- Stuck detection (stops if no progress for 5 minutes)
+### Loop Guards
+- Max iterations with auto-breaks
+- Recursion limits (10 levels)
+- Stuck detection (5min)
 
-**If Issues Occur:**
-- Check logs in `logs/unpackr-YYYYMMDD-HHMMSS.log`
-- Safety stops are logged with reason
-- You can adjust timeouts in the code if needed
+### Input Validation
+- Path validation (null bytes, traversal)
+- State checks (disk space, permissions)
+- Error recovery with retries
 
-## Logging
+Designed to handle errors gracefully and avoid common hanging scenarios.
 
-Every run creates a log file:
-```
-logs/unpackr-20251009-143022.log
-```
+## Requirements
 
-Logs include:
-- Files processed
-- Errors encountered
-- Safety interventions (timeouts)
-- Performance metrics
-- Final statistics
+### Python Dependencies
+- tqdm>=4.62.0
+- psutil>=5.8.0
+- colorama>=0.4.4
 
-Keeps last 5 logs by default (configurable).
+### External Tools
+- 7-Zip (required)
+- par2cmdline (optional)
+- ffmpeg (optional)
 
 ## Testing
 
-Run the test suites to verify everything works:
-
 ```powershell
-python tests/test_comprehensive.py   # 58 tests - core functionality
-python tests/test_safety.py          # Safety mechanism tests
-python tests/test_defensive.py       # Input validation tests
+python tests/test_comprehensive.py
+python tests/test_safety.py
+python tests/test_defensive.py
 ```
 
-Total: 80+ tests covering all features.
+Total: 80+ tests
 
 ## Project Structure
 
@@ -425,46 +282,47 @@ Unpackr/
 ├── unpackr.bat             # Windows launcher (for command usage)
 ├── build.py                # Build standalone .exe
 ├── requirements.txt        # Python dependencies
-├── .gitignore              # Git ignore rules
+├── README.md               # This file
+├── INSTALL.md              # Installation guide
 │
 ├── bin/                    # External executables
-│   └── par2.exe
-│
 ├── config_files/           # Configuration
 │   └── config.json
-│
 ├── scripts/                # Utility scripts
-│   └── movierenamer.py
-│
 ├── core/                   # Business logic modules
-│   ├── config.py           # Configuration management
-│   ├── logger.py           # Logging system
-│   ├── file_handler.py     # File operations
-│   ├── archive_processor.py # RAR/PAR2 handling
-│   └── video_processor.py  # Video validation
-│
 ├── utils/                  # Helper utilities
-│   ├── system_check.py     # Tool validation
-│   ├── progress.py         # Progress tracking
-│   ├── safety.py           # Timeout protection
-│   └── defensive.py        # Input validation
-│
 ├── tests/                  # Test suites
-│   ├── test_comprehensive.py
-│   ├── test_safety.py
-│   └── test_defensive.py
-│
 ├── docs/                   # Additional documentation
-│   ├── QUICK_REFERENCE.md
-│   ├── PROJECT_STRUCTURE.md
-│   └── BUILD.md
-│
 ├── logs/                   # Runtime logs (auto-created)
-│   └── unpackr-*.log
-│
-└── archive/                # Old versions (compressed)
-    └── archive_unpackr.7z
+└── archive/                # Historical versions
 ```
+
+See `docs/PROJECT_STRUCTURE.md` for details.
+
+## Install as Command (Optional)
+
+To run `unpackr` from anywhere (instead of `python unpackr.py`):
+
+```powershell
+# Copy batch file to PATH (requires admin)
+copy unpackr.bat C:\Windows\System32\
+
+# Now run from anywhere:
+cd C:\
+unpackr --source "C:\Downloads" --destination "D:\Videos"
+```
+
+See `INSTALL.md` for other installation options (no admin, PATH setup, PowerShell alias).
+
+For building standalone .exe, see `docs/BUILD.md`.
+
+## Documentation
+
+- README.md - This file
+- INSTALL.md - Install as command guide
+- docs/QUICK_REFERENCE.md - Quick start
+- docs/PROJECT_STRUCTURE.md - Organization
+- docs/BUILD.md - Build standalone .exe
 
 ## Troubleshooting
 
@@ -489,6 +347,22 @@ Add Python to PATH or use full command: `python unpackr.py`
 - Run as Administrator if needed
 - Check folder permissions
 - Some files may be locked by other processes
+
+## Logging
+
+Every run creates a log file:
+```
+logs/unpackr-20251009-143022.log
+```
+
+Logs include:
+- Files processed
+- Errors encountered
+- Safety interventions (timeouts)
+- Performance metrics
+- Final statistics
+
+Keeps last 5 logs by default (configurable).
 
 ## Frequently Asked Questions
 
