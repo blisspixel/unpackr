@@ -17,13 +17,13 @@ class SystemCheck:
             'name': '7-Zip',
             'command': ['7z'],
             'critical': True,
-            'purpose': 'RAR extraction'
+            'purpose': 'RAR/7z extraction'
         },
         'par2': {
             'name': 'par2cmdline',
             'command': ['par2'],
-            'critical': False,
-            'purpose': 'PAR2 repair'
+            'critical': True,
+            'purpose': 'PAR2 repair (required for Usenet downloads)'
         },
         'ffmpeg': {
             'name': 'FFmpeg',

@@ -22,18 +22,31 @@ class ArchiveProcessor:
         self.config = config or {}
         self.system_check = SystemCheck(config)
     
-    def process_rar_files(self, folder: Path) -> bool:
+    def process_rar_files(self, folder: Path, progress_callback=None) -> bool:
         """
         Extract RAR files in the given folder.
-        
+
         Args:
             folder: Path to folder containing RAR files
-            
+            progress_callback: Optional callback(current, total, message)
+
         Returns:
             True if processing completed successfully, False otherwise
         """
         try:
-            rar_files = list(folder.glob('*.rar'))
+            # Find RAR files - only process .part001.rar or .rar (not .part002+)
+            all_rar_files = list(folder.glob('*.rar'))
+            rar_files = []
+            for rar in all_rar_files:
+                name_lower = rar.name.lower()
+                # Skip .part002 and higher - only extract .part001 or non-part RARs
+                if '.part' in name_lower:
+                    if '.part001.' in name_lower or '.part01.' in name_lower or '.part1.' in name_lower:
+                        rar_files.append(rar)
+                else:
+                    rar_files.append(rar)
+
+            # Find 7z files - only .7z or .7z.001 (7z auto-handles .7z.002+)
             sevenz_files = list(folder.glob('*.7z')) + list(folder.glob('*.7z.001'))
             archive_files = rar_files + sevenz_files
 
@@ -46,7 +59,11 @@ class ArchiveProcessor:
             success_count = 0
             total_count = len(archive_files)
 
-            for archive_file in archive_files:
+            for idx, archive_file in enumerate(archive_files, 1):
+                # Show progress during extraction
+                if progress_callback:
+                    progress_callback(idx, total_count, f"Extracting {idx}/{total_count}: {archive_file.name[:30]}")
+
                 if not loop_guard.tick():
                     logging.error(f"RAR extraction loop safety triggered in {folder}")
                     break
@@ -94,29 +111,38 @@ class ArchiveProcessor:
     
     def process_par2_files(self, folder: Path) -> bool:
         """
-        Repair files using PAR2 in the given folder.
-        
+        Verify and repair files using PAR2 in the given folder.
+        Uses par2 'r' (repair) command which automatically verifies first,
+        then only repairs if needed. Faster than separate verify + repair.
+
+        Strategy:
+        1. Run repair (auto-verifies, only repairs if needed)
+        2. If successful (verified OK or repaired OK), delete PAR2 files
+        3. If repair fails, delete both PAR2 and archive files (corrupted beyond repair)
+
         Args:
             folder: Path to folder containing PAR2 files
-            
+
         Returns:
-            True if processing completed successfully, False otherwise
+            True if files are OK (no repair needed or repair succeeded)
+            False if repair failed (archives corrupted beyond repair)
         """
         try:
             par2_files = list(folder.glob('*.par2'))
-            
+
             if not par2_files:
                 return True  # No PAR2 files to process
-            
+
             # Use the first PAR2 file found (usually the main one)
             par2_file = par2_files[0]
-            
+
             # Get par2 command from config
             par2_cmd = self.system_check.get_tool_command('par2')
             if not par2_cmd:
                 par2_cmd = ['par2']
-            
-            # Use safe subprocess with timeout
+
+            # Run repair (will verify first, only repair if needed - faster!)
+            logging.info(f"Verifying/repairing archives with PAR2: {par2_file.name}")
             success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
                 par2_cmd + ['r', str(par2_file)],
                 timeout=SafetyLimits.PAR2_REPAIR_TIMEOUT,
@@ -124,16 +150,24 @@ class ArchiveProcessor:
                 operation=f"PAR2 repair: {par2_file.name}"
             )
 
-            # Delete PAR2 files irrespective of the result
-            self._delete_files_by_extension(folder, '.par2')
-
             if success:
-                logging.info(f"PAR2 repair completed successfully for {folder}")
+                # Files OK (either no repair needed or repair succeeded)
+                logging.info(f"PAR2 processing completed successfully for {folder}")
+                self._delete_files_by_extension(folder, '.par2')
                 return True
             else:
-                logging.error(f"PAR2 processing failed for {folder}:\nStdout: {stdout}\nStderr: {stderr}")
+                # Repair failed - archives are corrupted beyond repair
+                logging.error(f"PAR2 repair FAILED for {folder} - deleting corrupted archives")
+                logging.error(f"Output:\nStdout: {stdout}\nStderr: {stderr}")
+
+                # Delete PAR2 files
+                self._delete_files_by_extension(folder, '.par2')
+
+                # Delete archive files (they're corrupted)
+                self._delete_archive_files(folder)
+
                 return False
-            
+
         except Exception as e:
             logging.error(f"Unexpected error during PAR2 processing for {folder}: {e}")
             return False

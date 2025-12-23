@@ -23,7 +23,7 @@
     "archive_extraction_loop_limit": 100,
     "tool_paths": {
         "7z": ["C:\\Program Files\\7-Zip\\7z.exe", "C:\\Program Files (x86)\\7-Zip\\7z.exe", "7z"],
-        "par2": ["par2", "C:\\Program Files\\par2cmdline\\par2.exe"],
+        "par2": ["bin\\par2.exe", "par2", "C:\\Program Files\\par2cmdline\\par2.exe"],
         "ffmpeg": ["ffmpeg", "C:\\ffmpeg\\bin\\ffmpeg.exe"]
     }
 }

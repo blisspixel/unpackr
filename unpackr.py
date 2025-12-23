@@ -142,8 +142,10 @@ class UnpackrApp:
             WorkPlan instance
         """
         plan = WorkPlan()
-        folders = [f for f in source_dir.iterdir() if f.is_dir()]
-        
+        # Sort folders by modification time (oldest first) to process completed downloads before ongoing ones
+        folders = sorted([f for f in source_dir.iterdir() if f.is_dir()],
+                        key=lambda f: f.stat().st_mtime)
+
         # Show progress during scan
         for i, folder in enumerate(folders, 1):
             sys.stdout.write(f"\r[PRE-SCAN] Analyzing {i}/{len(folders)} folders...")
@@ -208,46 +210,58 @@ class UnpackrApp:
         # Update progress header
         self._update_progress(current, total, f"Processing: {folder.name[:40]}")
         
-        # Process archive files first (RAR and 7z) - optimized scan
-        rar_pattern = re.compile(r'\.r\d{2}$')
-        sevenz_pattern = re.compile(r'\.7z(\.\d+)?$')
-        archive_files = []
-
-        for file in folder.iterdir():
-            if file.is_file():
-                ext_lower = file.suffix.lower()
-                if ext_lower == '.rar' or rar_pattern.match(ext_lower) or ext_lower == '.7z' or sevenz_pattern.match(ext_lower):
-                    archive_files.append(file)
-        if archive_files:
-            self._update_progress(current, total, f"Extracting archives: {folder.name[:40]}")
-            if self.dry_run:
-                logging.info(f"[DRY-RUN] Would extract {len(archive_files)} archives in {folder}")
-                success = True
-                archive_error = False
-            else:
-                success = self.archive_processor.process_rar_files(folder)
-                if success:
-                    self.stats['rars_extracted'] += 1
-                # If extraction failed, archives are now junk and should be treated as removable
-                archive_error = not success
-        else:
-            archive_error = False
-        
-        # Process PAR2 files - optimized scan
+        # Process PAR2 files FIRST - verify/repair archives before extraction
+        # This is more efficient: if no repair needed, PAR2 files are deleted early (saves disk I/O)
+        # If repair fails, corrupted archives are deleted, skipping extraction entirely
         par2_files = [f for f in folder.iterdir() if f.is_file() and f.suffix.lower() == '.par2']
         if par2_files:
-            self._update_progress(current, total, f"Repairing PAR2: {folder.name[:40]}")
+            self._update_progress(current, total, f"Verifying/Repairing PAR2: {folder.name[:40]}")
             if self.dry_run:
-                logging.info(f"[DRY-RUN] Would repair {len(par2_files)} PAR2 files in {folder}")
+                logging.info(f"[DRY-RUN] Would verify/repair {len(par2_files)} PAR2 files in {folder}")
                 success = True
                 par2_error = False
             else:
                 success = self.archive_processor.process_par2_files(folder)
                 if success:
                     self.stats['par2s_repaired'] += 1
+                # If PAR2 repair failed, corrupted archives are already deleted
                 par2_error = not success
         else:
             par2_error = False
+
+        # Process archive files AFTER PAR2 (only if PAR2 didn't delete them)
+        # Skip extraction if PAR2 repair failed (archives already deleted as corrupted)
+        if not par2_error:
+            rar_pattern = re.compile(r'\.r\d{2}$')
+            sevenz_pattern = re.compile(r'\.7z(\.\d+)?$')
+            archive_files = []
+
+            for file in folder.iterdir():
+                if file.is_file():
+                    ext_lower = file.suffix.lower()
+                    if ext_lower == '.rar' or rar_pattern.match(ext_lower) or ext_lower == '.7z' or sevenz_pattern.match(ext_lower):
+                        archive_files.append(file)
+            if archive_files:
+                self._update_progress(current, total, f"Extracting archives: {folder.name[:40]}")
+                if self.dry_run:
+                    logging.info(f"[DRY-RUN] Would extract {len(archive_files)} archives in {folder}")
+                    success = True
+                    archive_error = False
+                else:
+                    # Pass progress callback to show extraction progress
+                    def extraction_progress(idx, total_archives, msg):
+                        self._update_progress(current, total, msg)
+
+                    success = self.archive_processor.process_rar_files(folder, progress_callback=extraction_progress)
+                    if success:
+                        self.stats['rars_extracted'] += 1
+                    # If extraction failed, archives are now junk and should be treated as removable
+                    archive_error = not success
+            else:
+                archive_error = False
+        else:
+            # PAR2 repair failed - archives already deleted
+            archive_error = True
         
         # Process subfolders
         for subfolder in folder.iterdir():
@@ -296,8 +310,9 @@ class UnpackrApp:
     
     def _update_progress(self, current: int, total: int, action: str):
         """
-        Update progress display.
-        
+        Update progress display with rich statistics.
+        Modern CLI progress showing: progress bar, stats, throughput, ETA, current operation.
+
         Args:
             current: Current item number
             total: Total items
@@ -305,32 +320,58 @@ class UnpackrApp:
         """
         # Calculate percentage and ETA
         percent = int((current / total) * 100)
-        
+
         if self.start_time:
             elapsed = time.time() - self.start_time
             if current > 0:
                 avg_time = elapsed / current
                 remaining = (total - current) * avg_time
                 eta = str(timedelta(seconds=int(remaining))).split('.')[0]
+                # Calculate throughput (folders per minute)
+                throughput = (current / elapsed) * 60 if elapsed > 0 else 0
             else:
                 eta = "calculating..."
+                throughput = 0
         else:
             eta = "calculating..."
-        
+            throughput = 0
+
         # Progress bar with ASCII-safe characters
-        bar_length = 30
-        filled = int(bar_length * current / total)
+        bar_length = 20
+        filled = int(bar_length * current / total) if total > 0 else 0
         bar = '#' * filled + '-' * (bar_length - filled)
 
-        # Clear line and print
-        sys.stdout.write('\r' + ' '*100 + '\r')
+        # Clear multiple lines (for multi-line display)
+        sys.stdout.write('\r' + ' '*120 + '\r')
+
         # Encode action string safely to avoid Unicode errors
-        safe_action = action[:40].encode('ascii', errors='replace').decode('ascii')
-        progress_line = (f"{Fore.CYAN}[{bar}] {percent}%{Style.RESET_ALL} | "
-                        f"{Fore.YELLOW}{current}/{total}{Style.RESET_ALL} | "
-                        f"ETA: {Fore.GREEN}{eta}{Style.RESET_ALL} | "
-                        f"{safe_action}")
-        sys.stdout.write(progress_line)
+        safe_action = action[:60].encode('ascii', errors='replace').decode('ascii')
+
+        # Line 1: Progress bar and percentage
+        line1 = f"{Fore.CYAN}[{bar}] {percent:3d}%{Style.RESET_ALL}"
+
+        # Line 2: Stats - folders, videos, archives
+        stats_parts = []
+        stats_parts.append(f"{Fore.YELLOW}Folders: {current}/{total}{Style.RESET_ALL}")
+        if self.stats['videos_moved'] > 0:
+            stats_parts.append(f"{Fore.GREEN}Videos: {self.stats['videos_moved']}{Style.RESET_ALL}")
+        if self.stats['rars_extracted'] > 0:
+            stats_parts.append(f"{Fore.BLUE}Archives: {self.stats['rars_extracted']}{Style.RESET_ALL}")
+        if self.stats['par2s_repaired'] > 0:
+            stats_parts.append(f"{Fore.MAGENTA}PAR2: {self.stats['par2s_repaired']}{Style.RESET_ALL}")
+
+        line2 = " | ".join(stats_parts)
+
+        # Line 3: Throughput and ETA
+        line3 = f"{Fore.CYAN}Speed: {throughput:.1f} folders/min{Style.RESET_ALL} | ETA: {Fore.GREEN}{eta}{Style.RESET_ALL}"
+
+        # Line 4: Current action
+        line4 = f"{Fore.WHITE}> {safe_action}{Style.RESET_ALL}"
+
+        # Combine all lines
+        progress_display = f"{line1} | {line2}\n{line3}\n{line4}"
+
+        sys.stdout.write(progress_display)
         sys.stdout.flush()
     
     def _process_subfolder(self, subfolder: Path, destination_dir: Path):
@@ -348,37 +389,13 @@ class UnpackrApp:
             return
 
         try:
-            # Process archives in this subfolder - optimized scan
-            rar_pattern = re.compile(r'\.r\d{2}$')
-            sevenz_pattern = re.compile(r'\.7z(\.\d+)?$')
-            archive_files = []
-
-            for file in subfolder.iterdir():
-                if file.is_file():
-                    ext_lower = file.suffix.lower()
-                    if ext_lower == '.rar' or rar_pattern.match(ext_lower) or ext_lower == '.7z' or sevenz_pattern.match(ext_lower):
-                        archive_files.append(file)
-
-            archive_error = False
-            if archive_files:
-                logging.info(f"Processing {len(archive_files)} archives in subfolder {subfolder.name}")
-                if self.dry_run:
-                    logging.info(f"[DRY-RUN] Would extract {len(archive_files)} archives in {subfolder}")
-                    success = True
-                    archive_error = False
-                else:
-                    success = self.archive_processor.process_rar_files(subfolder)
-                    if success:
-                        self.stats['rars_extracted'] += 1
-                    archive_error = not success
-
-            # Process PAR2 files in this subfolder - optimized scan
+            # Process PAR2 files FIRST in this subfolder
             par2_files = [f for f in subfolder.iterdir() if f.is_file() and f.suffix.lower() == '.par2']
             par2_error = False
             if par2_files:
-                logging.info(f"Processing PAR2 in subfolder {subfolder.name}")
+                logging.info(f"Verifying/repairing PAR2 in subfolder {subfolder.name}")
                 if self.dry_run:
-                    logging.info(f"[DRY-RUN] Would repair {len(par2_files)} PAR2 files in {subfolder}")
+                    logging.info(f"[DRY-RUN] Would verify/repair {len(par2_files)} PAR2 files in {subfolder}")
                     success = True
                     par2_error = False
                 else:
@@ -386,6 +403,35 @@ class UnpackrApp:
                     if success:
                         self.stats['par2s_repaired'] += 1
                     par2_error = not success
+
+            # Process archives AFTER PAR2 in this subfolder (only if PAR2 didn't delete them)
+            if not par2_error:
+                rar_pattern = re.compile(r'\.r\d{2}$')
+                sevenz_pattern = re.compile(r'\.7z(\.\d+)?$')
+                archive_files = []
+
+                for file in subfolder.iterdir():
+                    if file.is_file():
+                        ext_lower = file.suffix.lower()
+                        if ext_lower == '.rar' or rar_pattern.match(ext_lower) or ext_lower == '.7z' or sevenz_pattern.match(ext_lower):
+                            archive_files.append(file)
+
+                archive_error = False
+                if archive_files:
+                    logging.info(f"Extracting {len(archive_files)} archives in subfolder {subfolder.name}")
+                    if self.dry_run:
+                        logging.info(f"[DRY-RUN] Would extract {len(archive_files)} archives in {subfolder}")
+                        success = True
+                        archive_error = False
+                    else:
+                        # Extraction progress is logged but no progress bar in subfolders
+                        success = self.archive_processor.process_rar_files(subfolder)
+                        if success:
+                            self.stats['rars_extracted'] += 1
+                        archive_error = not success
+            else:
+                # PAR2 repair failed - archives already deleted
+                archive_error = True
 
             # Find and process videos in this subfolder
             video_files = self.file_handler.find_video_files(subfolder)

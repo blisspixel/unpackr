@@ -8,7 +8,9 @@
       "Bash(done)",
       "Bash(wc:*)",
       "Bash(python tests/test_all.py:*)",
-      "Bash(python tests/test_comprehensive.py:*)"
+      "Bash(python tests/test_comprehensive.py:*)",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)"
     ]
   }
 }
