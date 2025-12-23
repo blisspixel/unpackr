@@ -1,28 +1,72 @@
 # Unpackr
 
-Your Digital Declutterer - Automate, Organize, and Streamline Your Downloads
+**Set It and Forget It** - Your Automated Usenet Video Cleanup Tool
 
 ## What It Does
 
-Video processing utility that automates the tedious process of:
+**Fully automated Usenet/newsgroup download processor** that handles messy download folders:
 
-1. **Extracting** RAR archives (using 7-Zip)
-2. **Repairing** damaged files (using PAR2)
-3. **Validating** video health (using FFmpeg)
-4. **Moving** good videos to your destination
-5. **Deleting** corrupt files and samples
-6. **Cleaning up** junk files and empty folders
+1. **Verifies/Repairs** with PAR2 first (required for Usenet)
+2. **Extracts** multi-part RAR archives (handles .part001-.part999)
+3. **Validates** video health with FFmpeg
+4. **Moves** good videos immediately (one-by-one as validated)
+5. **Deletes** corrupt files, samples, and junk
+6. **Cleans up** automatically with multi-pass locked file handling
 
-**Smart Detection:**
-- Preserves folders with music, documents, or images
-- Removes sample files and junk (NFO, SFV, URL files)
-- Skips folders that only contain non-video content
+**Usenet-Optimized Workflow:**
+- Processes oldest folders first (handles ongoing downloads)
+- PAR2 verify/repair before extraction (saves time on good files)
+- Multi-part RAR filtering (only extracts .part001, not every part)
+- Handles folders with brackets and special characters
+- Automatically kills stuck processes (7z, par2, ffmpeg)
 
-**Safety Features:**
-- Timeout protection on all operations (won't hang forever)
-- Loop guards and recursion limits
-- Input validation and disk space checks
-- Comprehensive error logging
+**Modern Progress Display:**
+- Real-time stats (videos moved, archives extracted, speed)
+- Live throughput metrics (folders/min)
+- Detailed operation logging (extraction speed, file sizes)
+- Multi-line progress with ETA
+
+**Defensive & Adaptive:**
+- Automatic process cleanup on failures
+- PowerShell fallback for stubborn deletions
+- Retry logic with exponential backoff
+- Multi-pass cleanup for locked files
+
+## Typical Usenet Workflow
+
+**The Problem:** Download folder with 50+ releases, each with:
+- 700+ multi-part RAR files (.part001-.part710)
+- PAR2 recovery files
+- Subfolders with extracted videos
+- NFO, SFV, URL junk files
+- Maybe corrupt or incomplete downloads
+
+**The Solution:** One command cleans everything
+```powershell
+python unpackr.py --source "G:\Downloads" --destination "G:\Videos"
+```
+
+**What Happens:**
+1. Scans all folders (oldest first)
+2. For each folder:
+   - PAR2 verifies archives (repairs if needed, or deletes if corrupt)
+   - Extracts .part001 only (7z handles the rest)
+   - **Validates and moves videos one-by-one** (you see results immediately)
+   - Deletes junk and cleans up
+3. Multi-pass cleanup catches any locked files
+4. **Result:** Clean download folder, all good videos in output
+
+**What It Preserves:**
+- Folders with music (3+ music files)
+- Folders with images (5+ image files)
+- Folders with documents
+- Everything else gets cleaned
+
+**You Come Back To:**
+- ✅ All valid videos in your output folder
+- ✅ Clean downloads folder (except preserved content)
+- ✅ Detailed log of what happened
+- ✅ No stuck processes or locked files
 
 ## Quick Start
 
@@ -84,12 +128,12 @@ This installs: tqdm, psutil, colorama
 
 ### Step 2: Configure External Tools
 
-Required:
+**Required** (critical for Usenet):
 - **7-Zip** - For RAR extraction ([download](https://www.7-zip.org/))
+- **par2cmdline** - For PAR2 repair (included in `bin/par2.exe` or [download](https://github.com/Parchive/par2cmdline))
 
-Optional but recommended:
-- **par2cmdline** - For file repair
-- **ffmpeg** - For video validation
+**Optional** (recommended):
+- **ffmpeg** - For video health validation
 
 **Easy Configuration:**
 ```powershell
@@ -158,7 +202,7 @@ Specify source and destination:
 # Long format
 python unpackr.py --source "C:\Downloads" --destination "D:\Videos"
 
-# Short format  
+# Short format
 python unpackr.py -s "C:\Downloads" -d "D:\Videos"
 ```
 
@@ -167,6 +211,18 @@ Or if installed as command:
 unpackr --source "C:\Downloads" --destination "D:\Videos"
 unpackr -s "C:\Downloads" -d "D:\Videos"
 ```
+
+### Dry-Run Mode (Test Without Changes)
+
+Preview what would happen without actually moving/deleting anything:
+```powershell
+python unpackr.py --source "C:\Downloads" --destination "D:\Videos" --dry-run
+```
+Shows:
+- Which videos would be moved
+- Which files would be deleted
+- Which folders would be cleaned
+- All operations logged with `[DRY-RUN]` prefix
 
 ### Custom Configuration
 
@@ -190,39 +246,66 @@ python unpackr.py --source C:\Downloads --destination D:\Videos
 
 ### 1. Pre-Scan Analysis
 ```
-[PRE-SCAN] Analyzing directories...
-Videos: 12 | Archives: 5 | Junk: 127 | Content Folders: 2
+[PRE-SCAN] Analyzing 25/25 folders...
+Found: 51 videos | 710 archives | 2 PAR2 sets | 127 junk files
 ```
-Quickly scans to show what will be processed.
+Quickly scans and sorts folders by age (oldest first).
 
-### 2. Stage 1: Process Archives
-- Finds all RAR files
-- Extracts them (5 min timeout per archive)
-- Repairs with PAR2 if available (10 min timeout)
+### 2. For Each Folder (Oldest First)
 
-### 3. Stage 2: Find Videos
-- Scans for video files
-- Detects sample files (< 50 MB by default)
-- Identifies content folders (music/docs/images)
+**Step 2a: PAR2 Verify/Repair** (if PAR2 files present)
+```
+Verifying/Repairing PAR2: Release.par2 (8 files, 45.3MB)
+PAR2 verification passed (no repair needed) in 3.2s
+```
+- Verifies archive integrity first
+- Only repairs if needed (faster!)
+- If repair fails → deletes corrupted archives immediately
 
-### 4. Stage 3: Validate Videos
-- Checks video health with FFmpeg (60 sec timeout)
-- Flags corrupt files for deletion
+**Step 2b: Extract Archives** (only .part001, skips .part002+)
+```
+Extracting [34.2MB] Release.part001.rar
+Extracted Release.part001.rar (34.2MB in 45.2s, 0.8MB/s)
+```
+- Filters multi-part RARs (only extracts first part)
+- 7-Zip automatically handles remaining parts
+- Real-time extraction speed display
 
-### 5. Stage 4: Move Videos
-- Moves good videos to destination
-- Preserves folder structure if needed
-- Skips duplicates
+**Step 2c: Process Videos** (immediate one-by-one)
+```
+Checking video: Movie.Title.2024.mkv
+MOVED: Movie.Title.2024.mkv (1250.3MB) -> G:\out
+```
+- **Each video validated and moved immediately**
+- You see videos appearing in output as they're processed
+- Corrupt videos deleted on the spot
 
-### 6. Stage 5: Cleanup
-- Deletes junk files (NFO, SFV, URL, etc.)
-- Removes empty folders
-- Deletes corrupt videos
-- Preserves content folders (music/docs)
+**Step 2d: Cleanup Folder**
+- Deletes remaining junk (NFO, SFV, etc.)
+- Attempts folder deletion (with retries)
+- If locked → tracks for multi-pass cleanup later
+
+### 3. Multi-Pass Cleanup (After All Folders)
+```
+Retry pass 1/3: Attempting 2 failed deletions...
+Successfully deleted 2 folders on retry
+```
+- Re-attempts folders that were locked
+- 3 passes with 30-second delays
+- Kills blocking processes automatically
+
+### Live Progress Display
+```
+[##########----------] 33% | Folders: 10/30 | Videos: 15 | Archives: 8 | PAR2: 5
+Speed: 2.3 folders/min | ETA: 0:08:45
+> Extracting [34.2MB] Release.part001.rar
+```
 
 ### Final Summary
 ```
-Moved: 10 | Deleted: 127 files | Videos: 10 | Folders: 5
+Moved: 51 videos | Extracted: 8 archives | Repaired: 5 PAR2
+Deleted: 127 junk files | Cleaned: 25 folders
+Failed: 2 folders (still locked - retry manually)
 ```
 
 ## Configuration

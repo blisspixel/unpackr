@@ -5,6 +5,7 @@ Handles RAR extraction and PAR2 repair operations.
 
 import logging
 import subprocess
+import time
 from pathlib import Path
 from typing import Tuple
 
@@ -60,9 +61,12 @@ class ArchiveProcessor:
             total_count = len(archive_files)
 
             for idx, archive_file in enumerate(archive_files, 1):
+                # Get file size for progress display
+                file_size_mb = archive_file.stat().st_size / (1024 * 1024)
+
                 # Show progress during extraction
                 if progress_callback:
-                    progress_callback(idx, total_count, f"Extracting {idx}/{total_count}: {archive_file.name[:30]}")
+                    progress_callback(idx, total_count, f"Extracting [{file_size_mb:.1f}MB] {archive_file.name[:35]}")
 
                 if not loop_guard.tick():
                     logging.error(f"RAR extraction loop safety triggered in {folder}")
@@ -74,6 +78,9 @@ class ArchiveProcessor:
                     if not sevenzip_cmd:
                         sevenzip_cmd = ['7z']
 
+                    # Log start time for this archive
+                    start_time = time.time()
+
                     # Use safe subprocess with timeout
                     success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
                         sevenzip_cmd + ['x', str(archive_file), f'-o{folder}', '-aoa'],
@@ -82,9 +89,12 @@ class ArchiveProcessor:
                         operation=f"Archive extraction: {archive_file.name}"
                     )
 
+                    elapsed = time.time() - start_time
+
                     if success:
                         success_count += 1
-                        logging.info(f"Successfully extracted {archive_file.name}")
+                        speed_mbps = file_size_mb / elapsed if elapsed > 0 else 0
+                        logging.info(f"Extracted {archive_file.name} ({file_size_mb:.1f}MB in {elapsed:.1f}s, {speed_mbps:.1f}MB/s)")
                     else:
                         logging.error(f"Archive extraction failed for {archive_file}:\nStdout: {stdout}\nStderr: {stderr}")
 
@@ -141,24 +151,35 @@ class ArchiveProcessor:
             if not par2_cmd:
                 par2_cmd = ['par2']
 
+            # Count PAR2 files for display
+            par2_count = len(par2_files)
+            total_par2_size = sum(p.stat().st_size for p in par2_files) / (1024 * 1024)
+
             # Run repair (will verify first, only repair if needed - faster!)
-            logging.info(f"Verifying/repairing archives with PAR2: {par2_file.name}")
+            logging.info(f"PAR2 verify/repair: {par2_file.name} ({par2_count} files, {total_par2_size:.1f}MB)")
+
+            start_time = time.time()
             success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
                 par2_cmd + ['r', str(par2_file)],
                 timeout=SafetyLimits.PAR2_REPAIR_TIMEOUT,
                 cwd=folder,
                 operation=f"PAR2 repair: {par2_file.name}"
             )
+            elapsed = time.time() - start_time
 
             if success:
                 # Files OK (either no repair needed or repair succeeded)
-                logging.info(f"PAR2 processing completed successfully for {folder}")
+                # Check if repair was actually done by looking for "repaired" in output
+                if "repaired successfully" in stdout.lower() or "repaired successfully" in stderr.lower():
+                    logging.info(f"PAR2 repair completed in {elapsed:.1f}s for {folder}")
+                else:
+                    logging.info(f"PAR2 verification passed (no repair needed) in {elapsed:.1f}s for {folder}")
                 self._delete_files_by_extension(folder, '.par2')
                 return True
             else:
                 # Repair failed - archives are corrupted beyond repair
-                logging.error(f"PAR2 repair FAILED for {folder} - deleting corrupted archives")
-                logging.error(f"Output:\nStdout: {stdout}\nStderr: {stderr}")
+                logging.error(f"PAR2 repair FAILED after {elapsed:.1f}s for {folder} - deleting corrupted archives")
+                logging.error(f"Output:\nStdout: {stdout[:500]}\nStderr: {stderr[:500]}")
 
                 # Delete PAR2 files
                 self._delete_files_by_extension(folder, '.par2')
@@ -192,15 +213,31 @@ class ArchiveProcessor:
     
     def _delete_files_by_extension(self, folder: Path, extension: str):
         """
-        Delete all files with the given extension in the folder.
-        
+        Delete all files with the given extension in the folder with retry logic.
+
         Args:
             folder: Path to folder
             extension: File extension to delete (e.g., '.rar')
         """
         for file in folder.glob('*' + extension):
-            try:
-                file.unlink()
-                logging.info(f"Deleted file: {file}")
-            except Exception as e:
-                logging.error(f"Failed to delete file {file}: {e}")
+            # Try deleting with retries for locked files
+            for attempt in range(3):
+                try:
+                    file.unlink()
+                    logging.info(f"Deleted file: {file}")
+                    break  # Success
+                except PermissionError as e:
+                    if attempt < 2:
+                        # File is locked, wait and retry
+                        logging.warning(f"File locked (attempt {attempt + 1}/3): {file}")
+                        time.sleep(1)
+                    else:
+                        # Final attempt failed - try forcing via unlink with missing_ok
+                        try:
+                            file.unlink(missing_ok=True)
+                            logging.info(f"Force deleted file: {file}")
+                        except Exception as e2:
+                            logging.error(f"Failed to delete locked file {file} after 3 attempts: {e2}")
+                except Exception as e:
+                    logging.error(f"Failed to delete file {file}: {e}")
+                    break

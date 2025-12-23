@@ -165,7 +165,8 @@ class FileHandler:
     
     def safe_delete_folder(self, folder: Path, max_attempts: int = None) -> bool:
         """
-        Safely delete a folder with retry logic.
+        Safely delete a folder with retry logic and fallback methods.
+        Handles special characters in filenames (brackets, etc.) and locked files.
 
         Args:
             folder: Path to folder to delete
@@ -180,16 +181,72 @@ class FileHandler:
 
         for attempt in range(max_attempts):
             try:
+                # Try standard shutil.rmtree first
                 shutil.rmtree(folder)
                 logging.info(f"Successfully deleted folder {folder}")
                 return True
+            except PermissionError as e:
+                # File is locked - try killing processes holding it
+                logging.warning(f"Permission denied deleting {folder} on attempt {attempt + 1}: {e}")
+                self._kill_processes_using_folder(folder)
+                if attempt < max_attempts - 1:
+                    time.sleep(retry_delay)
             except Exception as e:
                 logging.error(f"Failed to delete folder {folder} on attempt {attempt + 1}: {e}")
                 if attempt < max_attempts - 1:
                     time.sleep(retry_delay)
 
-        logging.error(f"Could not delete folder {folder} after {max_attempts} attempts")
+        # Final attempt using PowerShell (handles special chars better)
+        logging.info(f"Trying PowerShell force delete for {folder}")
+        try:
+            import subprocess
+            # Use PowerShell's Remove-Item with -Force to handle locked files and special chars
+            result = subprocess.run(
+                ['powershell', '-Command',
+                 f"Remove-Item -Path '{folder}' -Recurse -Force -ErrorAction SilentlyContinue"],
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            # Check if folder still exists
+            if not folder.exists():
+                logging.info(f"PowerShell successfully deleted folder {folder}")
+                return True
+        except Exception as e:
+            logging.error(f"PowerShell delete failed for {folder}: {e}")
+
+        logging.error(f"Could not delete folder {folder} after all attempts")
         return False
+
+    def _kill_processes_using_folder(self, folder: Path):
+        """
+        Kill processes that have files open in the given folder.
+
+        Args:
+            folder: Path to folder
+        """
+        try:
+            import psutil
+            folder_str = str(folder)
+            killed_pids = set()
+
+            for proc in psutil.process_iter(['pid', 'name']):
+                try:
+                    # Check if process has any files open in this folder
+                    for file in proc.open_files():
+                        if folder_str in file.path:
+                            if proc.pid not in killed_pids:
+                                logging.info(f"Killing process {proc.name()} (PID {proc.pid}) using {folder}")
+                                proc.kill()
+                                killed_pids.add(proc.pid)
+                            break
+                except (psutil.AccessDenied, psutil.NoSuchProcess):
+                    continue
+
+            if killed_pids:
+                time.sleep(2)  # Give processes time to die
+        except Exception as e:
+            logging.warning(f"Error killing processes for {folder}: {e}")
     
     def move_file(self, source: Path, destination_dir: Path) -> bool:
         """

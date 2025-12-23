@@ -24,9 +24,9 @@ class Config:
         'archive_extensions': ['.zip', '.7z', '.rar'],
         'removable_extensions': ['.sfv', '.nfo', '.srr', '.srs', '.url', '.db', 
                                '.nzb', '.txt', '.xml', '.dat', '.exe', '.htm', '.log'],
-        'min_music_files': 3,
-        'min_image_files': 5,
-        'min_documents': 1,
+        'min_music_files': 5,
+        'min_image_files': 10,
+        'min_documents': 5,
         'min_sample_size_mb': 50,
         'max_log_files': 5,
         'log_folder': 'logs'
@@ -84,12 +84,37 @@ class Config:
     def removable_extensions(self) -> List[str]:
         """Get list of removable file extensions."""
         return self.config['removable_extensions']
-    
+
+    @property
+    def music_extensions(self) -> List[str]:
+        """Get list of music file extensions."""
+        return self.config['music_extensions']
+
+    @property
+    def document_extensions(self) -> List[str]:
+        """Get list of document file extensions."""
+        return self.config['document_extensions']
+
+    @property
+    def min_music_files(self) -> int:
+        """Get minimum number of music files to preserve folder."""
+        return self.config['min_music_files']
+
+    @property
+    def min_image_files(self) -> int:
+        """Get minimum number of image files to preserve folder."""
+        return self.config['min_image_files']
+
+    @property
+    def min_documents(self) -> int:
+        """Get minimum number of documents to preserve folder."""
+        return self.config['min_documents']
+
     @property
     def max_log_files(self) -> int:
         """Get maximum number of log files to keep."""
         return self.config['max_log_files']
-    
+
     @property
     def log_folder(self) -> str:
         """Get log folder path."""

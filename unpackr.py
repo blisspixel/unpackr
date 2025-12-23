@@ -61,9 +61,12 @@ class WorkPlan:
         self.total_rars += rars
         self.total_par2s += par2s
         
-    def add_content_folder(self, folder: Path):
+    def add_content_folder(self, folder: Path, reason: str = ""):
         """Add a content folder to keep."""
-        self.content_folders.append(folder)
+        self.content_folders.append({
+            'path': folder,
+            'reason': reason
+        })
         
     def add_loose_video(self, video: Path):
         """Add a loose video file."""
@@ -72,18 +75,18 @@ class WorkPlan:
         
     def calculate_time_estimate(self):
         """Calculate estimated processing time."""
-        # Rough estimates:
-        # - 5 seconds per video check
-        # - 10 seconds per RAR extraction
-        # - 15 seconds per PAR2 repair
+        # More realistic estimates:
+        # - 10 seconds per video check (FFmpeg can be slow)
+        # - 3 seconds per RAR (usually just extracts first .part001)
+        # - 5 seconds per PAR2 set (usually just verifies, rarely repairs)
         # - 2 seconds per folder operation
-        
+
         time_estimate = 0
-        time_estimate += self.total_videos * 5  # Video health checks
-        time_estimate += self.total_rars * 10   # RAR extractions
-        time_estimate += self.total_par2s * 15  # PAR2 repairs
+        time_estimate += self.total_videos * 10  # Video health checks
+        time_estimate += self.total_rars * 3     # RAR extractions (only .part001)
+        time_estimate += self.total_par2s * 5    # PAR2 verify (not full repair)
         time_estimate += len(self.video_folders) * 2  # Folder operations
-        
+
         self.estimated_time = time_estimate
         return time_estimate
         
@@ -92,13 +95,60 @@ class WorkPlan:
         # Compact single-line summary
         eta = timedelta(seconds=self.estimated_time)
         eta_str = str(eta).split('.')[0]
-        
+
         print(f"[PLAN] {Fore.YELLOW}{len(self.video_folders)}{Style.RESET_ALL} folders, "
               f"{Fore.YELLOW}{self.total_videos}{Style.RESET_ALL} videos, "
               f"{Fore.YELLOW}{self.total_rars}{Style.RESET_ALL} RARs, "
               f"{Fore.YELLOW}{self.total_par2s}{Style.RESET_ALL} PAR2s | "
               f"ETA: {Fore.CYAN}{eta_str}{Style.RESET_ALL} | "
               f"{Fore.GREEN}{len(self.content_folders)}{Style.RESET_ALL} folders preserved")
+
+    def display_detailed(self):
+        """Display detailed pre-flight plan showing what will happen to each folder."""
+        print(f"\n{Fore.CYAN}{'='*80}{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}PRE-FLIGHT CHECK - Detailed Plan{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}{'='*80}{Style.RESET_ALL}\n")
+
+        # Video folders to process
+        if self.video_folders:
+            print(f"{Fore.YELLOW}FOLDERS TO PROCESS ({len(self.video_folders)} folders):{Style.RESET_ALL}")
+            print(f"{Fore.WHITE}These will be processed: PAR2 verify -> RAR extract -> Video check -> Move good videos -> Delete folder{Style.RESET_ALL}\n")
+            for item in self.video_folders:
+                folder = item['path']
+                videos = item['videos']
+                rars = item['rars']
+                par2s = item['par2s']
+
+                actions = []
+                if par2s > 0:
+                    actions.append(f"{par2s} PAR2")
+                if rars > 0:
+                    actions.append(f"{rars} RAR")
+                if videos > 0:
+                    actions.append(f"{videos} video(s)")
+
+                action_str = " -> ".join(actions) if actions else "scan only"
+                print(f"  {Fore.GREEN}+{Style.RESET_ALL} {folder.name[:60]:<60} | {action_str}")
+            print()
+
+        # Content folders to preserve
+        if self.content_folders:
+            print(f"{Fore.GREEN}FOLDERS TO PRESERVE ({len(self.content_folders)} folders):{Style.RESET_ALL}")
+            print(f"{Fore.WHITE}These will NOT be deleted (contain music/images/documents){Style.RESET_ALL}\n")
+            for item in self.content_folders:
+                folder = item['path']
+                reason = item.get('reason', 'content detected')
+                print(f"  {Fore.BLUE}*{Style.RESET_ALL} {folder.name[:60]:<60} | {reason}")
+            print()
+
+        # Summary
+        eta = timedelta(seconds=self.estimated_time)
+        eta_str = str(eta).split('.')[0]
+        print(f"{Fore.CYAN}{'='*80}{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}SUMMARY:{Style.RESET_ALL}")
+        print(f"  Process: {len(self.video_folders)} folders -> {self.total_videos} videos -> Estimated time: {eta_str}")
+        print(f"  Preserve: {len(self.content_folders)} folders (will NOT be deleted)")
+        print(f"{Fore.CYAN}{'='*80}{Style.RESET_ALL}\n")
 
 
 class UnpackrApp:
@@ -151,8 +201,11 @@ class UnpackrApp:
             sys.stdout.write(f"\r[PRE-SCAN] Analyzing {i}/{len(folders)} folders...")
             sys.stdout.flush()
             
-            # Count videos, RARs, 7z, PAR2s (optimized single-pass)
-            video_extensions = {'.mp4', '.avi', '.mkv', '.mov'}
+            # Count videos, RARs, 7z, PAR2s, and content files (optimized single-pass)
+            video_extensions = set(self.config.video_extensions)
+            music_extensions = set(self.config.music_extensions)
+            image_extensions = set(self.config.image_extensions)
+            document_extensions = set(self.config.document_extensions)
             rar_pattern = re.compile(r'\.r\d{2}$')
             sevenz_pattern = re.compile(r'\.7z(\.\d+)?$')
 
@@ -160,6 +213,9 @@ class UnpackrApp:
             rars = []
             sevenz = []
             par2s = []
+            music_files = 0
+            image_files = 0
+            document_files = 0
 
             for file in folder.iterdir():
                 if file.is_file():
@@ -172,13 +228,31 @@ class UnpackrApp:
                         sevenz.append(file)
                     elif ext_lower == '.par2':
                         par2s.append(file)
+                    elif ext_lower in music_extensions:
+                        music_files += 1
+                    elif ext_lower in image_extensions:
+                        image_files += 1
+                    elif ext_lower in document_extensions:
+                        document_files += 1
 
+            # Determine if this is a video folder or content folder to preserve
             if videos or rars or sevenz:
-                # This is a video folder
+                # This is a video folder (has videos or archives that might contain videos)
                 plan.add_video_folder(folder, len(videos), len(rars), len(par2s))
-            else:
-                # This is a content folder (music, docs, etc.)
-                plan.add_content_folder(folder)
+            elif (music_files >= self.config.min_music_files or
+                  image_files >= self.config.min_image_files or
+                  document_files >= self.config.min_documents):
+                # This is a content folder with significant music/images/docs - preserve it
+                reasons = []
+                if music_files >= self.config.min_music_files:
+                    reasons.append(f"{music_files} music files")
+                if image_files >= self.config.min_image_files:
+                    reasons.append(f"{image_files} images")
+                if document_files >= self.config.min_documents:
+                    reasons.append(f"{document_files} documents")
+                reason_str = ", ".join(reasons)
+                plan.add_content_folder(folder, reason_str)
+            # Otherwise: not a video folder and not enough content to preserve - will be skipped/deleted
         
         # Check for loose video files (optimized single-pass)
         video_extensions = {'.mp4', '.avi', '.mkv', '.mov'}
@@ -285,6 +359,9 @@ class UnpackrApp:
                     if self.file_handler.move_file(video_file, destination_dir):
                         moved_count += 1
                         self.stats['videos_moved'] += 1
+                        # Log success so user knows videos are being moved
+                        file_size_mb = video_file.stat().st_size / (1024 * 1024) if video_file.exists() else 0
+                        logging.info(f"MOVED: {video_file.name} ({file_size_mb:.1f}MB) -> {destination_dir}")
                 else:
                     # Delete corrupt video
                     self.stats['videos_failed'] += 1
@@ -310,8 +387,7 @@ class UnpackrApp:
     
     def _update_progress(self, current: int, total: int, action: str):
         """
-        Update progress display with rich statistics.
-        Modern CLI progress showing: progress bar, stats, throughput, ETA, current operation.
+        Update progress display - single line that overwrites itself.
 
         Args:
             current: Current item number
@@ -323,55 +399,47 @@ class UnpackrApp:
 
         if self.start_time:
             elapsed = time.time() - self.start_time
-            if current > 0:
+            if current > 0 and elapsed >= 1.0:  # Require at least 1 second elapsed
                 avg_time = elapsed / current
                 remaining = (total - current) * avg_time
                 eta = str(timedelta(seconds=int(remaining))).split('.')[0]
                 # Calculate throughput (folders per minute)
-                throughput = (current / elapsed) * 60 if elapsed > 0 else 0
+                throughput = (current / elapsed) * 60
             else:
-                eta = "calculating..."
-                throughput = 0
+                eta = "..."
+                throughput = 0.0
         else:
-            eta = "calculating..."
-            throughput = 0
+            eta = "..."
+            throughput = 0.0
 
-        # Progress bar with ASCII-safe characters
+        # Progress bar
         bar_length = 20
         filled = int(bar_length * current / total) if total > 0 else 0
         bar = '#' * filled + '-' * (bar_length - filled)
 
-        # Clear multiple lines (for multi-line display)
-        sys.stdout.write('\r' + ' '*120 + '\r')
+        # Encode action string safely
+        safe_action = action[:40].encode('ascii', errors='replace').decode('ascii')
 
-        # Encode action string safely to avoid Unicode errors
-        safe_action = action[:60].encode('ascii', errors='replace').decode('ascii')
-
-        # Line 1: Progress bar and percentage
-        line1 = f"{Fore.CYAN}[{bar}] {percent:3d}%{Style.RESET_ALL}"
-
-        # Line 2: Stats - folders, videos, archives
-        stats_parts = []
-        stats_parts.append(f"{Fore.YELLOW}Folders: {current}/{total}{Style.RESET_ALL}")
+        # Build stats
+        stats = []
+        stats.append(f"Folders:{current}/{total}")
         if self.stats['videos_moved'] > 0:
-            stats_parts.append(f"{Fore.GREEN}Videos: {self.stats['videos_moved']}{Style.RESET_ALL}")
+            stats.append(f"Videos:{self.stats['videos_moved']}")
         if self.stats['rars_extracted'] > 0:
-            stats_parts.append(f"{Fore.BLUE}Archives: {self.stats['rars_extracted']}{Style.RESET_ALL}")
+            stats.append(f"RAR:{self.stats['rars_extracted']}")
         if self.stats['par2s_repaired'] > 0:
-            stats_parts.append(f"{Fore.MAGENTA}PAR2: {self.stats['par2s_repaired']}{Style.RESET_ALL}")
+            stats.append(f"PAR2:{self.stats['par2s_repaired']}")
+        if self.stats['videos_failed'] > 0:
+            stats.append(f"Failed:{self.stats['videos_failed']}")
 
-        line2 = " | ".join(stats_parts)
+        stats_str = " ".join(stats)
 
-        # Line 3: Throughput and ETA
-        line3 = f"{Fore.CYAN}Speed: {throughput:.1f} folders/min{Style.RESET_ALL} | ETA: {Fore.GREEN}{eta}{Style.RESET_ALL}"
+        # Single line: [####----] 45% | Folders:3/7 Videos:12 | Speed:2.1/min ETA:0:03:21 | > Processing: folder
+        progress_line = f"[{bar}] {percent:3d}% | {stats_str} | Speed:{throughput:.1f}/min ETA:{eta} | {safe_action}"
 
-        # Line 4: Current action
-        line4 = f"{Fore.WHITE}> {safe_action}{Style.RESET_ALL}"
-
-        # Combine all lines
-        progress_display = f"{line1} | {line2}\n{line3}\n{line4}"
-
-        sys.stdout.write(progress_display)
+        # Clear the line and write new progress (carriage return \r overwrites from start)
+        sys.stdout.write('\r' + ' ' * 150 + '\r')  # Clear with spaces
+        sys.stdout.write(progress_line)
         sys.stdout.flush()
     
     def _process_subfolder(self, subfolder: Path, destination_dir: Path):
@@ -443,9 +511,13 @@ class UnpackrApp:
                     if self.video_processor.check_video_health(video_file):
                         if self.file_handler.move_file(video_file, destination_dir):
                             self.stats['videos_moved'] += 1
+                            # Log success so user knows videos are being moved
+                            file_size_mb = video_file.stat().st_size / (1024 * 1024) if video_file.exists() else 0
+                            logging.info(f"MOVED: {video_file.name} ({file_size_mb:.1f}MB) -> {destination_dir}")
                     else:
                         # Delete corrupt video
                         self.stats['videos_failed'] += 1
+                        logging.info(f"Deleting corrupt video: {video_file.name}")
                         if self.file_handler.wait_for_file_release(str(video_file)):
                             self.file_handler.delete_video_file_with_retry(video_file)
 
@@ -696,6 +768,7 @@ def main():
         parser.add_argument('--destination', '-d', help='Path to destination directory', required=False)
         parser.add_argument('--config', '-c', help='Path to config.json file', required=False)
         parser.add_argument('--dry-run', action='store_true', help='Show what would be done without making changes')
+        parser.add_argument('--show-plan', action='store_true', help='Show detailed pre-flight plan and exit (no processing)')
         args = parser.parse_args()
         
         # Load configuration defensively
@@ -779,14 +852,23 @@ def main():
             print(Fore.RED + f"Error during scan: {e}" + Style.RESET_ALL)
             logging.error(f"Scan failed: {e}", exc_info=True)
             sys.exit(1)
-        
+
+        # If --show-plan, display detailed plan and exit
+        if args.show_plan:
+            work_plan.display_detailed()
+            print(f"{Fore.CYAN}Source: {source_dir}{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}Destination: {destination_dir}{Style.RESET_ALL}")
+            print(f"\n{Fore.GREEN}Pre-flight check complete. No changes made.{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}Run without --show-plan to execute.{Style.RESET_ALL}\n")
+            sys.exit(0)
+
         # Display work plan (compact single line)
         work_plan.display()
-        
+
         # Display confirmation (compact)
         print(f"[INFO] Source: {Fore.CYAN}{source_dir}{Style.RESET_ALL} -> Dest: {Fore.CYAN}{destination_dir}{Style.RESET_ALL}")
         print(f"[WARN] {Fore.RED}Processed folders will be DELETED{Style.RESET_ALL} | Log: {log_file.name}")
-        
+
         if not countdown_prompt(10):
             logging.info("User cancelled operation")
             sys.exit(0)
