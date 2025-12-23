@@ -187,11 +187,14 @@ def test_system_check():
     
     # Test checking all tools
     try:
-        tools = SystemCheck.check_all_tools()
+        from core import Config
+        config = Config()
+        checker = SystemCheck(config)
+        tools = checker.check_all_tools()
         tests_total += 1
         print_test("SystemCheck.check_all_tools()", True)
         tests_passed += 1
-        
+
         # Display tool status
         for tool, available in tools.items():
             status = "available" if available else "missing"

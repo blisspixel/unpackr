@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python unpackr.py:*)",
+      "Bash(dir:*)",
+      "Bash(ls:*)",
+      "Bash(xargs cat:*)",
+      "Bash(done)",
+      "Bash(wc:*)",
+      "Bash(python tests/test_all.py:*)",
+      "Bash(python tests/test_comprehensive.py:*)"
+    ]
+  }
+}

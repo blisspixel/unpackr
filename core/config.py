@@ -74,7 +74,12 @@ class Config:
     def video_extensions(self) -> List[str]:
         """Get list of video file extensions."""
         return self.config['video_extensions']
-    
+
+    @property
+    def image_extensions(self) -> List[str]:
+        """Get list of image file extensions."""
+        return self.config['image_extensions']
+
     @property
     def removable_extensions(self) -> List[str]:
         """Get list of removable file extensions."""

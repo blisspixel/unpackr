@@ -34,41 +34,59 @@ class ArchiveProcessor:
         """
         try:
             rar_files = list(folder.glob('*.rar'))
-            
-            if not rar_files:
-                return True  # No RAR files to process
-            
-            # Safety: limit number of RAR files
-            loop_guard = LoopSafety(100, "RAR extraction loop")
-            
-            for rar_file in rar_files:
+            sevenz_files = list(folder.glob('*.7z')) + list(folder.glob('*.7z.001'))
+            archive_files = rar_files + sevenz_files
+
+            if not archive_files:
+                return True  # No archive files to process
+
+            # Safety: limit number of archive files
+            loop_limit = getattr(self.config, 'archive_extraction_loop_limit', 100)
+            loop_guard = LoopSafety(loop_limit, "Archive extraction loop")
+            success_count = 0
+            total_count = len(archive_files)
+
+            for archive_file in archive_files:
                 if not loop_guard.tick():
                     logging.error(f"RAR extraction loop safety triggered in {folder}")
                     break
-                
+
                 try:
                     # Get 7z command from config
                     sevenzip_cmd = self.system_check.get_tool_command('7z')
                     if not sevenzip_cmd:
                         sevenzip_cmd = ['7z']
-                    
+
                     # Use safe subprocess with timeout
                     success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
-                        sevenzip_cmd + ['x', str(rar_file), f'-o{folder}', '-aoa'],
+                        sevenzip_cmd + ['x', str(archive_file), f'-o{folder}', '-aoa'],
                         timeout=SafetyLimits.RAR_EXTRACTION_TIMEOUT,
                         cwd=folder,
-                        operation=f"RAR extraction: {rar_file.name}"
+                        operation=f"Archive extraction: {archive_file.name}"
                     )
-                    
-                    if not success:
-                        logging.error(f"RAR extraction failed for {rar_file}:\nStdout: {stdout}\nStderr: {stderr}")
-                        
+
+                    if success:
+                        success_count += 1
+                        logging.info(f"Successfully extracted {archive_file.name}")
+                    else:
+                        logging.error(f"Archive extraction failed for {archive_file}:\nStdout: {stdout}\nStderr: {stderr}")
+
                 except Exception as e:
-                    logging.error(f"Error extracting {rar_file}: {e}")
-            
+                    logging.error(f"Error extracting {archive_file}: {e}")
+
             # Delete RAR files after extraction attempt
             self._delete_archive_files(folder)
-            return True
+
+            # Return True only if at least one archive extracted successfully
+            if success_count == 0:
+                logging.warning(f"All {total_count} archive extractions failed in {folder}")
+                return False
+            elif success_count < total_count:
+                logging.warning(f"Partial extraction: {success_count}/{total_count} archives succeeded in {folder}")
+                return True
+            else:
+                logging.info(f"All {total_count} archives extracted successfully in {folder}")
+                return True
             
         except Exception as e:
             logging.error(f"Unexpected error during RAR extraction for {folder}: {e}")
@@ -105,26 +123,37 @@ class ArchiveProcessor:
                 cwd=folder,
                 operation=f"PAR2 repair: {par2_file.name}"
             )
-            
-            if not success:
-                logging.error(f"PAR2 processing failed for {folder}:\nStdout: {stdout}\nStderr: {stderr}")
-            
+
             # Delete PAR2 files irrespective of the result
             self._delete_files_by_extension(folder, '.par2')
-            return True
+
+            if success:
+                logging.info(f"PAR2 repair completed successfully for {folder}")
+                return True
+            else:
+                logging.error(f"PAR2 processing failed for {folder}:\nStdout: {stdout}\nStderr: {stderr}")
+                return False
             
         except Exception as e:
             logging.error(f"Unexpected error during PAR2 processing for {folder}: {e}")
             return False
     
     def _delete_archive_files(self, folder: Path):
-        """Delete RAR and related archive files."""
+        """Delete RAR, 7z and related archive files."""
         # Delete .rar files
         self._delete_files_by_extension(folder, '.rar')
-        
+
         # Delete split RAR files (.r00, .r01, etc.)
         for i in range(100):
             ext = f'.r{str(i).zfill(2)}'
+            self._delete_files_by_extension(folder, ext)
+
+        # Delete .7z files
+        self._delete_files_by_extension(folder, '.7z')
+
+        # Delete split 7z files (.7z.001, .7z.002, etc.)
+        for i in range(1, 100):
+            ext = f'.7z.{str(i).zfill(3)}'
             self._delete_files_by_extension(folder, ext)
     
     def _delete_files_by_extension(self, folder: Path, extension: str):

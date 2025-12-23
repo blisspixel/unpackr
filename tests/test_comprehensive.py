@@ -1,7 +1,6 @@
 """
 Comprehensive test suite for Unpackr.
 Tests edge cases, error conditions, and integration scenarios.
-Think like a CS PhD - cover all branches, boundaries, and failure modes.
 """
 
 import sys
@@ -33,11 +32,11 @@ class TestRunner:
     def test(self, name: str, condition: bool, error_msg: str = ""):
         """Run a single test."""
         if condition:
-            print(f"{Fore.GREEN}✓{Style.RESET_ALL} {name}")
+            print(f"{Fore.GREEN}[PASS]{Style.RESET_ALL} {name}")
             self.passed += 1
             self.tests.append((name, True, ""))
         else:
-            print(f"{Fore.RED}✗{Style.RESET_ALL} {name}")
+            print(f"{Fore.RED}[FAIL]{Style.RESET_ALL} {name}")
             if error_msg:
                 print(f"  {Fore.RED}Error: {error_msg}{Style.RESET_ALL}")
             self.failed += 1
@@ -208,16 +207,18 @@ def test_video_processor_edge_cases(runner: TestRunner):
 def test_system_check_robustness(runner: TestRunner):
     """Test system check functionality."""
     print(f"\n{Fore.YELLOW}[System Check Tests]{Style.RESET_ALL}")
-    
+
     # Test tool checking
-    results = SystemCheck.check_all_tools()
-    runner.test("SystemCheck: Returns dict", 
+    config = Config()
+    checker = SystemCheck(config)
+    results = checker.check_all_tools()
+    runner.test("SystemCheck: Returns dict",
                 isinstance(results, dict))
-    runner.test("SystemCheck: Has 7z key", 
+    runner.test("SystemCheck: Has 7z key",
                 '7z' in results)
-    runner.test("SystemCheck: Has par2 key", 
+    runner.test("SystemCheck: Has par2 key",
                 'par2' in results)
-    runner.test("SystemCheck: Has ffmpeg key", 
+    runner.test("SystemCheck: Has ffmpeg key",
                 'ffmpeg' in results)
     runner.test("SystemCheck: Boolean values", 
                 all(isinstance(v, bool) for v in results.values()))
@@ -390,7 +391,7 @@ def test_path_edge_cases(runner: TestRunner):
 def main():
     """Run all tests."""
     print(f"\n{Fore.CYAN}{'='*70}")
-    print("COMPREHENSIVE TEST SUITE - CS PhD LEVEL")
+    print("COMPREHENSIVE TEST SUITE")
     print(f"{'='*70}{Style.RESET_ALL}\n")
     
     runner = TestRunner()

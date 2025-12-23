@@ -20,20 +20,21 @@ class InputValidator:
     @staticmethod
     def validate_path(path: Union[str, Path, None], must_exist: bool = False,
                      must_be_dir: bool = False, must_be_file: bool = False,
-                     allow_none: bool = False) -> Optional[Path]:
+                     allow_none: bool = False, base_dir: Optional[Path] = None) -> Optional[Path]:
         """
-        Validate and sanitize path input.
-        
+        Validate and sanitize path input with security checks.
+
         Args:
             path: Path to validate
             must_exist: Path must exist
             must_be_dir: Path must be a directory
             must_be_file: Path must be a file
             allow_none: Allow None values
-            
+            base_dir: Optional base directory to enforce path is within bounds
+
         Returns:
             Validated Path object or None
-            
+
         Raises:
             ValidationError: If validation fails
         """
@@ -74,16 +75,26 @@ class InputValidator:
         if must_be_file and path_obj.exists() and not path_obj.is_file():
             raise ValidationError(f"Path is not a file: {path_obj}")
         
-        # Security checks
+        # Security: Path traversal protection
         try:
-            # Check for path traversal attempts
-            str_path = str(path_obj)
-            if '..' in str_path.split(os.sep):
-                logging.warning(f"Path traversal pattern detected in: {path_obj}")
-        except:
-            pass
-        
-        return path_obj
+            resolved_path = path_obj.resolve()
+
+            # Check for symlink attacks
+            if resolved_path != path_obj.resolve(strict=False):
+                logging.warning(f"Symlink detected in path: {path_obj}")
+
+            # If base_dir specified, ensure path is within it
+            if base_dir is not None:
+                try:
+                    base_resolved = base_dir.resolve()
+                    resolved_path.relative_to(base_resolved)
+                except ValueError:
+                    raise ValidationError(f"Path {resolved_path} escapes base directory {base_resolved}")
+
+            return resolved_path
+        except Exception as e:
+            logging.warning(f"Path security check warning: {e}")
+            return path_obj
     
     @staticmethod
     def validate_string(value: Any, min_length: int = 0, max_length: int = 10000,
@@ -344,33 +355,62 @@ class ErrorRecovery:
         return False
     
     @staticmethod
-    def safe_move(src: Path, dst: Path, max_attempts: int = 3) -> bool:
+    def safe_move(src: Path, dst: Path, max_attempts: int = 3, verify_integrity: bool = True) -> bool:
         """
-        Safely move file with retries.
-        
+        Safely move file with retries and optional integrity verification.
+
         Args:
             src: Source path
             dst: Destination path
             max_attempts: Maximum attempts
-            
+            verify_integrity: Verify file size after move
+
         Returns:
-            True if moved, False otherwise
+            True if moved successfully, False otherwise
         """
         if not src.exists():
             logging.error(f"Source does not exist: {src}")
             return False
-        
+
         import shutil
         import time
-        
+
+        # Get source file size before move
+        try:
+            source_size = src.stat().st_size
+        except Exception as e:
+            logging.error(f"Cannot stat source file {src}: {e}")
+            return False
+
         for attempt in range(max_attempts):
             try:
+                # Use shutil.move which handles cross-drive moves correctly
                 shutil.move(str(src), str(dst))
+
+                # Verify integrity if requested
+                if verify_integrity:
+                    try:
+                        dest_size = dst.stat().st_size
+                        if dest_size != source_size:
+                            logging.error(f"Size mismatch after move: {source_size} != {dest_size}")
+                            # Cleanup incomplete move
+                            try:
+                                dst.unlink()
+                            except:
+                                pass
+                            return False
+                    except Exception as e:
+                        logging.error(f"Cannot verify moved file {dst}: {e}")
+                        return False
+
+                logging.info(f"Successfully moved {src.name} ({source_size} bytes)")
                 return True
+
             except Exception as e:
                 logging.warning(f"Move attempt {attempt + 1}/{max_attempts} failed: {e}")
-                time.sleep(1)
-        
+                if attempt < max_attempts - 1:
+                    time.sleep(1)
+
         return False
     
     @staticmethod

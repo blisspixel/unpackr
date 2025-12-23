@@ -64,7 +64,7 @@ class FileHandler:
                 return []
             
             # Defensive: check folder is accessible
-            if not StateValidator.check_file_accessible(folder / '.'):
+            if not folder.exists() or not folder.is_dir():
                 logging.warning(f"Folder not accessible: {folder}")
                 return []
             
@@ -110,63 +110,86 @@ class FileHandler:
                 return True
         return False
     
-    def is_folder_empty_or_removable(self, folder: Path, par2_error: bool = False, 
-                                     rar_error: bool = False) -> bool:
+    def is_folder_empty_or_removable(self, folder: Path, par2_error: bool = False,
+                                     archive_error: bool = False) -> bool:
         """
         Check if folder is empty or contains only removable files.
-        
+
         Args:
             folder: Path to check
             par2_error: Whether PAR2 processing had errors
-            rar_error: Whether RAR processing had errors
-            
+            archive_error: Whether archive extraction had errors
+
         Returns:
             True if folder can be safely deleted, False otherwise
         """
         removable_extensions = self.config.removable_extensions
-        jpg_count = 0
-        
+        image_count = 0
+        image_extensions = self.config.image_extensions
+
         for file in folder.iterdir():
             if file.is_dir():
                 logging.info(f"Folder '{folder}' not deleted: contains subdirectory '{file.name}'")
                 return False
-            
+
             file_ext = file.suffix.lower()
-            
-            if file_ext == '.jpg':
-                jpg_count += 1
-                if jpg_count > 1:
-                    logging.info(f"Folder '{folder}' not deleted: contains more than one JPG file")
+
+            # Count image files (distinguish between single cover art vs image collection)
+            if file_ext in image_extensions:
+                image_count += 1
+                threshold = getattr(self.config, 'image_collection_threshold', 5)
+                if image_count >= threshold:  # >= threshold images = collection, preserve folder
+                    logging.info(f"Folder '{folder}' not deleted: contains image collection ({image_count}+ images)")
                     return False
+                continue  # Single images (cover art) are treated as removable
+
+            # Check if it's a removable file (junk)
             elif file_ext in removable_extensions or (file_ext.startswith('.r') and file_ext[2:].isdigit()):
                 continue
-            elif (file_ext == '.par2' and par2_error) or (file_ext == '.rar' and rar_error):
-                continue  # Treat PAR2/RAR as removable if processing failed
+
+            # If PAR2 processing failed, treat PAR2 files as removable junk
+            elif file_ext == '.par2' and par2_error:
+                continue
+
+            # If archive extraction failed, treat archives as removable junk
+            elif archive_error and (file_ext == '.rar' or file_ext == '.7z' or
+                                   file_ext.startswith('.7z.') or
+                                   (file_ext.startswith('.r') and file_ext[2:].isdigit())):
+                continue
+
             else:
                 logging.info(f"Folder '{folder}' not deleted: contains non-removable file '{file.name}'")
                 return False
-        
-        return jpg_count <= 1
+
+        return True
     
-    def safe_delete_folder(self, folder: Path, max_attempts: int = 2):
+    def safe_delete_folder(self, folder: Path, max_attempts: int = None) -> bool:
         """
         Safely delete a folder with retry logic.
-        
+
         Args:
             folder: Path to folder to delete
-            max_attempts: Maximum number of deletion attempts
+            max_attempts: Maximum number of deletion attempts (None = use config)
+
+        Returns:
+            True if successful, False otherwise
         """
+        if max_attempts is None:
+            max_attempts = getattr(self.config, 'folder_delete_max_attempts', 2)
+        retry_delay = getattr(self.config, 'folder_delete_retry_delay', 5)
+
         for attempt in range(max_attempts):
             try:
                 shutil.rmtree(folder)
                 logging.info(f"Successfully deleted folder {folder}")
-                return
+                return True
             except Exception as e:
                 logging.error(f"Failed to delete folder {folder} on attempt {attempt + 1}: {e}")
                 if attempt < max_attempts - 1:
-                    time.sleep(5)
-        
+                    time.sleep(retry_delay)
+
         logging.error(f"Could not delete folder {folder} after {max_attempts} attempts")
+        return False
     
     def move_file(self, source: Path, destination_dir: Path) -> bool:
         """
@@ -234,48 +257,67 @@ class FileHandler:
             logging.error(f"Error moving file {source}: {e}", exc_info=True)
             return False
     
-    def delete_video_file_with_retry(self, video_file: Path, max_attempts: int = 5, 
-                                    retry_delay: int = 1) -> bool:
+    def delete_video_file_with_retry(self, video_file: Path, max_attempts: int = None,
+                                    retry_delay: int = None) -> bool:
         """
-        Delete a video file with retry logic.
-        
+        Delete a video file with retry logic and exponential backoff.
+
+        Note: File lock checks (wait_for_file_release) before calling this are
+        advisory only. The actual delete operation is protected by try/except
+        to handle race conditions where file becomes locked between check and delete.
+
         Args:
             video_file: Path to video file
-            max_attempts: Maximum deletion attempts
-            retry_delay: Delay between attempts in seconds
-            
+            max_attempts: Maximum deletion attempts (None = use config)
+            retry_delay: Initial delay between attempts in seconds (None = use config)
+
         Returns:
             True if successful, False otherwise
         """
+        if max_attempts is None:
+            max_attempts = getattr(self.config, 'file_delete_max_attempts', 5)
+        if retry_delay is None:
+            retry_delay = getattr(self.config, 'file_delete_retry_delay', 1)
+
+        current_delay = retry_delay
+
         for attempt in range(max_attempts):
             self._terminate_related_processes(str(video_file))
-            
+
             try:
                 if attempt > 0:
-                    time.sleep(retry_delay)
-                
+                    time.sleep(current_delay)
+                    current_delay *= 2  # Exponential backoff
+
                 video_file.unlink(missing_ok=True)
                 logging.info(f"Successfully deleted video file: {video_file}")
                 return True
+            except PermissionError as e:
+                logging.warning(f"Attempt {attempt + 1}/{max_attempts} - File locked: {video_file}")
+                # Continue retry loop with backoff
             except Exception as e:
-                logging.error(f"Attempt {attempt + 1} - Error deleting video file {video_file}: {e}")
-        
+                logging.error(f"Attempt {attempt + 1}/{max_attempts} - Error deleting {video_file}: {e}")
+
         logging.error(f"Failed to delete video file {video_file} after {max_attempts} attempts")
         return False
     
-    def wait_for_file_release(self, file_path: str, max_attempts: int = 10, 
-                             delay: int = 1) -> bool:
+    def wait_for_file_release(self, file_path: str, max_attempts: int = None,
+                             delay: int = None) -> bool:
         """
         Wait for a file to be released by other processes.
-        
+
         Args:
             file_path: Path to file as string
-            max_attempts: Maximum wait attempts
-            delay: Delay between checks in seconds
-            
+            max_attempts: Maximum wait attempts (None = use config)
+            delay: Delay between checks in seconds (None = use config)
+
         Returns:
             True if file is released, False if timeout
         """
+        if max_attempts is None:
+            max_attempts = getattr(self.config, 'file_lock_wait_attempts', 10)
+        if delay is None:
+            delay = getattr(self.config, 'file_lock_wait_delay', 1)
         for attempt in range(max_attempts):
             is_locked = False
             
