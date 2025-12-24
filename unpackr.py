@@ -1288,12 +1288,16 @@ def countdown_prompt(seconds: int = 10) -> bool:
         True if user didn't cancel, False if cancelled
     """
     try:
+        print(f"{Fore.GREEN}Starting in {seconds} seconds... (Press Ctrl+C to cancel){Style.RESET_ALL}", end='', flush=True)
         for i in range(seconds, 0, -1):
-            sys.stdout.write(f"\r{Fore.GREEN}Starting in {i} seconds... "
-                           f"(Press Ctrl+C to cancel) {Style.RESET_ALL}")
-            sys.stdout.flush()
             time.sleep(1)
-        sys.stdout.write("\r" + " " * 60 + "\r")
+            # Use backspace to overwrite numbers in place (more portable than \r)
+            if i > 1:
+                sys.stdout.write('\b' * (len(str(i+1)) + 1))
+                sys.stdout.write(f"{i} ")
+                sys.stdout.flush()
+        sys.stdout.write('\b' * (len(str(1)) + 1))
+        print("Starting now!          ")
         return True
     except KeyboardInterrupt:
         print(Fore.RED + "\n\nOperation cancelled by user." + Style.RESET_ALL)
