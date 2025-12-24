@@ -962,6 +962,10 @@ class UnpackrApp:
 
         try:
             for i, folder in enumerate(video_folders, 1):
+                # Initialize dashboard on first folder
+                if i == 1:
+                    self._update_progress(0, total, f"Initializing... {total} folders queued")
+
                 # Safety checks
                 if not loop_guard.tick():
                     logging.error("[SAFETY] Folder processing loop exceeded safety limit")
@@ -1288,10 +1292,12 @@ def countdown_prompt(seconds: int = 10) -> bool:
         True if user didn't cancel, False if cancelled
     """
     try:
-        # Simple approach: just show dots and sleep
-        print(f"{Fore.GREEN}Starting in {seconds} seconds... (Press Ctrl+C to cancel){Style.RESET_ALL}")
-        for i in range(seconds):
+        for i in range(seconds, 0, -1):
+            sys.stdout.write(f"\r{Fore.GREEN}Starting in {i} seconds... "
+                           f"(Press Ctrl+C to cancel) {Style.RESET_ALL}")
+            sys.stdout.flush()
             time.sleep(1)
+        sys.stdout.write("\r" + " " * 60 + "\r")
         return True
     except KeyboardInterrupt:
         print(Fore.RED + "\n\nOperation cancelled by user." + Style.RESET_ALL)
@@ -1300,8 +1306,16 @@ def countdown_prompt(seconds: int = 10) -> bool:
 
 def main():
     """Main entry point with defensive error handling."""
+    # Configure UTF-8 encoding for Windows console
+    if sys.platform == 'win32':
+        try:
+            sys.stdout.reconfigure(encoding='utf-8')
+            sys.stderr.reconfigure(encoding='utf-8')
+        except Exception:
+            pass  # Fallback for older Python versions
+
     init()  # Initialize colorama
-    
+
     print(Fore.YELLOW + ASCII_ART + Style.RESET_ALL)
     
     try:

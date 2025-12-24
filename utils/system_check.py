@@ -272,9 +272,9 @@ class SystemCheck:
         has_conflicts, running = self.check_running_processes()
 
         if has_conflicts:
-            print(f"\n{Fore.YELLOW}⚠ Found orphaned processes from previous session:{Style.RESET_ALL}")
+            print(f"\n{Fore.YELLOW}WARNING: Found orphaned processes from previous session:{Style.RESET_ALL}")
             for proc in running:
-                print(f"  • {Fore.YELLOW}{proc}{Style.RESET_ALL}")
+                print(f"  - {Fore.YELLOW}{proc}{Style.RESET_ALL}")
 
             print(f"\n{Fore.CYAN}Auto-killing in 3 seconds...{Style.RESET_ALL} {Style.DIM}(Ctrl+C to abort){Style.RESET_ALL}")
 
@@ -287,20 +287,20 @@ class SystemCheck:
 
                 # Kill the processes
                 if self.kill_processes(running):
-                    print(f"{Fore.GREEN}✓ Killed orphaned processes{Style.RESET_ALL}")
+                    print(f"{Fore.GREEN}OK: Killed orphaned processes{Style.RESET_ALL}")
                 else:
-                    print(f"{Fore.YELLOW}⚠ Could not kill some processes - you may need admin rights{Style.RESET_ALL}")
+                    print(f"{Fore.YELLOW}WARNING: Could not kill some processes - you may need admin rights{Style.RESET_ALL}")
 
                 # Verify they're gone
                 time.sleep(0.5)
                 still_running = self.check_running_processes()[1]
                 if still_running:
-                    print(f"{Fore.YELLOW}⚠ Some processes still running: {', '.join(still_running)}{Style.RESET_ALL}")
+                    print(f"{Fore.YELLOW}WARNING: Some processes still running: {', '.join(still_running)}{Style.RESET_ALL}")
                     print(f"{Fore.YELLOW}  File locks may cause issues. Continue anyway? (Enter to continue, Ctrl+C to abort){Style.RESET_ALL}")
                     input()
 
             except KeyboardInterrupt:
-                print(f"\n{Fore.RED}✗ Aborted by user{Style.RESET_ALL}")
+                print(f"\n{Fore.RED}ERROR: Aborted by user{Style.RESET_ALL}")
                 return False
 
         return True

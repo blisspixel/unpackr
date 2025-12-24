@@ -2,6 +2,43 @@
 
 Planned improvements organized in logical implementation order. Focus on security, reliability, and performance.
 
+## Recently Fixed (v1.2.x)
+
+### Windows UTF-8 Console Encoding Fix (COMPLETED)
+
+**Status:** FIXED - Unicode character encoding resolved
+
+**Problem:**
+- App crashed with `UnicodeEncodeError: 'charmap' codec can't encode character` on Windows
+- Windows console defaults to cp1252 encoding, but app uses UTF-8 Unicode characters (spinner frames, progress bar blocks, etc.)
+- Error occurred when printing Unicode symbols (warning/ok/error) and progress display characters (blocks, spinners)
+
+**Root Cause:**
+- Python on Windows defaults stdout to cp1252 encoding
+- Modern CLI design uses UTF-8 Unicode characters that aren't in cp1252 character set
+- colorama intercepts stdout and attempts cp1252 encoding, causing crashes
+
+**Solution:**
+1. Configure stdout/stderr to use UTF-8 encoding at program startup (unpackr.py:1304-1315)
+2. Replace Unicode symbols in print() statements with text equivalents:
+   - WARNING symbol → "WARNING:"
+   - OK symbol → "OK:"
+   - ERROR symbol → "ERROR:"
+3. Keep modern Unicode for progress display (spinner, bar blocks) since these work correctly with UTF-8 encoding
+
+**Files Modified:**
+- [unpackr.py:1304-1315](unpackr.py#L1304-L1315) - Added UTF-8 encoding configuration for Windows
+- [utils/system_check.py:275-303](utils/system_check.py#L275-L303) - Replaced Unicode symbols in print statements
+- [unpackr.py:1268](unpackr.py#L1268) - Replaced warning symbol with "WARNING:" in pre-flight check
+
+**Test Results:**
+- App runs without encoding errors
+- Unicode spinner frames display correctly (⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏)
+- Progress bar blocks render properly (████████████████████░░░░)
+- All print() statements work without crashes
+
+**Priority:** P0 - Critical fix completed
+
 ## Recently Completed (v1.0.x)
 
 - Enhanced video health validation - Detects truncated/corrupt videos that were previously missed
@@ -649,8 +686,16 @@ Write code that is clean, professional, clever, and humble. Think like a defensi
 ### Principles
 
 **Clean**
-- No emojis in user-facing output (use text: "ok", "err", "Healthy", "Corrupt")
-- No decorative separators (avoid `===`, `---`, `***`)
+- **No emojis** in user-facing output (use text: "ok", "err", "Healthy", "Corrupt")
+  - BAD: Using symbols/emojis for status indicators
+  - GOOD: `print(f"OK: Deleted file.mp4")` or `print(f"WARNING: disk full")`
+- **Modern Unicode IS allowed** for progress UI elements (non-text symbols):
+  - Progress bars: `bar = '█' * filled + '░' * empty`
+  - Spinners: `spinner_frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']`
+  - Section markers: `print(f"{Fore.GREEN}▓▓{Style.RESET_ALL} FOLDERS")`
+  - Separators: `sys.stdout.write(f"progress │ stats")`
+  - These are functional UI elements, not decorative emojis
+- **No decorative separators** (avoid `===`, `---`, `***`)
 - Use whitespace and indentation for visual hierarchy
 - Minimal, purposeful color (Green=success, Red=error, Yellow=warning, Dim=metadata)
 
@@ -696,8 +741,8 @@ Good:
   err  badfile.mkv (corrupted)
 
 Bad:
-  ✓ Deleted: filename.mp4
-  ✗ Failed: badfile.mkv (corrupted)
+  OK Deleted: filename.mp4
+  ERR Failed: badfile.mkv (corrupted)
 ```
 
 **Output Formatting:**
@@ -715,9 +760,9 @@ Bad:
 Health Check Summary
 ============================================================
 
-✓ Healthy:     330
-✗ Corrupt:       2
-⚠ Samples:      37
+OK Healthy:     330
+ERR Corrupt:       2
+WARN Samples:      37
 ```
 
 **Progress Display:**
@@ -729,7 +774,73 @@ Good:
 Bad:
 [142/367] filename.mp4
 [SAFETY] Video metadata check: filename.mp4 failed with code 1
-  ✓ HEALTHY
+  OK HEALTHY
+```
+
+### Unicode Character Usage Policy
+
+**Rule of thumb:** Functional UI elements can use Unicode; text messages must use ASCII.
+
+**ALLOWED - Progress/UI Elements (non-text symbols):**
+```python
+# Progress bars - visual progress indicator
+bar = '█' * filled + '░' * empty
+
+# Spinners - animated spinner
+spinner_frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+
+# Section markers - visual separator
+print(f"{Fore.GREEN}▓▓{Style.RESET_ALL} {Style.DIM}FOLDERS{Style.RESET_ALL}")
+
+# Box drawing - column separator
+sys.stdout.write(f"progress │ stats")
+```
+
+**NOT ALLOWED - Text Symbols (emoji substitutes):**
+```python
+# BAD - Status symbols in print() statements cause UnicodeEncodeError on Windows
+print(f"OK File processed")
+print(f"WARN Warning: low disk space")
+print(f"ERR Failed to delete")
+
+# GOOD - Plain text works everywhere
+print(f"OK: File processed")
+print(f"WARNING: low disk space")
+print(f"ERROR: Failed to delete")
+```
+
+**Technical Reason:**
+- Windows console uses cp1252 encoding by default
+- Unicode UI elements (█░⠋│) work when stdout is reconfigured to UTF-8 (done in main())
+- But if print() statements with Unicode symbols (OKWARNERR) execute before UTF-8 configuration, they crash
+- Text-based status words (OK/WARNING/ERROR) work everywhere, always
+
+**Exception:** If a Unicode symbol is part of the dynamic progress display (sys.stdout.write with cursor positioning), it's fine because the display only starts AFTER UTF-8 is configured. But any print() statements that could execute during startup must use ASCII.
+
+**Comments in Code:**
+
+Explain WHY, not WHAT. Provide reasoning and context.
+
+```python
+# GOOD - Explains the reasoning behind the design choice
+# Use bounded deque to prevent memory growth in 24+ hour runs
+self.failed_deletions = deque(maxlen=1000)
+
+# BAD - Just restates what the code does
+# Create a deque with max length 1000
+self.failed_deletions = deque(maxlen=1000)
+```
+
+```python
+# GOOD - Provides context and reasoning for the estimate
+# Conservative estimate: 2 min/folder accounts for manual PAR2 checking,
+# extraction waiting, video verification, and cleanup. Users typically
+# take longer, making tool look better (under-promise, over-deliver).
+time_saved_estimate = folders * 2
+
+# BAD - Provides no useful information
+# Calculate time saved
+time_saved_estimate = folders * 2
 ```
 
 ### Defensive Programming

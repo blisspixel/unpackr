@@ -10,53 +10,56 @@ You have folders full of multi-part RARs, PAR2 files, corrupted videos, samples,
 
 ```
 Before (messy download folder):
-MyVideo/
-├── MyVideo.part01.rar
-├── MyVideo.part02.rar
-├── MyVideo.part03.rar
-├── MyVideo.par2
-├── MyVideo.vol00+01.par2
-├── MyVideo.vol01+02.par2
-├── sample.mkv (15MB)
-├── MyVideo.nfo
-└── MyVideo.sfv
+Downloads/
+├── MyVideo/
+│   ├── MyVideo.part01.rar
+│   ├── MyVideo.part02.rar
+│   ├── MyVideo.part03.rar
+│   ├── MyVideo.par2
+│   ├── MyVideo.vol00+01.par2
+│   ├── MyVideo.vol01+02.par2
+│   ├── sample.mkv (15MB)
+│   ├── MyVideo.nfo
+│   └── MyVideo.sfv
+├── OtherShow/
+│   ├── episode.mkv
+│   └── readme.txt
+├── Vacation2024/
+│   ├── photo1.jpg ... photo5.jpg  (5 images - too few, deleted)
+└── MusicLibrary/
+    ├── album1/ (10+ songs)
+    ├── album2/ (10+ songs)
+    └── ... (15 music files total - preserved!)
 
 After processing:
 Destination/
-└── MyVideo.mkv (validated, playable)
+├── MyVideo.mkv (validated, playable)
+└── episode.mkv (validated, playable)
 
-Source/ (cleaned up)
-└── MyVideo/ (deleted - empty after video moved)
+Downloads/ (cleaned)
+└── MusicLibrary/  (preserved - has 10+ music files)
+    ├── album1/
+    └── album2/
+
+Deleted automatically:
+- MyVideo/ folder (empty after extraction + video moved)
+- OtherShow/ folder (empty after video moved)
+- Vacation2024/ folder (< 10 images, doesn't meet threshold)
+- All .rar, .par2, .nfo, .sfv files
+- sample.mkv (< 50MB threshold)
 ```
 
-**What happens to each file:**
-- `.rar` files → Extracted, then deleted
-- `.par2` files → Used for repair, then deleted
-- `sample.mkv` → Deleted (< 50MB)
-- `.nfo`, `.sfv` → Deleted (junk files)
-- `MyVideo.mkv` → Validated and moved to destination
-- Folder → Deleted (empty after processing)
+**What gets removed:**
+- **All extracted folders** become empty after videos are moved → deleted
+- **All subfolders** without preservation content → deleted
+- **All junk files** (NFO, SFV, samples) → deleted
+- **Result:** Source directory is cleaned to nearly empty, keeping only folders with substantial content (≥10 music/image/document files)
 
-**Example with preserved content (music folder):**
-```
-Before:
-MusicVideos/
-├── concert.part01.rar
-├── concert.par2
-├── song1.mp3
-├── song2.mp3
-└── song3.mp3  (3 music files)
-
-After:
-Destination/
-└── concert.mkv
-
-Source/ (folder preserved - has 3+ music files)
-└── MusicVideos/
-    ├── song1.mp3
-    ├── song2.mp3
-    └── song3.mp3
-```
+**What gets preserved:**
+- Folders with **≥10 music files** (configurable: `min_music_files`)
+- Folders with **≥10 image files AND ≥10MB total** (configurable: `min_image_files`)
+- Folders with **≥10 documents** (configurable: `min_documents`)
+- All validated videos are **moved to destination** (not deleted)
 
 ## What It Does (End-to-End)
 
@@ -94,7 +97,7 @@ Think of Unpackr as a pipeline that transforms messy Usenet downloads into valid
 
 **Guarantees (Safety Contract):**
 - Never writes outside destination directory; all work happens in source directory
-- Never deletes content folders (music/images/documents meeting configured thresholds)
+- Never deletes content folders (≥10 music/image/document files meeting thresholds)
 - Never moves/deletes a video unless it passes health validation
 - Fails closed when uncertain (rejects suspicious archives/videos)
 - In dry-run mode, performs no destructive operations
@@ -322,7 +325,7 @@ Edit `config_files/config.json`:
   "min_sample_size_mb": 50,
   "min_music_files": 3,
   "min_image_files": 5,
-  "max_log_files": 5,
+  "max_log_files": 3,
   "log_folder": "logs"
 }
 ```
@@ -331,7 +334,7 @@ Edit `config_files/config.json`:
 - `tool_paths` - Custom paths to external tools (arrays try in order)
 - `min_sample_size_mb` - Videos smaller than this are considered samples (default: 50MB)
 - `min_music_files` / `min_image_files` / `min_documents` - How many files needed to preserve a folder
-- `max_log_files` - Keep last N logs (default: 5)
+- `max_log_files` - Keep last N logs (default: 3)
 
 ### Customizing What Gets Kept vs Deleted
 
@@ -343,11 +346,12 @@ Edit `config_files/config.json`:
 ```
 Setting this high effectively disables sample detection.
 
-**Want to preserve folders with just 1 music file?**
+**Want to preserve folders with fewer files?**
 ```json
 {
-  "min_music_files": 1,
-  "min_image_files": 3
+  "min_music_files": 3,
+  "min_image_files": 5,
+  "min_documents": 1
 }
 ```
 Lower thresholds = more folders preserved.
@@ -370,14 +374,14 @@ Add any format ffmpeg can validate.
 
 ## Safety Contract
 
-⚠️ **WARNING: This tool intentionally deletes files as part of its cleanup process.** While designed with safety features and best practices, automated file deletion carries inherent risks. **Use at your own risk.** Always back up important data and test on non-critical folders first.
+**WARNING: This tool intentionally deletes files as part of its cleanup process.** While designed with safety features and best practices, automated file deletion carries inherent risks. **Use at your own risk.** Always back up important data and test on non-critical folders first.
 
 Unpackr follows these design principles to minimize risk, but no automated tool can guarantee perfect safety:
 
 ### Design Principles
 
 1. **Containment** - Designed to never write outside destination directory; all extractions and operations stay within source directory
-2. **Content Preservation** - Aims to never delete folders meeting content thresholds (music ≥3 files, images ≥5 files, documents ≥1 file)
+2. **Content Preservation** - Aims to never delete folders meeting content thresholds (≥10 music/image/document files, images also need ≥10MB total)
 3. **Validated Operations** - Designed to never move/delete a video unless it passes configured health checks
 4. **Fail-Closed** - When validation is uncertain (corrupt archive list, unclear video state), reject rather than proceed
 5. **Dry-Run Isolation** - In dry-run mode, designed to perform zero destructive operations (no moves, deletes, or writes)
@@ -402,9 +406,9 @@ Only these items are removed:
 
 - **Videos that pass validation** (moved to destination instead)
 - **Content folders** with enough files to qualify:
-  - Music: ≥3 files (*configurable:* `min_music_files`)
-  - Images: ≥5 files (*configurable:* `min_image_files`)
-  - Documents: ≥1 file (*configurable:* `min_documents`)
+  - Music: ≥10 files (*configurable:* `min_music_files`)
+  - Images: ≥10 files AND ≥10MB total (*configurable:* `min_image_files`)
+  - Documents: ≥10 files (*configurable:* `min_documents`)
 - **Folders with unrecognized file types** (preserved as possibly important)
 - **Any file in destination directory** (destination is write-only, never modified or deleted)
 
@@ -756,3 +760,5 @@ Recent improvements include enhanced video validation, thread safety, and compre
 **Need help?** Check logs first (`logs/`), then run diagnostics (`unpackr-doctor`), then review this README.
 
 **Coming back after 6 months?** Read "Recent Improvements" section above, run `unpackr-doctor` to verify setup, and check `tests/` to see what's covered.
+
+**Modifying UX code?** See [docs/UX_DESIGN.md](docs/UX_DESIGN.md) for critical implementation details and troubleshooting guide.
