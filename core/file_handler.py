@@ -19,25 +19,95 @@ from utils.defensive import InputValidator, StateValidator, ErrorRecovery, Valid
 class FileHandler:
     """Handles file and folder operations."""
     
-    def __init__(self, config):
+    def __init__(self, config, stats=None):
         """
         Initialize the file handler.
-        
+
         Args:
             config: Config instance with file extensions and settings
+            stats: Optional stats dict to track sanitization count
         """
         # Defensive: validate config
         if config is None:
             raise ValidationError("Config cannot be None")
-        
+
         self.config = config
-        
+        self.stats = stats  # Optional stats tracking
+
         # Defensive: verify config has required attributes
         required_attrs = ['video_extensions', 'removable_extensions']
         for attr in required_attrs:
             if not hasattr(config, attr):
                 raise ValidationError(f"Config missing required attribute: {attr}")
-    
+
+    def sanitize_filename(self, filename: str) -> str:
+        """
+        Sanitize filename by removing/replacing problematic characters.
+
+        Handles:
+        - Windows forbidden characters: < > : " / \\ | ? *
+        - Control characters and unicode weirdness
+        - Multiple dots/spaces/underscores
+        - Leading/trailing dots, spaces, underscores
+
+        Args:
+            filename: Original filename (with extension)
+
+        Returns:
+            Sanitized filename
+        """
+        # Split into name and extension
+        path = Path(filename)
+        name = path.stem
+        ext = path.suffix
+
+        # Replace forbidden Windows characters with safe alternatives
+        replacements = {
+            '<': '(',
+            '>': ')',
+            ':': '-',
+            '"': "'",
+            '/': '-',
+            '\\': '-',
+            '|': '-',
+            '?': '',
+            '*': '',
+            '\x00': '',  # null
+        }
+
+        for bad_char, replacement in replacements.items():
+            name = name.replace(bad_char, replacement)
+
+        # Remove control characters (ASCII 0-31) and other problematic unicode
+        name = ''.join(char for char in name if ord(char) >= 32 and ord(char) != 127)
+
+        # Normalize multiple separators
+        name = name.replace('..', '.').replace('--', '-').replace('__', '_')
+        name = name.replace('  ', ' ')
+
+        # Remove leading/trailing dots, spaces, underscores, dashes
+        name = name.strip('. _-')
+
+        # Ensure name isn't empty after sanitization
+        if not name:
+            name = 'video'
+
+        # Windows reserved names (CON, PRN, AUX, etc.) - add underscore suffix
+        reserved_names = {
+            'CON', 'PRN', 'AUX', 'NUL',
+            'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
+            'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'
+        }
+        if name.upper() in reserved_names:
+            name = name + '_'
+
+        # Limit length (Windows MAX_PATH is 260, leave room for path)
+        max_name_length = 200
+        if len(name) > max_name_length:
+            name = name[:max_name_length]
+
+        return name + ext
+
     def find_video_files(self, folder: Path) -> List[Path]:
         """
         Recursively find video files in the given folder.
@@ -288,8 +358,16 @@ class FileHandler:
         
         # Perform move with defensive error recovery
         try:
-            destination_file = destination_dir / source.name
-            
+            # Sanitize filename before moving
+            sanitized_name = self.sanitize_filename(source.name)
+            destination_file = destination_dir / sanitized_name
+
+            # Log if filename was changed
+            if sanitized_name != source.name:
+                logging.info(f"Sanitized filename: '{source.name}' -> '{sanitized_name}'")
+                if self.stats:
+                    self.stats['files_sanitized'] += 1
+
             # Defensive: check if destination already exists
             if destination_file.exists():
                 logging.warning(f"Destination file already exists: {destination_file}")

@@ -1,30 +1,41 @@
 # Unpackr
 
-**Set It and Forget It** - Your Automated Usenet Video Cleanup Tool
+**Modern CLI tool for automated Usenet video processing** - Clean, fast, reliable.
 
 ## What It Does
 
-**Fully automated Usenet/newsgroup download processor** that handles messy download folders:
+Fully automated download processor that turns messy Usenet folders into organized video collections:
 
-1. **Verifies/Repairs** with PAR2 first (required for Usenet)
-2. **Extracts** multi-part RAR archives (handles .part001-.part999)
-3. **Validates** video health with FFmpeg
-4. **Moves** good videos immediately (one-by-one as validated)
-5. **Deletes** corrupt files, samples, and junk
-6. **Cleans up** automatically with multi-pass locked file handling
+1. **Repairs** - PAR2 verification & repair first
+2. **Extracts** - Multi-part RAR archives (smart .part001 handling)
+3. **Validates** - FFmpeg health checks on every video
+4. **Moves** - Good videos saved immediately
+5. **Cleans** - Corrupt files, samples, and junk deleted
+6. **Protects** - Music/image/document folders preserved
 
-**Usenet-Optimized Workflow:**
-- Processes oldest folders first (handles ongoing downloads)
-- PAR2 verify/repair before extraction (saves time on good files)
-- Multi-part RAR filtering (only extracts .part001, not every part)
-- Handles folders with brackets and special characters
-- Automatically kills stuck processes (7z, par2, ffmpeg)
+**Smart Features:**
+- Processes oldest folders first (ongoing downloads safe)
+- Auto-kills orphaned processes from previous runs
+- Multi-pass cleanup for locked files
+- Configurable safety limits (timeouts, recursion depth)
+- Real-time progress with animated status
 
-**Modern Progress Display:**
-- Real-time stats (videos moved, archives extracted, speed)
-- Live throughput metrics (folders/min)
-- Detailed operation logging (extraction speed, file sizes)
-- Multi-line progress with ETA
+**Modern Terminal UI:**
+```
+  unpackr
+
+  [██████████░░░░░░░░░░] 45% │ 68/457
+  found: 45  moved: 42  bad: 3  extracted: 8  repaired: 2  cleaned: 12  junk: 87
+  speed: 2.0 folders/min  time left: 3:43:27  saved: 4.5 hrs
+
+  > Validate video 1/2: Movie.Title.2024.mkv
+  ⠙ working
+```
+- Clean ASCII art header with modern progress bar
+- Live stats: success rate (found vs moved), work done (extracted/repaired), cleanup (folders/junk files)
+- Time saved estimate (vs manual processing at ~4 min/folder)
+- Animated spinner for continuous feedback
+- Random easter egg comments for entertainment during long runs
 
 **Defensive & Adaptive:**
 - Automatic process cleanup on failures
@@ -70,24 +81,21 @@ python unpackr.py --source "G:\Downloads" --destination "G:\Videos"
 
 ## Quick Start
 
-### Automated Installation (Recommended)
-```powershell
-# Run the installer script
-.\install.ps1        # PowerShell version (full-featured)
-# OR
-.\install.bat        # Batch version (simple)
-```
+```bash
+# Install (creates 'unpackr' and 'unpackr-doctor' commands)
+pip install -e .
 
-### Manual Installation
-```powershell
-# Install dependencies
-pip install -r requirements.txt
+# Check system setup
+unpackr-doctor
 
-# Run interactive mode
-python unpackr.py
+# Run from anywhere
+unpackr --source "C:\Downloads" --destination "D:\Videos"
 
-# Run with arguments
-python unpackr.py --source "G:\Downloads" --destination "G:\Videos"
+# Or use positional arguments
+unpackr "C:\source" "D:\destination"
+
+# Or interactive mode (prompts for paths)
+unpackr
 ```
 
 ## The Problem
@@ -118,73 +126,46 @@ Smart Detection:
 
 ## Installation
 
-### Step 1: Install Python Dependencies
+### 1. Install Unpackr
 
-```powershell
-pip install -r requirements.txt
+```bash
+# Clone or download, then install
+cd unpackr
+pip install -e .
 ```
 
-This installs: tqdm, psutil, colorama
+This installs:
+- Python dependencies (tqdm, psutil, colorama)
+- Creates `unpackr` and `unpackr-doctor` commands globally
 
-### Step 2: Configure External Tools
+### 2. Install External Tools
 
-**Required** (critical for Usenet):
-- **7-Zip** - For RAR extraction ([download](https://www.7-zip.org/))
-- **par2cmdline** - For PAR2 repair (included in `bin/par2.exe` or [download](https://github.com/Parchive/par2cmdline))
+**Required:**
+- **7-Zip** - RAR extraction ([download](https://www.7-zip.org/))
+- **par2cmdline** - PAR2 repair ([download](https://github.com/Parchive/par2cmdline))
 
-**Optional** (recommended):
-- **ffmpeg** - For video health validation
+**Optional:**
+- **ffmpeg** - Video validation ([download](https://ffmpeg.org/))
 
-**Easy Configuration:**
-```powershell
-# Run the tool configurator
-python configure_tools.py
-# OR
-configure_tools.bat
-```
+The config automatically searches common install locations. To specify custom paths, edit `config_files/config.json`:
 
-**Manual Configuration:**
-Edit `config_files/config.json` and set the `tool_paths` section:
 ```json
 {
   "tool_paths": {
-    "7z": "C:\\Program Files\\7-Zip\\7z.exe",
-    "par2": "par2",
-    "ffmpeg": "ffmpeg"
+    "7z": ["C:\\Program Files\\7-Zip\\7z.exe", "7z"],
+    "par2": ["bin\\par2.exe", "par2"],
+    "ffmpeg": ["ffmpeg"]
   }
 }
 ```
 
-The script will automatically use these paths instead of requiring tools in your PATH.
+### 3. Verify Setup
 
-### Step 3 (Optional): Install as Command
-
-If you want to run `unpackr` from anywhere (instead of `python unpackr.py`):
-
-**Simple Method (Requires Admin):**
-```powershell
-copy unpackr.bat C:\Windows\System32\
+```bash
+unpackr-doctor
 ```
 
-Now you can run from any directory:
-```powershell
-cd C:\
-unpackr --source "C:\Downloads" --destination "D:\Videos"
-```
-
-**Alternative (No Admin Required):**
-Add your Unpackr folder to your PATH environment variable:
-1. Open Start > "Environment Variables"
-2. Edit "Path" under User variables
-3. Add your Unpackr folder path
-4. Restart terminal
-
-**Build Standalone .exe (Advanced):**
-```powershell
-pip install pyinstaller
-python build.py
-# Creates dist/unpackr.exe (~20-50 MB)
-```
+Runs diagnostics and reports any issues.
 
 ## Usage
 
@@ -296,10 +277,22 @@ Successfully deleted 2 folders on retry
 
 ### Live Progress Display
 ```
-[##########----------] 33% | Folders: 10/30 | Videos: 15 | Archives: 8 | PAR2: 5
-Speed: 2.3 folders/min | ETA: 0:08:45
-> Extracting [34.2MB] Release.part001.rar
+  unpackr
+
+  [████████████░░░░░░░░] 60% │ 18/30
+  found: 24  moved: 21  bad: 3  extracted: 8  repaired: 5  cleaned: 15  junk: 142
+  speed: 2.3 folders/min  time left: 0:08:45  saved: 1.2 hrs
+
+  > Extracting: Release.part001.rar
+  ⠙ working
 ```
+
+**What You See:**
+- **Progress bar** - Visual completion with modern block characters
+- **Stats** - Videos (found/moved/bad), work done (extracted/repaired), cleanup (folders/junk files)
+- **Speed & ETA** - Processing rate, time remaining, and time saved vs manual processing
+- **Current action** - What's happening right now
+- **Spinner** - Animated indicator (updates continuously during long operations)
 
 ### Final Summary
 ```

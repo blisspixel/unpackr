@@ -1,36 +1,40 @@
 """
 Setup script for Unpackr.
-Allows installation via: pip install -e .
+Install with: pip install -e .
 """
 
 from setuptools import setup, find_packages
 from pathlib import Path
 
-# Read the README for the long description
 readme_file = Path(__file__).parent / "README.md"
 long_description = readme_file.read_text(encoding='utf-8') if readme_file.exists() else ""
 
 setup(
     name="unpackr",
     version="1.0.0",
-    description="Automated tool for cleaning up download folders from Usenet/newsgroups",
+    description="Modern CLI tool for automated Usenet video processing",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    author="Your Name",
     python_requires=">=3.7",
-    packages=find_packages(),
+    packages=find_packages(exclude=['tests', 'docs', 'archive']),
     include_package_data=True,
+    package_data={
+        'config_files': ['*.json'],
+    },
     install_requires=[
-        "colorama>=0.4.4",
+        "tqdm>=4.62.0",
         "psutil>=5.8.0",
+        "colorama>=0.4.4",
     ],
     entry_points={
         'console_scripts': [
             'unpackr=unpackr:main',
+            'unpackr-doctor=doctor:main',
         ],
     },
     classifiers=[
         "Development Status :: 4 - Beta",
+        "Environment :: Console",
         "Intended Audience :: End Users/Desktop",
         "Topic :: Utilities",
         "Programming Language :: Python :: 3",
@@ -38,5 +42,7 @@ setup(
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
     ],
 )

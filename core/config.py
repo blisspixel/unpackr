@@ -24,9 +24,9 @@ class Config:
         'archive_extensions': ['.zip', '.7z', '.rar'],
         'removable_extensions': ['.sfv', '.nfo', '.srr', '.srs', '.url', '.db', 
                                '.nzb', '.txt', '.xml', '.dat', '.exe', '.htm', '.log'],
-        'min_music_files': 5,
+        'min_music_files': 10,
         'min_image_files': 10,
-        'min_documents': 5,
+        'min_documents': 10,
         'min_sample_size_mb': 50,
         'max_log_files': 5,
         'log_folder': 'logs'
@@ -119,3 +119,23 @@ class Config:
     def log_folder(self) -> str:
         """Get log folder path."""
         return self.config['log_folder']
+
+    @property
+    def max_runtime_hours(self) -> int:
+        """Get maximum runtime in hours."""
+        return self.config.get('max_runtime_hours', 12)
+
+    @property
+    def max_videos_per_folder(self) -> int:
+        """Get maximum videos per folder safety limit."""
+        return self.config.get('max_videos_per_folder', 200)
+
+    @property
+    def max_subfolder_depth(self) -> int:
+        """Get maximum subfolder recursion depth."""
+        return self.config.get('max_subfolder_depth', 15)
+
+    @property
+    def stuck_timeout_hours(self) -> int:
+        """Get stuck detection timeout in hours."""
+        return self.config.get('stuck_timeout_hours', 3)

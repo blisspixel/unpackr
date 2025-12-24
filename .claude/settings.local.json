@@ -21,7 +21,9 @@
       "Bash(powershell -Command \"if \\(Test-Path ''G:\\\\test\\\\WoodmanCastingX-Liz Ocean-XXXX-WSG 32 2024-07-21\\\\WoodmanCastingX-Liz_Ocean-XXXX-WSG_32-21.07.2024-1080p_rq.mp4''\\) { ''Video exists'' } else { ''No video'' }\")",
       "Bash(powershell -Command \"Remove-Item ''G:\\\\test\\\\WoodmanCastingX-Liz Ocean-XXXX-WSG 32 2024-07-21\\\\*.par2'' -Force\")",
       "Bash(cat:*)",
-      "Bash(timeout 60 python:*)"
+      "Bash(timeout 60 python:*)",
+      "Bash(powershell -Command:*)",
+      "Bash(python:*)"
     ]
   }
 }

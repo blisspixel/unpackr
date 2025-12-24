@@ -61,12 +61,9 @@ class ArchiveProcessor:
             total_count = len(archive_files)
 
             for idx, archive_file in enumerate(archive_files, 1):
-                # Get file size for progress display
-                file_size_mb = archive_file.stat().st_size / (1024 * 1024)
-
                 # Show progress during extraction
                 if progress_callback:
-                    progress_callback(idx, total_count, f"Extracting [{file_size_mb:.1f}MB] {archive_file.name[:35]}")
+                    progress_callback(idx, total_count, f"Extracting: {archive_file.name[:50]}")
 
                 if not loop_guard.tick():
                     logging.error(f"RAR extraction loop safety triggered in {folder}")
