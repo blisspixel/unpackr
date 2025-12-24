@@ -353,7 +353,12 @@ def main():
     checker = VideoHealthChecker(config)
 
     try:
-        checker.check_path(path, min_resolution=args.min_resolution)
+        checker.check_path(
+            path,
+            min_resolution=args.min_resolution,
+            skip_samples=args.skip_samples,
+            skip_health=args.skip_health
+        )
         checker.print_summary(auto_delete=args.delete_bad)
     except KeyboardInterrupt:
         print(f"\n{Fore.YELLOW}Cancelled by user{Style.RESET_ALL}")
