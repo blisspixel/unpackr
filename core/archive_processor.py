@@ -12,6 +12,7 @@ from typing import Tuple
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.safety import SubprocessSafety, SafetyLimits, LoopSafety
+from utils.defensive import StateValidator
 from utils.system_check import SystemCheck
 
 
@@ -77,6 +78,19 @@ class ArchiveProcessor:
 
                     # Log start time for this archive
                     start_time = time.time()
+
+                    # Get file size before extraction (for logging and disk space check)
+                    try:
+                        file_size_mb = archive_file.stat().st_size / (1024 * 1024)
+                    except:
+                        file_size_mb = 0
+
+                    # Check disk space before extraction (archives typically expand 1.5-3x)
+                    # Use 3x multiplier as conservative estimate for extraction space needed
+                    required_space_mb = int(file_size_mb * 3)
+                    if not StateValidator.check_disk_space(folder, required_mb=required_space_mb):
+                        logging.error(f"Insufficient disk space to extract {archive_file.name} (need ~{required_space_mb}MB)")
+                        continue  # Skip this archive
 
                     # Use safe subprocess with timeout
                     success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
@@ -164,19 +178,26 @@ class ArchiveProcessor:
             )
             elapsed = time.time() - start_time
 
-            if success:
-                # Files OK (either no repair needed or repair succeeded)
-                # Check if repair was actually done by looking for "repaired" in output
-                if "repaired successfully" in stdout.lower() or "repaired successfully" in stderr.lower():
-                    logging.info(f"PAR2 repair completed in {elapsed:.1f}s for {folder}")
-                else:
-                    logging.info(f"PAR2 verification passed (no repair needed) in {elapsed:.1f}s for {folder}")
-                self._delete_files_by_extension(folder, '.par2')
-                return True
-            else:
+            # Check for failure indicators FIRST (par2 can return 0 even on failure sometimes)
+            combined_output = (stdout + stderr).lower()
+            failure_keywords = [
+                'repair failed',
+                'repair is impossible',
+                'cannot repair',
+                'repair is not possible',
+                'insufficient',
+                'damaged beyond repair',
+                'fatal error',
+                'could not repair'
+            ]
+
+            # Check if repair explicitly failed
+            repair_failed = any(keyword in combined_output for keyword in failure_keywords)
+
+            if repair_failed or (not success and code != 0):
                 # Repair failed - archives are corrupted beyond repair
                 logging.error(f"PAR2 repair FAILED after {elapsed:.1f}s for {folder} - deleting corrupted archives")
-                logging.error(f"Output:\nStdout: {stdout[:500]}\nStderr: {stderr[:500]}")
+                logging.error(f"Exit code: {code}, Output:\nStdout: {stdout[:500]}\nStderr: {stderr[:500]}")
 
                 # Delete PAR2 files
                 self._delete_files_by_extension(folder, '.par2')
@@ -185,6 +206,24 @@ class ArchiveProcessor:
                 self._delete_archive_files(folder)
 
                 return False
+
+            # Check for success indicators
+            if success or code == 0:
+                # Check if repair was actually done by looking for "repaired" in output
+                if "repaired successfully" in combined_output or "repair complete" in combined_output:
+                    logging.info(f"PAR2 repair completed successfully in {elapsed:.1f}s for {folder}")
+                elif "all files are correct" in combined_output or "no repair" in combined_output:
+                    logging.info(f"PAR2 verification passed (no repair needed) in {elapsed:.1f}s for {folder}")
+                else:
+                    # Success exit code but unclear output - assume OK
+                    logging.info(f"PAR2 verification/repair finished in {elapsed:.1f}s for {folder}")
+
+                self._delete_files_by_extension(folder, '.par2')
+                return True
+
+            # Timeout or unknown error
+            logging.error(f"PAR2 operation timed out or failed unexpectedly for {folder}")
+            return False
 
         except Exception as e:
             logging.error(f"Unexpected error during PAR2 processing for {folder}: {e}")

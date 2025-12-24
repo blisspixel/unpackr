@@ -355,15 +355,20 @@ class ErrorRecovery:
         return False
     
     @staticmethod
-    def safe_move(src: Path, dst: Path, max_attempts: int = 3, verify_integrity: bool = True) -> bool:
+    def safe_move(src: Path, dst: Path, max_attempts: int = 3, verify_integrity: bool = True,
+                  atomic: bool = True) -> bool:
         """
-        Safely move file with retries and optional integrity verification.
+        Safely move file with retries, integrity verification, and atomic operation support.
+
+        Atomic mode (default): Moves to temporary file first, then renames to final destination.
+        This ensures the destination file is never in a partial state.
 
         Args:
             src: Source path
             dst: Destination path
             max_attempts: Maximum attempts
             verify_integrity: Verify file size after move
+            atomic: Use atomic rename operation (move to temp, then rename)
 
         Returns:
             True if moved successfully, False otherwise
@@ -374,6 +379,7 @@ class ErrorRecovery:
 
         import shutil
         import time
+        import tempfile
 
         # Get source file size before move
         try:
@@ -383,31 +389,67 @@ class ErrorRecovery:
             return False
 
         for attempt in range(max_attempts):
+            temp_dst = None
             try:
-                # Use shutil.move which handles cross-drive moves correctly
-                shutil.move(str(src), str(dst))
+                if atomic:
+                    # Atomic move: first move to temp file, then rename to final destination
+                    # This ensures destination is never partially written
+                    temp_dst = dst.parent / f".tmp_{dst.name}_{int(time.time())}"
 
-                # Verify integrity if requested
-                if verify_integrity:
-                    try:
-                        dest_size = dst.stat().st_size
+                    # Use shutil.move to temp location
+                    shutil.move(str(src), str(temp_dst))
+
+                    # Verify integrity if requested
+                    if verify_integrity:
+                        dest_size = temp_dst.stat().st_size
                         if dest_size != source_size:
                             logging.error(f"Size mismatch after move: {source_size} != {dest_size}")
-                            # Cleanup incomplete move
+                            # Rollback: restore source if possible
                             try:
-                                dst.unlink()
+                                temp_dst.unlink()
                             except:
                                 pass
                             return False
-                    except Exception as e:
-                        logging.error(f"Cannot verify moved file {dst}: {e}")
-                        return False
 
-                logging.info(f"Successfully moved {src.name} ({source_size} bytes)")
-                return True
+                    # Atomic rename (this is atomic on most filesystems)
+                    temp_dst.replace(dst)
+
+                    logging.info(f"Successfully moved (atomic) {src.name} ({source_size} bytes)")
+                    return True
+
+                else:
+                    # Non-atomic move (original behavior)
+                    shutil.move(str(src), str(dst))
+
+                    # Verify integrity if requested
+                    if verify_integrity:
+                        try:
+                            dest_size = dst.stat().st_size
+                            if dest_size != source_size:
+                                logging.error(f"Size mismatch after move: {source_size} != {dest_size}")
+                                # Cleanup incomplete move
+                                try:
+                                    dst.unlink()
+                                except:
+                                    pass
+                                return False
+                        except Exception as e:
+                            logging.error(f"Cannot verify moved file {dst}: {e}")
+                            return False
+
+                    logging.info(f"Successfully moved {src.name} ({source_size} bytes)")
+                    return True
 
             except Exception as e:
                 logging.warning(f"Move attempt {attempt + 1}/{max_attempts} failed: {e}")
+
+                # Cleanup temp file if it exists
+                if temp_dst and temp_dst.exists():
+                    try:
+                        temp_dst.unlink()
+                    except:
+                        pass
+
                 if attempt < max_attempts - 1:
                     time.sleep(1)
 

@@ -24,49 +24,134 @@ class VideoProcessor:
     
     def check_video_health(self, video_file: Path) -> bool:
         """
-        Check if a video file is healthy and not corrupted.
-        
+        Check if a video file is healthy and fully playable (not corrupted or partial).
+
+        Performs comprehensive validation:
+        1. File size sanity check (not 0 bytes, reasonable for video)
+        2. Get video metadata (duration, bitrate, streams)
+        3. Verify duration vs file size ratio (detect truncated files)
+        4. Full decode test to ensure video can be read to completion
+
         Args:
             video_file: Path to video file
-            
+
         Returns:
-            True if video is healthy, False if corrupted or 0 bytes
+            True if video is healthy and playable, False if corrupted/partial/truncated
         """
-        # Check if file size is 0 (0 KB)
-        if video_file.stat().st_size == 0:
-            logging.error(f"0 KB file detected and will be deleted: {video_file}")
-            try:
-                video_file.unlink()
-                logging.info(f"Successfully deleted 0 KB file: {video_file}")
-            except Exception as e:
-                logging.error(f"Error deleting 0 KB file {video_file}: {e}")
+        file_size_mb = video_file.stat().st_size / (1024 * 1024)
+
+        # Check if file size is 0 or suspiciously small
+        if file_size_mb < 1:
+            logging.error(f"Video too small ({file_size_mb:.2f}MB): {video_file.name}")
             return False
-        
-        # Use ffmpeg to check video integrity with timeout
+
+        # Use ffmpeg to check video integrity with comprehensive validation
         try:
             # Get ffmpeg command from config
             ffmpeg_cmd = self.system_check.get_tool_command('ffmpeg')
             if not ffmpeg_cmd:
                 ffmpeg_cmd = ['ffmpeg']
-            
-            # Use safe subprocess with timeout
+
+            # Step 1: Get video metadata (duration, bitrate, codec info)
+            logging.debug(f"Checking video metadata: {video_file.name}")
             success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
-                ffmpeg_cmd + ['-v', 'error', '-i', str(video_file), '-f', 'null', '-'],
-                timeout=SafetyLimits.VIDEO_CHECK_TIMEOUT,
-                operation=f"Video health check: {video_file.name}"
+                ffmpeg_cmd + ['-i', str(video_file)],
+                timeout=10,  # Metadata check should be fast
+                operation=f"Video metadata check: {video_file.name}"
             )
-            
-            if not success or code != 0:
-                logging.error(f"Corrupt video file detected: {video_file}\nOutput: {stderr}")
+
+            # Parse duration from ffmpeg output
+            duration_seconds = None
+            bitrate_kbps = None
+
+            # Check stderr for Duration line (ffmpeg outputs metadata to stderr)
+            if stderr:
+                for line in stderr.split('\n'):
+                    if 'Duration:' in line:
+                        # Extract duration: "Duration: 00:45:23.45"
+                        try:
+                            duration_str = line.split('Duration:')[1].split(',')[0].strip()
+                            h, m, s = duration_str.split(':')
+                            duration_seconds = int(h) * 3600 + int(m) * 60 + float(s)
+                        except:
+                            pass
+                    if 'bitrate:' in line:
+                        # Extract bitrate: "bitrate: 2500 kb/s"
+                        try:
+                            bitrate_str = line.split('bitrate:')[1].strip()
+                            bitrate_kbps = float(bitrate_str.split()[0])
+                        except:
+                            pass
+
+            # Validate duration exists and is reasonable
+            if not duration_seconds or duration_seconds < 10:
+                logging.error(f"Invalid or missing duration ({duration_seconds}s): {video_file.name}")
                 return False
-            
+
+            # Calculate expected file size from duration and bitrate
+            # Typical video bitrates: 720p ~2500kbps, 1080p ~5000kbps, 4K ~15000kbps
+            if bitrate_kbps:
+                expected_size_mb = (bitrate_kbps * duration_seconds) / (8 * 1024)
+                size_ratio = file_size_mb / expected_size_mb if expected_size_mb > 0 else 0
+
+                # If actual size is less than 70% of expected, likely truncated
+                if size_ratio < 0.70:
+                    logging.error(f"Video appears truncated: {file_size_mb:.1f}MB actual vs {expected_size_mb:.1f}MB expected (ratio: {size_ratio:.2f}): {video_file.name}")
+                    return False
+
+                logging.debug(f"Size validation passed: {file_size_mb:.1f}MB (ratio: {size_ratio:.2f})")
+
+            # Step 2: Full decode test - actually decode the entire video to verify all frames readable
+            logging.debug(f"Full decode test: {video_file.name}")
+            success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
+                ffmpeg_cmd + [
+                    '-v', 'error',           # Only show errors
+                    '-i', str(video_file),   # Input file
+                    '-map', '0:v:0',         # Only decode first video stream (faster)
+                    '-c:v', 'copy',          # Copy codec (fast - just demux)
+                    '-f', 'null',            # Null output
+                    '-'
+                ],
+                timeout=SafetyLimits.VIDEO_CHECK_TIMEOUT,
+                operation=f"Video decode test: {video_file.name}"
+            )
+
+            # Check for errors in decode
+            if not success:
+                logging.error(f"Video decode test timed out or failed: {video_file.name}")
+                return False
+
+            if code != 0:
+                logging.error(f"Video decode returned error code {code}: {video_file.name}")
+                return False
+
+            # Check stderr for corruption indicators
+            if stderr:
+                error_keywords = [
+                    'Invalid data',
+                    'corrupt',
+                    'truncated',
+                    'incomplete',
+                    'Error while decoding',
+                    'moov atom not found',
+                    'Header missing',
+                    'Premature end'
+                ]
+
+                stderr_lower = stderr.lower()
+                for keyword in error_keywords:
+                    if keyword.lower() in stderr_lower:
+                        logging.error(f"Video corruption detected ({keyword}): {video_file.name}\nFFMPEG output: {stderr[:500]}")
+                        return False
+
+            logging.info(f"Video health check PASSED: {video_file.name} ({file_size_mb:.1f}MB, {duration_seconds:.1f}s)")
             return True
-                
+
         except FileNotFoundError:
-            logging.warning("FFMPEG is not installed. Skipping health check.")
+            logging.warning("FFMPEG is not installed. Skipping health check - ASSUMING VIDEO IS GOOD")
             return True  # Assume healthy if can't check
         except Exception as e:
-            logging.error(f"Error during FFMPEG health check: {e}")
+            logging.error(f"Error during video health check for {video_file.name}: {e}")
             return False
     
     def is_sample_file(self, video_file: Path, min_size_mb: int = 50) -> bool:

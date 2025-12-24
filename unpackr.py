@@ -29,6 +29,58 @@ from utils.safety import (GLOBAL_RUNTIME_LIMIT, LoopSafety, RecursionSafety,
 from utils.defensive import InputValidator, StateValidator, ValidationError
 
 
+class ThreadSafeStats:
+    """Thread-safe statistics tracking with atomic operations."""
+
+    def __init__(self):
+        """Initialize statistics with thread safety."""
+        self._lock = threading.Lock()
+        self._stats = {
+            'folders_processed': 0,
+            'folders_deleted': 0,
+            'folders_preserved': 0,
+            'empty_folders_deleted': 0,
+            'videos_moved': 0,
+            'videos_healthy': 0,
+            'videos_corrupt': 0,
+            'videos_sample': 0,
+            'videos_failed': 0,
+            'files_sanitized': 0,
+            'rars_extracted': 0,
+            'par2s_repaired': 0,
+            'junk_files_deleted': 0,
+            'safety_stops': 0
+        }
+
+    def increment(self, key: str, value: int = 1):
+        """Atomically increment a statistic."""
+        with self._lock:
+            if key in self._stats:
+                self._stats[key] += value
+
+    def __getitem__(self, key: str) -> int:
+        """Thread-safe get operation."""
+        with self._lock:
+            return self._stats.get(key, 0)
+
+    def __setitem__(self, key: str, value: int):
+        """
+        Thread-safe set operation.
+
+        Note: self.stats['key'] += 1 is NOT fully atomic (involves get+set).
+        Use increment() method for true atomic increments if needed.
+        However, since only the main thread modifies stats and the spinner
+        only reads, this is safe for current architecture.
+        """
+        with self._lock:
+            self._stats[key] = value
+
+    def get_snapshot(self) -> dict:
+        """Get a thread-safe snapshot of all statistics."""
+        with self._lock:
+            return self._stats.copy()
+
+
 # ASCII Art
 ASCII_ART = r"""
                                _         
@@ -166,22 +218,7 @@ class UnpackrApp:
             config: Configuration instance
         """
         self.config = config
-        self.stats = {
-            'folders_processed': 0,
-            'folders_deleted': 0,
-            'folders_preserved': 0,
-            'empty_folders_deleted': 0,
-            'videos_moved': 0,
-            'videos_healthy': 0,
-            'videos_corrupt': 0,
-            'videos_sample': 0,
-            'videos_failed': 0,
-            'files_sanitized': 0,
-            'rars_extracted': 0,
-            'par2s_repaired': 0,
-            'junk_files_deleted': 0,
-            'safety_stops': 0
-        }
+        self.stats = ThreadSafeStats()  # Thread-safe statistics tracking
         # Initialize handlers with stats tracking
         self.file_handler = FileHandler(config, self.stats)
         self.archive_processor = ArchiveProcessor(config)
@@ -415,16 +452,19 @@ class UnpackrApp:
     def process_folder(self, folder: Path, destination_dir: Path, current: int, total: int) -> int:
         """
         Process a single folder.
-        
+
         Args:
             folder: Path to folder to process
             destination_dir: Destination for video files
             current: Current folder number
             total: Total folders to process
-            
+
         Returns:
             Number of videos successfully moved
         """
+        # Reset recursion guard for this folder (guard is per-folder, not global)
+        self.recursion_guard.current_depth = 0
+
         moved_count = 0
 
         # Process PAR2 files FIRST - verify/repair archives before extraction
@@ -509,13 +549,18 @@ class UnpackrApp:
                 moved_count += 1
                 self.stats['videos_moved'] += 1
             else:
+                # Get file size BEFORE moving (after move, file no longer at original path)
+                try:
+                    file_size_mb = video_file.stat().st_size / (1024 * 1024)
+                except:
+                    file_size_mb = 0
+
                 if self.video_processor.check_video_health(video_file):
                     self.stats['videos_healthy'] += 1
                     if self.file_handler.move_file(video_file, destination_dir):
                         moved_count += 1
                         self.stats['videos_moved'] += 1
                         # Log success so user knows videos are being moved
-                        file_size_mb = video_file.stat().st_size / (1024 * 1024) if video_file.exists() else 0
                         logging.info(f"MOVED: {video_file.name} ({file_size_mb:.1f}MB) -> {destination_dir}")
                 else:
                     # Delete corrupt video
@@ -568,7 +613,7 @@ class UnpackrApp:
 
     def _get_random_comment(self, current_folder: int):
         """
-        Randomly return a snarky comment (10% chance per folder).
+        Randomly return a snarky comment (15% chance per folder).
 
         Args:
             current_folder: Current folder number being processed
@@ -580,8 +625,8 @@ class UnpackrApp:
         if current_folder - self.last_comment_folder < 5:
             return None
 
-        # 10% chance to show a comment
-        if self.comments and random.random() < 0.10:
+        # 15% chance to show a comment (increased for better user experience)
+        if self.comments and random.random() < 0.15:
             self.last_comment_folder = current_folder
             return random.choice(self.comments)
 
@@ -687,9 +732,16 @@ class UnpackrApp:
         sys.stdout.write(f"{stats_line}\033[K\n")
 
         # Time metrics with time saved estimate
-        # Assume manual processing: 4 minutes per folder average (PAR2, extract, find video, spot-check, move, cleanup)
-        # Automated processing: much faster, so calculate time saved
-        manual_time_minutes = current * 4  # 4 min per folder if done manually
+        # Conservative estimate for manual processing per folder:
+        # - Open folder, check PAR2: 30s
+        # - Wait for 7z extraction: 1-2 min (depends on size)
+        # - Find video in subfolders: 20s
+        # - Open video to verify quality: 30s
+        # - Move to destination, organize: 30s
+        # - Delete junk, cleanup folder: 30s
+        # Total: ~2 min minimum for simple folders, 3-5 min for complex ones with PAR2/archives
+        # Using 2 min as conservative baseline (user would likely take longer in practice)
+        manual_time_minutes = current * 2  # 2 min per folder conservative estimate
         time_saved_hours = manual_time_minutes / 60
 
         if time_saved_hours < 1:
@@ -779,12 +831,17 @@ class UnpackrApp:
                     logging.info(f"[DRY-RUN] Would validate and move video: {video_file.name}")
                     self.stats['videos_moved'] += 1
                 else:
+                    # Get file size BEFORE moving (after move, file no longer at original path)
+                    try:
+                        file_size_mb = video_file.stat().st_size / (1024 * 1024)
+                    except:
+                        file_size_mb = 0
+
                     if self.video_processor.check_video_health(video_file):
                         self.stats['videos_healthy'] += 1
                         if self.file_handler.move_file(video_file, destination_dir):
                             self.stats['videos_moved'] += 1
                             # Log success so user knows videos are being moved
-                            file_size_mb = video_file.stat().st_size / (1024 * 1024) if video_file.exists() else 0
                             logging.info(f"MOVED: {video_file.name} ({file_size_mb:.1f}MB) -> {destination_dir}")
                     else:
                         # Delete corrupt video
@@ -876,8 +933,8 @@ class UnpackrApp:
                             logging.info(f"[DRY-RUN] Would validate and move loose video: {video.name}")
                             self.stats['videos_moved'] += 1
                         else:
-                            # Validate video
-                            if self.video_validator and self.video_validator.validate_video(video):
+                            # Validate video using video_processor (not undefined video_validator)
+                            if self.video_processor and self.video_processor.check_video_health(video):
                                 self.stats['videos_healthy'] += 1
                                 # Move to destination
                                 dest_file = destination_dir / video.name
@@ -1171,13 +1228,26 @@ def main():
     try:
         # Parse arguments
         parser = argparse.ArgumentParser(
-            description="Automated video file processing and cleanup tool.")
-        parser.add_argument('--source', '-s', help='Path to source downloads directory', required=False)
-        parser.add_argument('--destination', '-d', help='Path to destination directory', required=False)
-        parser.add_argument('--config', '-c', help='Path to config.json file', required=False)
+            description="Automated video file processing and cleanup tool.",
+            epilog="Examples:\n"
+                   "  unpackr --source C:\\Downloads --destination D:\\Videos\n"
+                   "  unpackr C:\\Downloads D:\\Videos\n"
+                   "  unpackr  (interactive mode)",
+            formatter_class=argparse.RawDescriptionHelpFormatter)
+        parser.add_argument('source_pos', nargs='?', help='Source downloads directory (positional)')
+        parser.add_argument('dest_pos', nargs='?', help='Destination directory (positional)')
+        parser.add_argument('--source', '-s', help='Path to source downloads directory')
+        parser.add_argument('--destination', '-d', help='Path to destination directory')
+        parser.add_argument('--config', '-c', help='Path to config.json file')
         parser.add_argument('--dry-run', action='store_true', help='Show what would be done without making changes')
         parser.add_argument('--show-plan', action='store_true', help='Show detailed pre-flight plan and exit (no processing)')
         args = parser.parse_args()
+
+        # Handle positional vs named arguments
+        if args.source_pos:
+            args.source = args.source_pos
+        if args.dest_pos:
+            args.destination = args.dest_pos
         
         # Load configuration defensively
         config_path = Path(args.config) if args.config else Path('config_files/config.json')

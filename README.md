@@ -1,153 +1,198 @@
 # Unpackr
 
-**Modern CLI tool for automated Usenet video processing** - Clean, fast, reliable.
+**Automated Usenet video processing tool** - Handles PAR2 repair, RAR extraction, video validation, and cleanup.
 
 ## What It Does
 
-Fully automated download processor that turns messy Usenet folders into organized video collections:
+Processes messy download folders automatically:
 
-1. **Repairs** - PAR2 verification & repair first
-2. **Extracts** - Multi-part RAR archives (smart .part001 handling)
-3. **Validates** - FFmpeg health checks on every video
-4. **Moves** - Good videos saved immediately
-5. **Cleans** - Corrupt files, samples, and junk deleted
-6. **Protects** - Music/image/document folders preserved
+1. **Repairs** - PAR2 verification and repair
+2. **Extracts** - Multi-part RAR archives
+3. **Validates** - Video health checks (detects corrupt/truncated files)
+4. **Moves** - Valid videos to destination
+5. **Cleans** - Removes junk files and empty folders
+6. **Protects** - Preserves music/image/document folders
 
-**Smart Features:**
-- Processes oldest folders first (ongoing downloads safe)
-- Auto-kills orphaned processes from previous runs
-- Multi-pass cleanup for locked files
-- Configurable safety limits (timeouts, recursion depth)
-- Real-time progress with animated status
-
-**Modern Terminal UI:**
-```
-  unpackr
-
-  [██████████░░░░░░░░░░] 45% │ 68/457
-  found: 45  moved: 42  bad: 3  extracted: 8  repaired: 2  cleaned: 12  junk: 87
-  speed: 2.0 folders/min  time left: 3:43:27  saved: 4.5 hrs
-
-  > Validate video 1/2: Movie.Title.2024.mkv
-  ⠙ working
-```
-- Clean ASCII art header with modern progress bar
-- Live stats: success rate (found vs moved), work done (extracted/repaired), cleanup (folders/junk files)
-- Time saved estimate (vs manual processing at ~4 min/folder)
-- Animated spinner for continuous feedback
-- Random easter egg comments for entertainment during long runs
-
-**Defensive & Adaptive:**
-- Automatic process cleanup on failures
-- PowerShell fallback for stubborn deletions
-- Retry logic with exponential backoff
-- Multi-pass cleanup for locked files
-
-## Typical Usenet Workflow
-
-**The Problem:** Download folder with 50+ releases, each with:
-- 700+ multi-part RAR files (.part001-.part710)
-- PAR2 recovery files
-- Subfolders with extracted videos
-- NFO, SFV, URL junk files
-- Maybe corrupt or incomplete downloads
-
-**The Solution:** One command cleans everything
-```powershell
-python unpackr.py --source "G:\Downloads" --destination "G:\Videos"
-```
-
-**What Happens:**
-1. Scans all folders (oldest first)
-2. For each folder:
-   - PAR2 verifies archives (repairs if needed, or deletes if corrupt)
-   - Extracts .part001 only (7z handles the rest)
-   - **Validates and moves videos one-by-one** (you see results immediately)
-   - Deletes junk and cleans up
-3. Multi-pass cleanup catches any locked files
-4. **Result:** Clean download folder, all good videos in output
-
-**What It Preserves:**
-- Folders with music (3+ music files)
-- Folders with images (5+ image files)
-- Folders with documents
-- Everything else gets cleaned
-
-**You Come Back To:**
-- ✅ All valid videos in your output folder
-- ✅ Clean downloads folder (except preserved content)
-- ✅ Detailed log of what happened
-- ✅ No stuck processes or locked files
+The workflow processes folders oldest-first (safe for ongoing downloads) and validates videos one-by-one so you see results immediately.
 
 ## Quick Start
 
 ```bash
-# Install (creates 'unpackr' and 'unpackr-doctor' commands)
+# Install dependencies and create commands
 pip install -e .
 
-# Check system setup
+# Check system is ready
 unpackr-doctor
 
-# Run from anywhere
-unpackr --source "C:\Downloads" --destination "D:\Videos"
+# Run (from project directory)
+unpackr --source "G:\Downloads" --destination "G:\Videos"
 
 # Or use positional arguments
-unpackr "C:\source" "D:\destination"
+unpackr "G:\source" "G:\dest"
 
-# Or interactive mode (prompts for paths)
+# Or interactive mode
 unpackr
 ```
 
-## The Problem
-
-Download folders cluttered with:
-- Nested subfolders
-- PAR2/RAR archives
-- NFO/SFV junk files
-- Sample videos
-- Corrupt files
-
-Manually extracting, validating, and organizing wastes time.
-
-## The Solution
-
-Unpackr automates everything:
-1. Extracts RAR archives
-2. Repairs damaged files (PAR2)
-3. Validates video health (FFmpeg)
-4. Moves good videos to destination
-5. Deletes corrupt files
-6. Cleans up junk and empty folders
-
-Smart Detection:
-- Preserves music/document folders
-- Removes sample files
-- Skips content-only folders
+**Note:** When running from the project directory, use the `unpackr` command (which runs `unpackr.bat`). From other directories, the installed command at `C:\Users\<you>\AppData\Roaming\Python\Python310\Scripts\unpackr.exe` is used.
 
 ## Installation
 
-### 1. Install Unpackr
+### 1. Install Python Package
 
 ```bash
-# Clone or download, then install
 cd unpackr
 pip install -e .
 ```
 
-This installs:
-- Python dependencies (tqdm, psutil, colorama)
-- Creates `unpackr` and `unpackr-doctor` commands globally
+This installs Python dependencies (tqdm, psutil, colorama) and creates two commands:
+- `unpackr` - Main tool
+- `unpackr-doctor` - Diagnostics
 
 ### 2. Install External Tools
 
 **Required:**
-- **7-Zip** - RAR extraction ([download](https://www.7-zip.org/))
-- **par2cmdline** - PAR2 repair ([download](https://github.com/Parchive/par2cmdline))
+- **7-Zip** - For RAR extraction ([download](https://www.7-zip.org/))
+- **par2cmdline** - For PAR2 repair ([download](https://github.com/Parchive/par2cmdline))
 
-**Optional:**
-- **ffmpeg** - Video validation ([download](https://ffmpeg.org/))
+**Optional but recommended:**
+- **ffmpeg** - For video validation ([download](https://ffmpeg.org/))
+  - Without ffmpeg, video health checks are skipped (videos assumed good)
 
-The config automatically searches common install locations. To specify custom paths, edit `config_files/config.json`:
+### 3. Configure Tool Paths (if needed)
+
+The tool auto-detects common install locations. If your tools are elsewhere, edit `config_files/config.json`:
+
+```json
+{
+  "tool_paths": {
+    "7z": ["C:\\Program Files\\7-Zip\\7z.exe"],
+    "par2": ["C:\\custom\\path\\par2.exe"],
+    "ffmpeg": ["C:\\ffmpeg\\bin\\ffmpeg.exe"]
+  }
+}
+```
+
+Each tool path is an array - it tries paths in order until one works.
+
+### 4. Verify Setup
+
+```bash
+unpackr-doctor
+```
+
+This checks:
+- Python version (3.7+)
+- Required packages installed
+- External tools accessible
+- Config file valid
+- Write permissions
+- Disk space
+
+Fix any issues it reports before running.
+
+## Usage
+
+### Basic Usage
+
+```bash
+# From project directory
+unpackr --source "G:\Downloads" --destination "G:\Videos"
+
+# Short flags
+unpackr -s "G:\Downloads" -d "G:\Videos"
+
+# Positional (no flags)
+unpackr "G:\Downloads" "G:\Videos"
+
+# Interactive (prompts for paths)
+unpackr
+```
+
+### Dry Run (Preview Mode)
+
+Test without making changes:
+
+```bash
+unpackr --source "G:\test" --destination "G:\out" --dry-run
+```
+
+Shows what would happen without actually moving/deleting files. All operations logged with `[DRY-RUN]` prefix.
+
+### Custom Config
+
+```bash
+unpackr --config "custom_config.json" -s "G:\Downloads" -d "G:\Videos"
+```
+
+## What Happens During Processing
+
+### 1. Pre-Scan
+```
+[PRE-SCAN] Analyzing folders...
+Found: 51 videos | 710 archives | 2 PAR2 sets | 127 junk files
+```
+
+Scans all folders and sorts by age (oldest first, so ongoing downloads aren't touched).
+
+### 2. Process Each Folder
+
+**PAR2 Repair (if PAR2 files present):**
+- Verifies archive integrity first
+- Repairs only if needed (faster)
+- Deletes corrupted archives if repair fails
+
+**Archive Extraction:**
+- Extracts only `.part001` files (7-Zip handles the rest automatically)
+- Skips `.part002+` to avoid duplicate extraction
+
+**Video Validation:**
+- **Comprehensive health checks** (new in recent update):
+  - File size sanity checks
+  - Duration and bitrate extraction
+  - Truncation detection (rejects if <70% expected size)
+  - Full decode test (verifies all frames readable)
+  - Corruption keyword detection
+- **Each video processed immediately** - you see results as they happen
+- Corrupt/truncated videos are deleted, not moved
+
+**Cleanup:**
+- Deletes junk files (NFO, SFV, URL, etc.)
+- Removes empty folders
+- Tracks locked folders for retry
+
+### 3. Multi-Pass Cleanup
+
+Re-attempts folders that were locked:
+- 3 passes with delays
+- Auto-kills blocking processes
+- Reports any still-locked folders at end
+
+### Live Progress
+
+```
+  unpackr
+
+  [████████████░░░░░░░░] 60% │ 18/30
+  found: 24  moved: 21  bad: 3  extracted: 8  repaired: 5  cleaned: 15  junk: 142
+  speed: 2.3 folders/min  time left: 0:08:45  saved: 36 min
+
+  > Extracting: Release.part001.rar
+  ⠙ working
+```
+
+Shows:
+- Progress bar with percentage
+- Stats: videos (found/moved/bad), work (extracted/repaired), cleanup (folders/junk)
+- Speed, ETA, and time saved estimate (conservative 2 min/folder baseline)
+- Current operation
+- Animated spinner
+
+**Easter Egg:** Random comments appear occasionally (15% chance per folder, max once per 5 folders) for entertainment during long runs.
+
+## Configuration
+
+Edit `config_files/config.json`:
 
 ```json
 {
@@ -155,379 +200,293 @@ The config automatically searches common install locations. To specify custom pa
     "7z": ["C:\\Program Files\\7-Zip\\7z.exe", "7z"],
     "par2": ["bin\\par2.exe", "par2"],
     "ffmpeg": ["ffmpeg"]
-  }
-}
-```
-
-### 3. Verify Setup
-
-```bash
-unpackr-doctor
-```
-
-Runs diagnostics and reports any issues.
-
-## Usage
-
-### Interactive Mode
-
-Just run without arguments and it will prompt you:
-```powershell
-python unpackr.py
-```
-
-### Command-Line Mode
-
-Specify source and destination:
-```powershell
-# Long format
-python unpackr.py --source "C:\Downloads" --destination "D:\Videos"
-
-# Short format
-python unpackr.py -s "C:\Downloads" -d "D:\Videos"
-```
-
-Or if installed as command:
-```powershell
-unpackr --source "C:\Downloads" --destination "D:\Videos"
-unpackr -s "C:\Downloads" -d "D:\Videos"
-```
-
-### Dry-Run Mode (Test Without Changes)
-
-Preview what would happen without actually moving/deleting anything:
-```powershell
-python unpackr.py --source "C:\Downloads" --destination "D:\Videos" --dry-run
-```
-Shows:
-- Which videos would be moved
-- Which files would be deleted
-- Which folders would be cleaned
-- All operations logged with `[DRY-RUN]` prefix
-
-### Custom Configuration
-
-Use a different config file:
-```powershell
-python unpackr.py --config "custom_config.json"
-```
-
-### Path Handling
-
-Paths work with or without quotes:
-```powershell
-# With quotes (if spaces in path)
-python unpackr.py --source "C:\My Downloads" --destination "D:\My Videos"
-
-# Without quotes (if no spaces)
-python unpackr.py --source C:\Downloads --destination D:\Videos
-```
-
-## What Happens During Processing
-
-### 1. Pre-Scan Analysis
-```
-[PRE-SCAN] Analyzing 25/25 folders...
-Found: 51 videos | 710 archives | 2 PAR2 sets | 127 junk files
-```
-Quickly scans and sorts folders by age (oldest first).
-
-### 2. For Each Folder (Oldest First)
-
-**Step 2a: PAR2 Verify/Repair** (if PAR2 files present)
-```
-Verifying/Repairing PAR2: Release.par2 (8 files, 45.3MB)
-PAR2 verification passed (no repair needed) in 3.2s
-```
-- Verifies archive integrity first
-- Only repairs if needed (faster!)
-- If repair fails → deletes corrupted archives immediately
-
-**Step 2b: Extract Archives** (only .part001, skips .part002+)
-```
-Extracting [34.2MB] Release.part001.rar
-Extracted Release.part001.rar (34.2MB in 45.2s, 0.8MB/s)
-```
-- Filters multi-part RARs (only extracts first part)
-- 7-Zip automatically handles remaining parts
-- Real-time extraction speed display
-
-**Step 2c: Process Videos** (immediate one-by-one)
-```
-Checking video: Movie.Title.2024.mkv
-MOVED: Movie.Title.2024.mkv (1250.3MB) -> G:\out
-```
-- **Each video validated and moved immediately**
-- You see videos appearing in output as they're processed
-- Corrupt videos deleted on the spot
-
-**Step 2d: Cleanup Folder**
-- Deletes remaining junk (NFO, SFV, etc.)
-- Attempts folder deletion (with retries)
-- If locked → tracks for multi-pass cleanup later
-
-### 3. Multi-Pass Cleanup (After All Folders)
-```
-Retry pass 1/3: Attempting 2 failed deletions...
-Successfully deleted 2 folders on retry
-```
-- Re-attempts folders that were locked
-- 3 passes with 30-second delays
-- Kills blocking processes automatically
-
-### Live Progress Display
-```
-  unpackr
-
-  [████████████░░░░░░░░] 60% │ 18/30
-  found: 24  moved: 21  bad: 3  extracted: 8  repaired: 5  cleaned: 15  junk: 142
-  speed: 2.3 folders/min  time left: 0:08:45  saved: 1.2 hrs
-
-  > Extracting: Release.part001.rar
-  ⠙ working
-```
-
-**What You See:**
-- **Progress bar** - Visual completion with modern block characters
-- **Stats** - Videos (found/moved/bad), work done (extracted/repaired), cleanup (folders/junk files)
-- **Speed & ETA** - Processing rate, time remaining, and time saved vs manual processing
-- **Current action** - What's happening right now
-- **Spinner** - Animated indicator (updates continuously during long operations)
-
-### Final Summary
-```
-Moved: 51 videos | Extracted: 8 archives | Repaired: 5 PAR2
-Deleted: 127 junk files | Cleaned: 25 folders
-Failed: 2 folders (still locked - retry manually)
-```
-
-## Configuration
-
-Edit `config_files/config.json` to customize:
-
-```json
-{
-  "video_extensions": [".mp4", ".avi", ".mkv", ".mov", "..."],
-  "music_extensions": [".mp3", ".flac", ".wav", "..."],
-  "removable_extensions": [".nfo", ".sfv", ".url", "..."],
+  },
+  "video_extensions": [".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".m4v", ".mpg", ".mpeg"],
+  "music_extensions": [".mp3", ".flac", ".wav", ".aac", ".ogg", ".m4a", ".wma"],
+  "image_extensions": [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"],
+  "document_extensions": [".pdf", ".doc", ".docx", ".txt", ".xls", ".xlsx"],
+  "removable_extensions": [".nfo", ".sfv", ".url", ".diz", ".txt", ".m3u"],
   "min_sample_size_mb": 50,
+  "min_music_files": 3,
+  "min_image_files": 5,
   "max_log_files": 5,
   "log_folder": "logs"
 }
 ```
 
-**What You Can Customize:**
-- Video/music/image/document file extensions
-- Minimum file counts to identify content folders
-- Sample file size threshold
-- Log retention (keeps last 5 by default)
-
-## Examples
-
-### Example 1: Clean Downloads Folder
-```powershell
-python unpackr.py --source "C:\Downloads" --destination "D:\Videos"
-```
-Processes everything in Downloads, moves videos to D:\Videos.
-
-### Example 2: Test Mode
-```powershell
-python unpackr.py --source "C:\test" --destination "C:\test_output"
-```
-Test on a small folder first.
-
-### Example 3: Network Drive
-```powershell
-python unpackr.py --source "\\NAS\downloads" --destination "D:\Videos"
-```
-Works with network paths.
+**Key settings:**
+- `tool_paths` - Custom paths to external tools (arrays try in order)
+- `min_sample_size_mb` - Videos smaller than this are considered samples (default: 50MB)
+- `min_music_files` / `min_image_files` - How many files needed to preserve a folder
+- `max_log_files` - Keep last N logs (default: 5)
 
 ## Safety Features
 
-### Timeout Protection
+### Timeouts
 - RAR extraction: 5 minutes per archive
 - PAR2 repair: 10 minutes per operation
 - Video validation: 60 seconds per file
 - Global runtime: 4 hours total
 
-### Loop Guards
-- Max iterations with auto-breaks
-- Recursion limits (10 levels)
-- Stuck detection (5min)
+### Protections
+- Recursion limits (10 levels, reset per folder)
+- Loop guards with auto-breaks
+- Stuck detection (5 min timeout)
+- Thread-safe progress updates
+- Thread-safe statistics tracking
 
-### Input Validation
-- Path validation (null bytes, traversal)
-- State checks (disk space, permissions)
-- Error recovery with retries
+### Validation
+- Input sanitization (path traversal, null bytes)
+- Disk space checks before extraction (3x archive size)
+- File accessibility checks
+- Atomic file operations (temp file + rename)
 
-Designed to handle errors gracefully and avoid common hanging scenarios.
+### Error Recovery
+- Retry logic with exponential backoff
+- Multi-pass cleanup for locked files
+- Automatic process cleanup
+- PowerShell fallback for stubborn deletions
 
-## Requirements
+## Recent Improvements
 
-### Python Dependencies
-- tqdm>=4.62.0
-- psutil>=5.8.0
-- colorama>=0.4.4
+The codebase recently underwent a comprehensive review and bug fixes:
 
-### External Tools
-- 7-Zip (required)
-- par2cmdline (optional)
-- ffmpeg (optional)
+1. **Enhanced video health validation** - Now catches truncated/corrupt videos that were previously missed
+2. **Fixed PAR2 error detection** - Properly distinguishes repair failures from successes
+3. **Disk space checking** - Validates space before extraction (prevents partial extractions)
+4. **Thread safety** - Progress and stats updates are now thread-safe
+5. **Atomic file operations** - Files moved via temp file + atomic rename
+6. **Per-folder recursion guards** - Recursion depth resets for each folder (was global)
+7. **Conservative time estimates** - Time saved estimates reduced to 2 min/folder for realism
+
+All tests passing (33/33).
 
 ## Testing
 
-```powershell
-python tests/test_comprehensive.py
-python tests/test_safety.py
-python tests/test_defensive.py
+```bash
+# Run all tests
+python -m pytest tests/ -v
+
+# Individual test suites
+python -m pytest tests/test_comprehensive.py -v
+python -m pytest tests/test_safety.py -v
+python -m pytest tests/test_defensive.py -v
 ```
 
-Total: 80+ tests
+Total: 33 tests covering:
+- Video validation (including enhanced checks)
+- PAR2 error detection
+- Safety limits and timeouts
+- Input validation
+- Path handling
+- Config loading
+- File operations
 
 ## Project Structure
 
 ```
-Unpackr/
-├── unpackr.py              # Main script (run this)
-├── unpackr.bat             # Windows launcher (for command usage)
-├── build.py                # Build standalone .exe
+unpackr/
+├── unpackr.py              # Main entry point
+├── unpackr.bat             # Windows launcher (for project dir usage)
+├── doctor.py               # Diagnostics tool
+├── setup.py                # Package installation
 ├── requirements.txt        # Python dependencies
-├── README.md               # This file
-├── INSTALL.md              # Installation guide
 │
-├── bin/                    # External executables
 ├── config_files/           # Configuration
-│   └── config.json
-├── scripts/                # Utility scripts
-├── core/                   # Business logic modules
-├── utils/                  # Helper utilities
+│   ├── config.json         # Main config
+│   └── comments.json       # Easter egg comments
+│
+├── core/                   # Core processing modules
+│   ├── __init__.py
+│   ├── config.py           # Config loading/validation
+│   ├── archive_processor.py # PAR2 repair, RAR extraction
+│   ├── file_handler.py     # File operations (move, delete, sanitize)
+│   └── video_processor.py  # Video validation
+│
+├── utils/                  # Utilities
+│   ├── progress.py         # Progress display (thread-safe)
+│   ├── safety.py           # Timeouts, loop guards, limits
+│   ├── defensive.py        # Input validation, error recovery
+│   └── system_check.py     # Tool detection
+│
 ├── tests/                  # Test suites
-├── docs/                   # Additional documentation
+│   ├── conftest.py         # Pytest fixtures
+│   ├── test_comprehensive.py
+│   ├── test_safety.py
+│   ├── test_defensive.py
+│   └── test_all.py
+│
+├── docs/                   # Documentation
 ├── logs/                   # Runtime logs (auto-created)
-└── archive/                # Historical versions
+└── bin/                    # External tools (optional)
 ```
 
-See `docs/PROJECT_STRUCTURE.md` for details.
+## How It Works (Technical)
 
-## Install as Command (Optional)
+### Architecture
 
-To run `unpackr` from anywhere (instead of `python unpackr.py`):
+1. **Pre-scan phase** - Classifies all folders (junk, content, or processable)
+2. **Processing phase** - Oldest folders first
+3. **Cleanup phase** - Multi-pass retry for locked files
 
-```powershell
-# Copy batch file to PATH (requires admin)
-copy unpackr.bat C:\Windows\System32\
+### Folder Classification
 
-# Now run from anywhere:
-cd C:\
-unpackr --source "C:\Downloads" --destination "D:\Videos"
-```
+- **Junk folders** - Empty or only junk files → deleted immediately
+- **Content folders** - Music (3+ files), images (5+ files), documents → preserved
+- **Video folders** - Everything else → processed
 
-See `INSTALL.md` for other installation options (no admin, PATH setup, PowerShell alias).
+### Video Validation (Enhanced)
 
-For building standalone .exe, see `docs/BUILD.md`.
+The video health check performs comprehensive validation:
 
-## Documentation
+1. **Size check** - Rejects files <1MB
+2. **Metadata extraction** - Gets duration and bitrate via ffmpeg
+3. **Duration validation** - Rejects files with no duration or <10 seconds
+4. **Truncation detection** - Calculates expected size from bitrate/duration, rejects if actual <70%
+5. **Full decode test** - Actually decodes video to end, checking for frame errors
+6. **Corruption keywords** - Detects "Invalid data", "corrupt", "truncated", "moov atom not found", etc.
 
-- README.md - This file
-- INSTALL.md - Install as command guide
-- docs/QUICK_REFERENCE.md - Quick start
-- docs/PROJECT_STRUCTURE.md - Organization
-- docs/BUILD.md - Build standalone .exe
+This catches partially extracted videos that have valid headers but incomplete/corrupt data.
+
+### PAR2 Processing
+
+Checks failure keywords FIRST (before success keywords):
+- "repair failed"
+- "repair impossible"
+- "cannot repair"
+- "insufficient"
+
+This prevents false positives where corrupted archives were marked as OK.
+
+### Archive Extraction
+
+- Only extracts `.part001` files (7-Zip automatically handles remaining parts)
+- Checks disk space before extraction (3x archive size for safety)
+- Logs extraction speed for monitoring
 
 ## Troubleshooting
 
 ### "7-Zip not found"
-Install 7-Zip and ensure it's in PATH. Usually installed to:
-- `C:\Program Files\7-Zip\7z.exe`
+Install 7-Zip or add path to `tool_paths.7z` in config.json. Common location: `C:\Program Files\7-Zip\7z.exe`
 
-### "Python not recognized" (when using unpackr.bat)
-Add Python to PATH or use full command: `python unpackr.py`
+### "par2cmdline not found"
+Optional but recommended. Install from GitHub or add path to `tool_paths.par2` in config.json.
+
+### "ffmpeg not found"
+Optional. Without ffmpeg, video validation is skipped (videos assumed good). Install from ffmpeg.org for full validation.
 
 ### Videos not moving
 - Check destination path exists and is writable
-- Check logs for errors
-- Verify videos are valid (not corrupted)
+- Check logs for errors (`logs/unpackr-YYYYMMDD-HHMMSS.log`)
+- Run with `--dry-run` to see what would happen
+- Corrupt videos are deleted, not moved (check log for "Video health check FAILED")
 
-### Hangs/Slow Performance
-- Timeouts will kick in (check configured limits)
-- Large archives take time (5 min per archive)
+### Hangs or slow performance
+- Timeouts will trigger (check configured limits in safety.py)
+- Large archives take time (~5 min per archive with 5min timeout)
 - Network drives are slower than local
+- Check logs for timeout messages
 
-### Permission Errors
+### Permission errors
 - Run as Administrator if needed
 - Check folder permissions
-- Some files may be locked by other processes
+- Some files may be locked by other processes (multi-pass cleanup will retry)
+
+### Command not found (when running `unpackr`)
+From project directory: Make sure `unpackr.bat` exists (it was restored recently)
+From other directories: Ensure Python Scripts directory is in PATH
 
 ## Logging
 
-Every run creates a log file:
+Every run creates a timestamped log:
 ```
-logs/unpackr-20251009-143022.log
+logs/unpackr-20251224-143022.log
 ```
 
 Logs include:
-- Files processed
-- Errors encountered
-- Safety interventions (timeouts)
+- All operations (extract, move, delete)
+- Errors and warnings
+- Safety interventions (timeouts, stuck detection)
+- Video health check results (pass/fail with reasons)
 - Performance metrics
 - Final statistics
 
-Keeps last 5 logs by default (configurable).
+Keeps last 5 logs by default (configurable via `max_log_files`).
 
-## Frequently Asked Questions
+## Known Limitations
 
-**Q: Does it work on Linux/Mac?**
-A: Written for Windows but could be adapted. Path handling and external tools would need adjustment.
+- **Windows-focused** - Designed for Windows (path handling, process management, batch files)
+- **No undo** - File operations are permanent (moves and deletes are final)
+- **Single-threaded** - Processes one folder at a time (multi-threading could cause issues with external tools)
+- **FFmpeg required for full validation** - Without ffmpeg, videos are assumed good
+- **Time estimates are estimates** - Based on 2 min/folder conservative baseline, actual varies widely
+
+## FAQ
 
 **Q: Will it delete my files?**
-A: Only junk files (NFO, SFV, etc.) and corrupt videos. Test on a copy first!
+A: Only junk files (NFO, SFV, URL, etc.) and corrupt videos. Valid videos are moved, not deleted. Content folders (music/images/docs) are preserved. Test with `--dry-run` first.
 
 **Q: Can I undo operations?**
-A: No undo. Files are moved/deleted. Always back up important data.
+A: No. Files are moved/deleted permanently. Back up important data before running.
 
 **Q: What if I want to keep sample files?**
-A: Edit config.json and increase `min_sample_size_mb` to a large value (e.g., 1000).
+A: Set `min_sample_size_mb` to a large value (e.g., 5000) in config.json to effectively disable sample detection.
 
-**Q: Can I process multiple folders at once?**
-A: Run it once per folder, or run multiple instances with different sources.
+**Q: How do I know if a video was rejected?**
+A: Check the log file. Search for "Video health check FAILED" to see which videos were rejected and why (truncated, corrupt, etc.).
 
-**Q: How do I update the script?**
-A: Replace `unpackr.py` and module files. Config and logs are preserved.
+**Q: Can I process multiple source folders?**
+A: Run the tool multiple times with different sources, or manually combine folders before running.
+
+**Q: Does it work on Linux/Mac?**
+A: Not currently. Windows-specific features (batch files, process management, PowerShell fallback) would need adjustment.
+
+**Q: How do I update?**
+A: `git pull` (or download new version), then `pip install -e .` again. Config and logs are preserved.
 
 ## Disclaimer
 
 **Use at your own risk.**
 
-This utility performs file operations including:
+This tool performs automated file operations:
 - Moving files
 - Deleting files
 - Extracting archives
+- Killing processes
 
-While designed with safety features, automated file handling carries risks:
+While designed with safety features, automated file handling has inherent risks:
 - Accidental deletion
 - File misplacement
 - Data loss
 
-**Recommendations:**
+**Strongly recommended:**
 - Back up important data before running
-- Test on non-critical folders first
+- Test on non-critical folders first (use `--dry-run`)
 - Review logs after processing
-- Understand what it does before running
+- Understand what the tool does before using it
 
 The developers are not responsible for data loss or damage.
 
+## Contributing
+
+If you find bugs or have improvements:
+1. Check logs for error details
+2. Run tests to verify (`python -m pytest tests/`)
+3. Document the issue clearly
+4. Submit with reproduction steps
+
 ## License
 
-Use freely for personal or commercial purposes. No warranties provided.
+Free to use for personal or commercial purposes. No warranties provided.
 
 ## Credits
 
-A personal utility project for automating video download cleanup. Built with defensive programming and safety mechanisms to handle real-world edge cases.
+Built as a personal utility to automate Usenet video processing. Designed with defensive programming and comprehensive safety mechanisms to handle real-world edge cases.
+
+Recent improvements include enhanced video validation, thread safety, and comprehensive test coverage.
 
 ---
 
-**For more details:** See docs/ folder for additional documentation.
+**Need help?** Check logs first (`logs/`), then run diagnostics (`unpackr-doctor`), then review this README.
 
-**For issues:** Check logs/ folder for detailed error information.
-
-**For updates:** Pull latest version and run tests to verify.
+**Coming back after 6 months?** Read "Recent Improvements" section above, run `unpackr-doctor` to verify setup, and check `tests/` to see what's covered.

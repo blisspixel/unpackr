@@ -30,6 +30,7 @@ setup(
         'console_scripts': [
             'unpackr=unpackr:main',
             'unpackr-doctor=doctor:main',
+            'vhealth=vhealth:main',
         ],
     },
     classifiers=[

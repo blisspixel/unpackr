@@ -23,7 +23,10 @@
       "Bash(cat:*)",
       "Bash(timeout 60 python:*)",
       "Bash(powershell -Command:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(where:*)",
+      "Bash(C:UsersnicksAppDataRoamingPythonPython310Scriptsunpackr.exe --help)",
+      "Bash(cmd /c \"C:\\\\Users\\\\nicks\\\\AppData\\\\Roaming\\\\Python\\\\Python310\\\\Scripts\\\\unpackr.exe --help\")"
     ]
   }
 }
