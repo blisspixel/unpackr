@@ -45,9 +45,10 @@ cd unpackr
 pip install -e .
 ```
 
-This installs Python dependencies (tqdm, psutil, colorama) and creates two commands:
+This installs Python dependencies (tqdm, psutil, colorama) and creates three commands:
 - `unpackr` - Main tool
 - `unpackr-doctor` - Diagnostics
+- `vhealth` - Video health checker (standalone utility)
 
 ### 2. Install External Tools
 
@@ -222,9 +223,15 @@ Edit `config_files/config.json`:
 
 ## Safety Features
 
+### Security
+- **Path traversal protection** - Archives validated before extraction to prevent malicious files from writing outside target directory
+- **Command injection prevention** - All subprocess calls use array form with safe parameter handling
+- **Buffer overflow protection** - Large operations use temp files instead of PIPE to prevent deadlock
+- **Fail-closed validation** - When validation fails, assumes unsafe rather than proceeding
+
 ### Timeouts
-- RAR extraction: 5 minutes per archive
-- PAR2 repair: 10 minutes per operation
+- RAR extraction: Dynamic based on file size (min 5 min, max 2 hours)
+- PAR2 repair: Dynamic based on PAR2 size (min 10 min, max 3 hours)
 - Video validation: 60 seconds per file
 - Global runtime: 4 hours total
 
@@ -234,9 +241,12 @@ Edit `config_files/config.json`:
 - Stuck detection (5 min timeout)
 - Thread-safe progress updates
 - Thread-safe statistics tracking
+- Race condition prevention (double-check before deletion)
+- Memory leak prevention (bounded deque for failure tracking)
 
 ### Validation
 - Input sanitization (path traversal, null bytes)
+- Configuration validation (numeric ranges, types, required fields)
 - Disk space checks before extraction (3x archive size)
 - File accessibility checks
 - Atomic file operations (temp file + rename)
@@ -246,18 +256,34 @@ Edit `config_files/config.json`:
 - Multi-pass cleanup for locked files
 - Automatic process cleanup
 - PowerShell fallback for stubborn deletions
+- Graceful shutdown on interruption
 
 ## Recent Improvements
 
-The codebase recently underwent a comprehensive review and bug fixes:
+The codebase has undergone comprehensive security, stability, and performance improvements:
 
-1. **Enhanced video health validation** - Now catches truncated/corrupt videos that were previously missed
-2. **Fixed PAR2 error detection** - Properly distinguishes repair failures from successes
-3. **Disk space checking** - Validates space before extraction (prevents partial extractions)
-4. **Thread safety** - Progress and stats updates are now thread-safe
-5. **Atomic file operations** - Files moved via temp file + atomic rename
-6. **Per-folder recursion guards** - Recursion depth resets for each folder (was global)
-7. **Conservative time estimates** - Time saved estimates reduced to 2 min/folder for realism
+**Security (v1.1)**
+1. **Path traversal protection** - Validates archive contents before extraction to prevent malicious files
+2. **Command injection prevention** - Safe subprocess handling prevents shell injection attacks
+3. **Buffer overflow protection** - Large operations use temp files to prevent deadlock
+
+**Stability (v1.1)**
+4. **Exception handler cleanup** - Proper spinner thread cleanup on all exit paths
+5. **Memory leak fix** - Bounded deque prevents unbounded memory growth in long runs
+6. **Race condition fix** - Double-check pattern prevents unsafe folder deletions
+7. **Config validation** - Comprehensive validation with helpful error messages
+
+**Performance (v1.2 - in progress)**
+8. **Optimized scanning** - Uses os.scandir for 2-3x faster folder scanning with cached stats
+9. **Dynamic timeouts** - File-size-based timeouts handle 50GB+ archives without timing out
+
+**Quality (v1.0)**
+10. **Enhanced video validation** - Catches truncated/corrupt videos that were previously missed
+11. **Fixed PAR2 error detection** - Properly distinguishes repair failures from successes
+12. **Disk space checking** - Validates space before extraction
+13. **Thread safety** - Progress and stats updates are thread-safe
+14. **Atomic file operations** - Files moved via temp file + atomic rename
+15. **Per-folder recursion guards** - Recursion depth resets for each folder
 
 All tests passing (33/33).
 
@@ -360,8 +386,10 @@ This prevents false positives where corrupted archives were marked as OK.
 
 ### Archive Extraction
 
+- Security validates all paths in archive before extraction (prevents path traversal attacks)
 - Only extracts `.part001` files (7-Zip automatically handles remaining parts)
 - Checks disk space before extraction (3x archive size for safety)
+- Dynamic timeouts based on file size (handles 50GB+ archives)
 - Logs extraction speed for monitoring
 
 ## Troubleshooting

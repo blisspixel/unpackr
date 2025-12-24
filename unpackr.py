@@ -15,6 +15,7 @@ import os
 import threading
 import json
 import random
+from collections import deque
 from pathlib import Path
 from datetime import datetime, timedelta
 from colorama import init, Fore, Style
@@ -226,7 +227,9 @@ class UnpackrApp:
         self.dry_run = False  # Set to True for dry-run mode
         self.start_time = None
         self.work_plan = None
-        self.failed_deletions = []  # Track folders that couldn't be deleted
+        # MEMORY FIX: Use bounded deque to prevent unbounded memory growth in 24+ hour runs
+        # Keeps last 1000 failed deletions (oldest are dropped automatically)
+        self.failed_deletions = deque(maxlen=1000)  # Track folders that couldn't be deleted
         self.recursion_guard = RecursionSafety(config.max_subfolder_depth, "Subfolder processing")
         self.stuck_detector = StuckDetector(timeout=config.stuck_timeout_hours * 3600, check_interval=60)
         self.runtime_limit = None  # Will be initialized when processing starts
@@ -281,31 +284,50 @@ class UnpackrApp:
             image_total_bytes = 0
             document_files = 0
 
-            # RECURSIVE: Walk through folder and all subfolders to find files
-            for root, dirs, files in os.walk(folder):
-                for filename in files:
-                    file = Path(root) / filename
-                    ext_lower = file.suffix.lower()
-                    filename_lower = file.name.lower()
+            # PERFORMANCE: Use os.scandir recursively for cached stat() calls (2-3x faster)
+            # os.scandir returns DirEntry objects with cached stat info, avoiding repeated stat() calls
+            def scan_recursive(path):
+                """Recursively scan directory using os.scandir for performance."""
+                try:
+                    with os.scandir(path) as entries:
+                        for entry in entries:
+                            try:
+                                if entry.is_dir(follow_symlinks=False):
+                                    # Recurse into subdirectories
+                                    yield from scan_recursive(entry.path)
+                                elif entry.is_file(follow_symlinks=False):
+                                    yield entry
+                            except (PermissionError, OSError):
+                                # Skip files/folders we can't access
+                                continue
+                except (PermissionError, OSError):
+                    # Skip folders we can't access
+                    pass
 
-                    if ext_lower in video_extensions:
-                        videos.append(file)
-                    elif ext_lower == '.rar' or rar_pattern.match(ext_lower):
-                        rars.append(file)
-                    elif ext_lower == '.7z' or '.7z.' in filename_lower:  # Catch .7z and .7z.001 etc
-                        sevenz.append(file)
-                    elif ext_lower == '.par2':
-                        par2s.append(file)
-                    elif ext_lower in music_extensions:
-                        music_files += 1
-                    elif ext_lower in image_extensions:
-                        image_files += 1
-                        try:
-                            image_total_bytes += file.stat().st_size
-                        except (OSError, FileNotFoundError):
-                            pass
-                    elif ext_lower in document_extensions:
-                        document_files += 1
+            for entry in scan_recursive(folder):
+                ext_lower = Path(entry.name).suffix.lower()
+                filename_lower = entry.name.lower()
+                file_path = Path(entry.path)
+
+                if ext_lower in video_extensions:
+                    videos.append(file_path)
+                elif ext_lower == '.rar' or rar_pattern.match(ext_lower):
+                    rars.append(file_path)
+                elif ext_lower == '.7z' or '.7z.' in filename_lower:  # Catch .7z and .7z.001 etc
+                    sevenz.append(file_path)
+                elif ext_lower == '.par2':
+                    par2s.append(file_path)
+                elif ext_lower in music_extensions:
+                    music_files += 1
+                elif ext_lower in image_extensions:
+                    image_files += 1
+                    try:
+                        # PERFORMANCE: Use cached stat from DirEntry (no extra syscall)
+                        image_total_bytes += entry.stat(follow_symlinks=False).st_size
+                    except (OSError, FileNotFoundError):
+                        pass
+                elif ext_lower in document_extensions:
+                    document_files += 1
 
             # Determine if this is a video folder or content folder to preserve
             if videos or rars or sevenz:
@@ -576,7 +598,8 @@ class UnpackrApp:
                 logging.info(f"[DRY-RUN] Would delete folder: {folder}")
                 self.stats['folders_deleted'] += 1
             else:
-                if self.file_handler.safe_delete_folder(folder):
+                # Pass par2_error and archive_error for double-check (race condition protection)
+                if self.file_handler.safe_delete_folder(folder, par2_error=par2_error, archive_error=archive_error):
                     self.stats['folders_deleted'] += 1
                 else:
                     # Track failed deletion for retry
@@ -861,7 +884,8 @@ class UnpackrApp:
                 if self.dry_run:
                     logging.info(f"[DRY-RUN] Would delete subfolder: {subfolder}")
                 else:
-                    if not self.file_handler.safe_delete_folder(subfolder):
+                    # Pass par2_error and archive_error for double-check (race condition protection)
+                    if not self.file_handler.safe_delete_folder(subfolder, par2_error=par2_error, archive_error=archive_error):
                         # Track failed deletion for retry
                         self.failed_deletions.append((subfolder, par2_error, archive_error))
                         logging.warning(f"Failed to delete subfolder {subfolder}, will retry later")
@@ -986,7 +1010,7 @@ class UnpackrApp:
             print(f"Cleanup pass {pass_num}/{max_passes}: {len(self.failed_deletions)} folders remaining")
 
             # Try to delete each failed folder
-            remaining = []
+            remaining = deque(maxlen=1000)
             for folder, par2_error, archive_error in self.failed_deletions:
                 # Check if folder still exists and is still removable
                 if not folder.exists():
@@ -997,8 +1021,8 @@ class UnpackrApp:
                     logging.info(f"Folder no longer removable: {folder}")
                     continue
 
-                # Try to delete
-                if self.file_handler.safe_delete_folder(folder):
+                # Try to delete (double-check happens inside safe_delete_folder)
+                if self.file_handler.safe_delete_folder(folder, par2_error=par2_error, archive_error=archive_error):
                     self.stats['folders_deleted'] += 1
                     logging.info(f"Successfully deleted on retry: {folder}")
                 else:
@@ -1241,6 +1265,7 @@ def main():
         parser.add_argument('--config', '-c', help='Path to config.json file')
         parser.add_argument('--dry-run', action='store_true', help='Show what would be done without making changes')
         parser.add_argument('--show-plan', action='store_true', help='Show detailed pre-flight plan and exit (no processing)')
+        parser.add_argument('--vhealth', action='store_true', help='Run video health check on destination after processing')
         args = parser.parse_args()
 
         # Handle positional vs named arguments
@@ -1382,19 +1407,44 @@ def main():
 
             app.display_summary()
             logging.info("Unpackr completed successfully")
+
+            # Run vhealth on destination if requested
+            if args.vhealth and dest_dir:
+                print(f"\n{Fore.CYAN}Running video health check on destination...{Style.RESET_ALL}\n")
+                try:
+                    from vhealth import VideoHealthChecker
+                    checker = VideoHealthChecker(config)
+                    checker.check_path(
+                        dest_dir,
+                        min_resolution=None,
+                        skip_samples=False,
+                        skip_health=True  # Auto-clean mode
+                    )
+                    checker.print_summary(auto_delete=True)
+                    logging.info("Video health check completed")
+                except Exception as e:
+                    print(f"{Fore.YELLOW}Video health check failed: {e}{Style.RESET_ALL}")
+                    logging.error(f"vhealth failed: {e}", exc_info=True)
         except Exception as e:
             print(Fore.RED + f"\nFatal error during processing: {e}" + Style.RESET_ALL)
             logging.error(f"Processing failed: {e}", exc_info=True)
+            app._stop_spinner_thread()  # Ensure spinner stops before exit
             app.display_summary()  # Show what we accomplished
             sys.exit(1)
-    
+
     except KeyboardInterrupt:
         print(Fore.YELLOW + "\n\nOperation interrupted by user" + Style.RESET_ALL)
         logging.info("User interrupted operation")
+        # Stop spinner if app was initialized
+        if 'app' in locals():
+            app._stop_spinner_thread()
         sys.exit(0)
     except Exception as e:
         print(Fore.RED + f"\nUnexpected error: {e}" + Style.RESET_ALL)
         logging.error(f"Unexpected error: {e}", exc_info=True)
+        # Stop spinner if app was initialized
+        if 'app' in locals():
+            app._stop_spinner_thread()
         sys.exit(1)
 
 

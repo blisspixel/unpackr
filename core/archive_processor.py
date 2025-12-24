@@ -79,10 +79,12 @@ class ArchiveProcessor:
                     # Log start time for this archive
                     start_time = time.time()
 
-                    # Get file size before extraction (for logging and disk space check)
+                    # Get file size before extraction (for logging, disk space check, and timeout calculation)
                     try:
-                        file_size_mb = archive_file.stat().st_size / (1024 * 1024)
+                        file_size_bytes = archive_file.stat().st_size
+                        file_size_mb = file_size_bytes / (1024 * 1024)
                     except:
+                        file_size_bytes = 0
                         file_size_mb = 0
 
                     # Check disk space before extraction (archives typically expand 1.5-3x)
@@ -92,10 +94,20 @@ class ArchiveProcessor:
                         logging.error(f"Insufficient disk space to extract {archive_file.name} (need ~{required_space_mb}MB)")
                         continue  # Skip this archive
 
-                    # Use safe subprocess with timeout
+                    # SECURITY: Check archive contents for path traversal before extraction
+                    if not self._validate_archive_paths(archive_file, folder, sevenzip_cmd):
+                        logging.error(f"SECURITY: Archive {archive_file.name} contains unsafe paths (path traversal attempt) - SKIPPING")
+                        continue  # Skip this malicious archive
+
+                    # PERFORMANCE: Calculate dynamic timeout based on file size (handles 50GB+ archives)
+                    extraction_timeout = SafetyLimits.calculate_rar_timeout(file_size_bytes)
+                    if extraction_timeout > SafetyLimits.RAR_EXTRACTION_TIMEOUT:
+                        logging.info(f"Using extended timeout {extraction_timeout}s for large archive ({file_size_mb:.1f}MB)")
+
+                    # Use safe subprocess with dynamic timeout
                     success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
                         sevenzip_cmd + ['x', str(archive_file), f'-o{folder}', '-aoa'],
-                        timeout=SafetyLimits.RAR_EXTRACTION_TIMEOUT,
+                        timeout=extraction_timeout,
                         cwd=folder,
                         operation=f"Archive extraction: {archive_file.name}"
                     )
@@ -162,17 +174,23 @@ class ArchiveProcessor:
             if not par2_cmd:
                 par2_cmd = ['par2']
 
-            # Count PAR2 files for display
+            # Count PAR2 files and calculate total size for timeout calculation
             par2_count = len(par2_files)
-            total_par2_size = sum(p.stat().st_size for p in par2_files) / (1024 * 1024)
+            total_par2_size_bytes = sum(p.stat().st_size for p in par2_files)
+            total_par2_size_mb = total_par2_size_bytes / (1024 * 1024)
+
+            # PERFORMANCE: Calculate dynamic timeout based on PAR2 file sizes (handles large repairs)
+            par2_timeout = SafetyLimits.calculate_par2_timeout(total_par2_size_bytes)
+            if par2_timeout > SafetyLimits.PAR2_REPAIR_TIMEOUT:
+                logging.info(f"Using extended timeout {par2_timeout}s for large PAR2 set ({total_par2_size_mb:.1f}MB)")
 
             # Run repair (will verify first, only repair if needed - faster!)
-            logging.info(f"PAR2 verify/repair: {par2_file.name} ({par2_count} files, {total_par2_size:.1f}MB)")
+            logging.info(f"PAR2 verify/repair: {par2_file.name} ({par2_count} files, {total_par2_size_mb:.1f}MB)")
 
             start_time = time.time()
             success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
                 par2_cmd + ['r', str(par2_file)],
-                timeout=SafetyLimits.PAR2_REPAIR_TIMEOUT,
+                timeout=par2_timeout,
                 cwd=folder,
                 operation=f"PAR2 repair: {par2_file.name}"
             )
@@ -277,3 +295,91 @@ class ArchiveProcessor:
                 except Exception as e:
                     logging.error(f"Failed to delete file {file}: {e}")
                     break
+
+    def _validate_archive_paths(self, archive_file: Path, target_folder: Path, sevenzip_cmd: list) -> bool:
+        """
+        Validate all paths in archive to prevent path traversal attacks.
+
+        SECURITY: Checks that all files in the archive would extract to within target_folder.
+        Rejects archives containing:
+        - Absolute paths (C:\\, /, etc.)
+        - Parent directory references (../)
+        - Symbolic links pointing outside target
+
+        Args:
+            archive_file: Archive file to validate
+            target_folder: Intended extraction directory
+            sevenzip_cmd: 7z command to use for listing
+
+        Returns:
+            True if archive is safe to extract, False if malicious paths detected
+        """
+        try:
+            # List archive contents without extracting (7z l = list)
+            # Use temp files to avoid buffer overflow on large archives
+            success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
+                sevenzip_cmd + ['l', str(archive_file)],
+                timeout=30,  # Listing should be fast
+                operation=f"Archive path validation: {archive_file.name}",
+                use_temp_files=True  # Prevent buffer overflow on large archives (50GB+)
+            )
+
+            if not success or code != 0:
+                logging.warning(f"Could not list archive contents for {archive_file.name} - assuming unsafe")
+                return False
+
+            # Parse file list from 7z output
+            # 7z list format has lines like:
+            # 2024-12-24 14:30:22 ....A         1234         5678  path/to/file.txt
+            lines = stdout.split('\n')
+            target_folder_resolved = target_folder.resolve()
+
+            for line in lines:
+                # Skip header/footer lines
+                if not line.strip() or '---' in line or 'Date' in line or 'Path' in line:
+                    continue
+
+                # Extract file path (last column after multiple spaces)
+                parts = line.split()
+                if len(parts) < 6:  # Date Time Attr Size CompSize Path
+                    continue
+
+                # Path is everything after the 5th column
+                file_path = ' '.join(parts[5:])
+
+                if not file_path:
+                    continue
+
+                # SECURITY CHECKS
+                # 1. Check for absolute paths
+                if Path(file_path).is_absolute():
+                    logging.error(f"SECURITY: Archive contains absolute path: {file_path}")
+                    return False
+
+                # 2. Check for parent directory traversal (..)
+                if '..' in Path(file_path).parts:
+                    logging.error(f"SECURITY: Archive contains parent directory reference: {file_path}")
+                    return False
+
+                # 3. Check that resolved path stays within target
+                try:
+                    # Simulate where file would be extracted
+                    would_extract_to = (target_folder / file_path).resolve()
+
+                    # Verify it's a child of target folder
+                    try:
+                        would_extract_to.relative_to(target_folder_resolved)
+                    except ValueError:
+                        # relative_to() raises ValueError if not a subpath
+                        logging.error(f"SECURITY: Archive would extract outside target: {file_path} -> {would_extract_to}")
+                        return False
+                except Exception as e:
+                    logging.warning(f"Could not validate path {file_path}: {e}")
+                    return False  # Fail closed on validation errors
+
+            # All paths validated successfully
+            return True
+
+        except Exception as e:
+            logging.error(f"Error validating archive paths for {archive_file.name}: {e}")
+            return False  # Fail closed on errors

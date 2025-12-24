@@ -19,27 +19,82 @@ class TimeoutException(Exception):
 
 class SafetyLimits:
     """Centralized safety configuration."""
-    
-    # Process timeouts (seconds)
-    RAR_EXTRACTION_TIMEOUT = 300  # 5 minutes per RAR
-    PAR2_REPAIR_TIMEOUT = 600     # 10 minutes per PAR2
+
+    # Process timeouts (seconds) - Defaults for small files
+    RAR_EXTRACTION_TIMEOUT = 300  # 5 minutes per RAR (default, will be calculated dynamically)
+    PAR2_REPAIR_TIMEOUT = 600     # 10 minutes per PAR2 (default, will be calculated dynamically)
     VIDEO_CHECK_TIMEOUT = 60      # 1 minute per video
     FFMPEG_TIMEOUT = 45           # 45 seconds for ffmpeg
-    
+
+    # PERFORMANCE: Dynamic timeout calculation parameters
+    # Assumes ~10MB/s extraction speed (conservative for HDDs)
+    RAR_EXTRACTION_SPEED_MB_PER_SEC = 10
+    PAR2_REPAIR_SPEED_MB_PER_SEC = 5  # PAR2 is slower due to checksums
+
     # Retry limits
     MAX_FILE_DELETE_RETRIES = 5
     MAX_FILE_RELEASE_WAIT = 10
     MAX_FOLDER_DELETE_RETRIES = 3
-    
+
     # Process wait limits
     FILE_RELEASE_CHECK_DELAY = 1  # seconds
     DELETE_RETRY_DELAY = 1        # seconds
     FOLDER_CLEANUP_DELAY = 5      # seconds
-    
+
     # Total operation limits
     MAX_VIDEOS_PER_FOLDER = 100   # Safety limit
     MAX_SUBFOLDERS_DEPTH = 10     # Prevent infinite recursion
     MAX_TOTAL_PROCESSING_TIME = 3600 * 4  # 4 hours total
+
+    @staticmethod
+    def calculate_rar_timeout(file_size_bytes: int) -> int:
+        """
+        Calculate dynamic timeout for RAR extraction based on file size.
+
+        PERFORMANCE: Handles large archives (50GB+) that would timeout with fixed 5min limit.
+        Uses conservative speed assumption (10MB/s) to allow for slower drives.
+
+        Args:
+            file_size_bytes: Size of archive file in bytes
+
+        Returns:
+            Timeout in seconds (minimum 300 = 5 minutes)
+        """
+        if file_size_bytes <= 0:
+            return SafetyLimits.RAR_EXTRACTION_TIMEOUT
+
+        size_mb = file_size_bytes / (1024 * 1024)
+        # Calculate expected time + 50% buffer
+        expected_seconds = size_mb / SafetyLimits.RAR_EXTRACTION_SPEED_MB_PER_SEC
+        timeout = int(expected_seconds * 1.5)
+
+        # Minimum 5 minutes, maximum 2 hours
+        return max(300, min(timeout, 7200))
+
+    @staticmethod
+    def calculate_par2_timeout(total_par2_size_bytes: int) -> int:
+        """
+        Calculate dynamic timeout for PAR2 repair based on total PAR2 files size.
+
+        PERFORMANCE: Handles large repair operations that would timeout with fixed 10min limit.
+        PAR2 is slower than extraction due to checksum verification.
+
+        Args:
+            total_par2_size_bytes: Combined size of all PAR2 files in bytes
+
+        Returns:
+            Timeout in seconds (minimum 600 = 10 minutes)
+        """
+        if total_par2_size_bytes <= 0:
+            return SafetyLimits.PAR2_REPAIR_TIMEOUT
+
+        size_mb = total_par2_size_bytes / (1024 * 1024)
+        # Calculate expected time + 100% buffer (PAR2 is unpredictable)
+        expected_seconds = size_mb / SafetyLimits.PAR2_REPAIR_SPEED_MB_PER_SEC
+        timeout = int(expected_seconds * 2.0)
+
+        # Minimum 10 minutes, maximum 3 hours
+        return max(600, min(timeout, 10800))
 
 
 class TimeoutGuard:
@@ -102,50 +157,116 @@ class SubprocessSafety:
     
     @staticmethod
     def run_with_timeout(cmd: list, timeout: int, cwd: Optional[Path] = None,
-                        operation: str = "Subprocess") -> tuple:
+                        operation: str = "Subprocess", expected_codes: list = None,
+                        use_temp_files: bool = False) -> tuple:
         """
-        Run subprocess with guaranteed timeout.
-        
+        Run subprocess with guaranteed timeout and buffer overflow protection.
+
         Args:
             cmd: Command and arguments
             timeout: Timeout in seconds
             cwd: Working directory
             operation: Operation description for logging
-            
+            expected_codes: List of expected exit codes (suppresses warnings for these codes)
+            use_temp_files: Use temp files for stdout/stderr instead of PIPE (prevents buffer overflow on large outputs)
+
         Returns:
             Tuple of (success: bool, stdout: str, stderr: str, returncode: int)
         """
+        import tempfile
+
         try:
-            logging.info(f"[SAFETY] Starting {operation} with {timeout}s timeout: {' '.join(cmd)}")
-            
-            process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                cwd=cwd,
-                text=True,
-                encoding='utf-8',
-                errors='replace'
-            )
-            
-            try:
-                stdout, stderr = process.communicate(timeout=timeout)
-                success = process.returncode == 0
-                
-                if not success:
-                    logging.warning(f"[SAFETY] {operation} failed with code {process.returncode}")
-                
-                return success, stdout, stderr, process.returncode
-                
-            except subprocess.TimeoutExpired:
-                logging.error(f"[SAFETY] {operation} TIMEOUT - killing process")
-                process.kill()
+            logging.debug(f"[SAFETY] Starting {operation} with {timeout}s timeout")
+
+            if use_temp_files:
+                # SECURITY FIX: Use temp files for large operations to prevent buffer overflow/deadlock
+                # Large archive listings (multi-GB) can exceed PIPE buffer (64KB on Windows, 1MB on Linux)
+                with tempfile.NamedTemporaryFile(mode='w+', delete=False, encoding='utf-8') as stdout_file, \
+                     tempfile.NamedTemporaryFile(mode='w+', delete=False, encoding='utf-8') as stderr_file:
+
+                    stdout_path = Path(stdout_file.name)
+                    stderr_path = Path(stderr_file.name)
+
+                    try:
+                        process = subprocess.Popen(
+                            cmd,
+                            stdout=stdout_file,
+                            stderr=stderr_file,
+                            cwd=cwd,
+                            text=True,
+                            encoding='utf-8',
+                            errors='replace'
+                        )
+
+                        try:
+                            process.wait(timeout=timeout)
+                            success = process.returncode == 0
+
+                            # Read output from temp files
+                            stdout = stdout_path.read_text(encoding='utf-8', errors='replace')
+                            stderr = stderr_path.read_text(encoding='utf-8', errors='replace')
+
+                            # Only log warning if code is unexpected
+                            if not success and (expected_codes is None or process.returncode not in expected_codes):
+                                logging.warning(f"[SAFETY] {operation} failed with code {process.returncode}")
+
+                            return success, stdout, stderr, process.returncode
+
+                        except subprocess.TimeoutExpired:
+                            logging.error(f"[SAFETY] {operation} TIMEOUT - killing process")
+                            process.kill()
+                            try:
+                                process.wait(timeout=5)
+                            except:
+                                pass
+
+                            # Read partial output
+                            try:
+                                stdout = stdout_path.read_text(encoding='utf-8', errors='replace')
+                                stderr = stderr_path.read_text(encoding='utf-8', errors='replace')
+                            except:
+                                stdout, stderr = "", "Process killed after timeout"
+                            return False, stdout, stderr, -1
+
+                    finally:
+                        # Cleanup temp files
+                        try:
+                            stdout_path.unlink(missing_ok=True)
+                            stderr_path.unlink(missing_ok=True)
+                        except:
+                            pass
+
+            else:
+                # Standard PIPE mode for small/normal operations
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    cwd=cwd,
+                    text=True,
+                    encoding='utf-8',
+                    errors='replace'
+                )
+
                 try:
-                    stdout, stderr = process.communicate(timeout=5)
-                except:
-                    stdout, stderr = "", "Process killed after timeout"
-                return False, stdout, stderr, -1
-                
+                    stdout, stderr = process.communicate(timeout=timeout)
+                    success = process.returncode == 0
+
+                    # Only log warning if code is unexpected
+                    if not success and (expected_codes is None or process.returncode not in expected_codes):
+                        logging.warning(f"[SAFETY] {operation} failed with code {process.returncode}")
+
+                    return success, stdout, stderr, process.returncode
+
+                except subprocess.TimeoutExpired:
+                    logging.error(f"[SAFETY] {operation} TIMEOUT - killing process")
+                    process.kill()
+                    try:
+                        stdout, stderr = process.communicate(timeout=5)
+                    except:
+                        stdout, stderr = "", "Process killed after timeout"
+                    return False, stdout, stderr, -1
+
         except Exception as e:
             logging.error(f"[SAFETY] {operation} exception: {e}")
             return False, "", str(e), -1

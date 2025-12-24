@@ -26,7 +26,14 @@
       "Bash(python:*)",
       "Bash(where:*)",
       "Bash(C:UsersnicksAppDataRoamingPythonPython310Scriptsunpackr.exe --help)",
-      "Bash(cmd /c \"C:\\\\Users\\\\nicks\\\\AppData\\\\Roaming\\\\Python\\\\Python310\\\\Scripts\\\\unpackr.exe --help\")"
+      "Bash(cmd /c \"C:\\\\Users\\\\nicks\\\\AppData\\\\Roaming\\\\Python\\\\Python310\\\\Scripts\\\\unpackr.exe --help\")",
+      "Bash(ffmpeg:*)",
+      "Bash(cmd /c \"mkdir G:\\\\vhealth_test 2>NUL && copy G:\\\\out4\\\\*.mp4 G:\\\\vhealth_test\\\\ /Y | findstr copied\")",
+      "Bash(copy amtr0763.mp4 \"amtr0763 copy.mp4\")",
+      "Bash(copy:*)",
+      "Bash(cmd /c \"cd G:\\\\out4 && copy amtr0763.mp4 \"\"amtr0763 copy.mp4\"\" && copy ana311.mp4 \"\"ana311 \\(1\\).mp4\"\"\")",
+      "Bash(timeout 30 python:*)",
+      "Bash(cmd /c \"cd C:\\\\Users\\\\nicks\\\\OneDrive\\\\unpackr && timeout 30 python test_dupes.py\")"
     ]
   }
 }

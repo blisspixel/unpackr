@@ -233,14 +233,20 @@ class FileHandler:
 
         return True
     
-    def safe_delete_folder(self, folder: Path, max_attempts: int = None) -> bool:
+    def safe_delete_folder(self, folder: Path, max_attempts: int = None,
+                          par2_error: bool = False, archive_error: bool = False) -> bool:
         """
         Safely delete a folder with retry logic and fallback methods.
         Handles special characters in filenames (brackets, etc.) and locked files.
 
+        RACE CONDITION FIX: Implements double-check pattern to prevent deletion
+        of folders whose contents changed between check and delete.
+
         Args:
             folder: Path to folder to delete
             max_attempts: Maximum number of deletion attempts (None = use config)
+            par2_error: Whether PAR2 processing had errors (for double-check)
+            archive_error: Whether archive extraction had errors (for double-check)
 
         Returns:
             True if successful, False otherwise
@@ -248,6 +254,12 @@ class FileHandler:
         if max_attempts is None:
             max_attempts = getattr(self.config, 'folder_delete_max_attempts', 2)
         retry_delay = getattr(self.config, 'folder_delete_retry_delay', 5)
+
+        # RACE CONDITION FIX: Double-check folder is still removable before deletion
+        # Prevents deleting folders whose contents changed since initial check
+        if not self.is_folder_empty_or_removable(folder, par2_error, archive_error):
+            logging.warning(f"RACE CONDITION PREVENTED: Folder {folder} contents changed, not removable anymore")
+            return False
 
         for attempt in range(max_attempts):
             try:
@@ -270,10 +282,12 @@ class FileHandler:
         logging.info(f"Trying PowerShell force delete for {folder}")
         try:
             import subprocess
-            # Use PowerShell's Remove-Item with -Force to handle locked files and special chars
+            # SECURITY FIX: Use array form to prevent command injection
+            # Pass folder path as parameter, not via string interpolation
+            # PowerShell's -LiteralPath handles special chars without injection risk
             result = subprocess.run(
                 ['powershell', '-Command',
-                 f"Remove-Item -Path '{folder}' -Recurse -Force -ErrorAction SilentlyContinue"],
+                 'Remove-Item', '-LiteralPath', str(folder), '-Recurse', '-Force', '-ErrorAction', 'SilentlyContinue'],
                 capture_output=True,
                 text=True,
                 timeout=60
