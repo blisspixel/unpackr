@@ -1446,6 +1446,9 @@ def main():
             logging.info("User cancelled operation")
             sys.exit(0)
 
+        # Show that processing has begun
+        print(f"{Fore.CYAN}Initializing...{Style.RESET_ALL}", flush=True)
+
         # Initial cleanup: delete empty folders first for quick wins (silent)
         try:
             app.cleanup_empty_folders(source_dir, show_progress=False)

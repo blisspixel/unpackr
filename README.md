@@ -303,49 +303,94 @@ Edit `config_files/config.json`:
 **Key settings:**
 - `tool_paths` - Custom paths to external tools (arrays try in order)
 - `min_sample_size_mb` - Videos smaller than this are considered samples (default: 50MB)
-- `min_music_files` / `min_image_files` - How many files needed to preserve a folder
+- `min_music_files` / `min_image_files` / `min_documents` - How many files needed to preserve a folder
 - `max_log_files` - Keep last N logs (default: 5)
+
+### Customizing What Gets Kept vs Deleted
+
+**Want to keep sample files?**
+```json
+{
+  "min_sample_size_mb": 5000
+}
+```
+Setting this high effectively disables sample detection.
+
+**Want to preserve folders with just 1 music file?**
+```json
+{
+  "min_music_files": 1,
+  "min_image_files": 3
+}
+```
+Lower thresholds = more folders preserved.
+
+**Want to keep .txt files?**
+```json
+{
+  "removable_extensions": [".nfo", ".sfv", ".url", ".diz", ".m3u"]
+}
+```
+Remove `.txt` from the list. Only files in this list are deleted.
+
+**Want to add more video formats?**
+```json
+{
+  "video_extensions": [".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".m4v", ".mpg", ".mpeg", ".ts"]
+}
+```
+Add any format ffmpeg can validate.
 
 ## Safety Contract
 
-Unpackr makes explicit promises about what it will and won't do. These guarantees are upheld through defensive coding, comprehensive validation, and fail-closed design:
+⚠️ **WARNING: This tool intentionally deletes files as part of its cleanup process.** While designed with safety features and best practices, automated file deletion carries inherent risks. **Use at your own risk.** Always back up important data and test on non-critical folders first.
 
-### Core Guarantees
+Unpackr follows these design principles to minimize risk, but no automated tool can guarantee perfect safety:
 
-1. **Containment** - Never write outside destination directory; all extractions and operations stay within source directory
-2. **Content Preservation** - Never delete folders meeting content thresholds (music ≥3 files, images ≥5 files, documents ≥1 file)
-3. **Validated Operations** - Never move/delete a video unless it passes configured health checks
+### Design Principles
+
+1. **Containment** - Designed to never write outside destination directory; all extractions and operations stay within source directory
+2. **Content Preservation** - Aims to never delete folders meeting content thresholds (music ≥3 files, images ≥5 files, documents ≥1 file)
+3. **Validated Operations** - Designed to never move/delete a video unless it passes configured health checks
 4. **Fail-Closed** - When validation is uncertain (corrupt archive list, unclear video state), reject rather than proceed
-5. **Dry-Run Isolation** - In dry-run mode, perform zero destructive operations (no moves, deletes, or writes)
-6. **Idempotent Operations** - File moves use atomic temp-file-then-rename; safe to retry without side effects
-7. **Bounded Resources** - Runtime, recursion depth, and memory usage all have hard limits
+5. **Dry-Run Isolation** - In dry-run mode, designed to perform zero destructive operations (no moves, deletes, or writes)
+6. **Idempotent Operations** - File moves use atomic temp-file-then-rename pattern for safer retries
+7. **Bounded Resources** - Runtime, recursion depth, and memory usage all have configured limits
+
+**These are design goals, not absolute guarantees.** Bugs, race conditions, filesystem issues, or unexpected edge cases can still cause data loss.
 
 ### What Gets Deleted
 
 Only these items are removed:
-- Junk files (NFO, SFV, URL, DIZ, TXT, M3U) in folders with videos or archives
-- Sample videos (< 50MB by default, configurable)
-- Corrupt or truncated videos that fail health checks
-- Empty folders (no files, only other empty folders)
-- Folders after successful processing (all contents extracted/moved)
+- **Junk files** (NFO, SFV, URL, DIZ, TXT, M3U) in folders with videos or archives
+  - *Configurable:* Edit `removable_extensions` in config.json
+- **Sample videos** (< 50MB by default)
+  - *Configurable:* Change `min_sample_size_mb` in config.json (set to 5000 to keep all samples)
+- **Corrupt or truncated videos** that fail health checks
+  - *Not configurable:* Failed validation = always deleted (never moved to destination)
+- **Empty folders** (no files, only other empty folders)
+- **Processed folders** after all contents extracted/moved
 
 ### What Never Gets Deleted
 
-- Videos that pass health validation (moved to destination instead)
-- Content folders with ≥3 music files, ≥5 images, or ≥1 document
-- Folders with unrecognized file types (preserved as possibly important)
-- Any file in destination directory (destination is write-only, never modified or deleted)
+- **Videos that pass validation** (moved to destination instead)
+- **Content folders** with enough files to qualify:
+  - Music: ≥3 files (*configurable:* `min_music_files`)
+  - Images: ≥5 files (*configurable:* `min_image_files`)
+  - Documents: ≥1 file (*configurable:* `min_documents`)
+- **Folders with unrecognized file types** (preserved as possibly important)
+- **Any file in destination directory** (destination is write-only, never modified or deleted)
 
-### How Safety is Enforced
+### How Safety is Designed
 
 - **Path validation** - All archive contents validated before extraction (no `..`, no absolute paths, no escapes)
-- **Double-check pattern** - Folder state re-verified immediately before deletion (prevents race conditions)
+- **Double-check pattern** - Folder state re-verified immediately before deletion (reduces risk of race conditions)
 - **Comprehensive logging** - Every operation logged with full context for audit
 - **Multi-pass cleanup** - Locked folders retried with delays; never forced if still in use
 - **Disk space checks** - 3x archive size verified free before extraction
 - **Process isolation** - Subprocesses killed if timeout exceeded; resources cleaned up
 
-This contract is tested by the test suite and upheld by all code paths. Future features (WAL-based transactions, policy engine) will strengthen these guarantees further.
+These patterns are tested by the test suite and followed by all code paths, but **no code is bug-free**. Always back up important data before running automated file operations.
 
 ## Common Failure Modes (and What Unpackr Does)
 
@@ -624,7 +669,7 @@ A: Only junk files (NFO, SFV, URL, etc.) and corrupt videos. Valid videos are mo
 A: No. Files are moved/deleted permanently. Back up important data before running.
 
 **Q: What if I want to keep sample files?**
-A: Set `min_sample_size_mb` to a large value (e.g., 5000) in config.json to effectively disable sample detection.
+A: See "Customizing What Gets Kept vs Deleted" section above. Set `min_sample_size_mb: 5000` in config.json to effectively disable sample detection.
 
 **Q: How do I know if a video was rejected?**
 A: Check the log file. Search for "Video health check FAILED" to see which videos were rejected and why (truncated, corrupt, etc.).
