@@ -41,6 +41,7 @@ class ThreadSafeStats:
             'folders_deleted': 0,
             'folders_preserved': 0,
             'empty_folders_deleted': 0,
+            'videos_found': 0,  # Total videos discovered (before processing)
             'videos_moved': 0,
             'videos_healthy': 0,
             'videos_corrupt': 0,
@@ -153,7 +154,7 @@ class WorkPlan:
         eta = timedelta(seconds=self.estimated_time)
         eta_str = str(eta).split('.')[0]
 
-        print(f"[PLAN] {Fore.YELLOW}{len(self.video_folders)}{Style.RESET_ALL} folders, "
+        print(f"{Fore.YELLOW}{len(self.video_folders)}{Style.RESET_ALL} folders, "
               f"{Fore.YELLOW}{self.total_videos}{Style.RESET_ALL} videos, "
               f"{Fore.YELLOW}{self.total_rars}{Style.RESET_ALL} RARs, "
               f"{Fore.YELLOW}{self.total_par2s}{Style.RESET_ALL} PAR2s | "
@@ -258,9 +259,20 @@ class UnpackrApp:
             WorkPlan instance
         """
         plan = WorkPlan()
-        # Sort folders by modification time (oldest first) to process completed downloads before ongoing ones
-        folders = sorted([f for f in source_dir.iterdir() if f.is_dir()],
-                        key=lambda f: f.stat().st_mtime)
+        # Process root folder FIRST (if it has videos), then subdirectories (oldest first)
+        # This ensures videos in the source root are handled before diving into subfolders
+        folders = []
+
+        # Add source directory itself as first item if it has any files
+        has_files_in_root = any(f.is_file() for f in source_dir.iterdir())
+        if has_files_in_root:
+            folders.append(source_dir)
+
+        # Then add subdirectories, sorted by modification time (oldest first)
+        # Oldest first = completed downloads processed before ongoing ones
+        subfolders = sorted([f for f in source_dir.iterdir() if f.is_dir()],
+                           key=lambda f: f.stat().st_mtime)
+        folders.extend(subfolders)
 
         # Show progress during scan
         for i, folder in enumerate(folders, 1):
@@ -559,6 +571,9 @@ class UnpackrApp:
         # Remove sample/preview videos if full version exists
         video_files = self._remove_sample_videos(video_files)
 
+        # Track total videos found (before processing)
+        self.stats['videos_found'] += len(video_files)
+
         for idx, video_file in enumerate(video_files, 1):
             # Show folder context and video being validated
             folder_context = f"[{folder.name[:30]}]" if len(folder.name) > 30 else f"[{folder.name}]"
@@ -623,9 +638,24 @@ class UnpackrApp:
             self.spinner_thread.join(timeout=1.0)
 
     def _load_comments(self):
-        """Load snarky comments from JSON file."""
+        """
+        Load random comments from JSON file.
+
+        On first run, copies comments.sample.json to comments.json.
+        Users can then customize comments.json without affecting the repo.
+        """
         try:
-            comments_file = Path(__file__).parent / 'config_files' / 'comments.json'
+            config_dir = Path(__file__).parent / 'config_files'
+            comments_file = config_dir / 'comments.json'
+            sample_file = config_dir / 'comments.sample.json'
+
+            # First run: copy sample to comments.json if it doesn't exist
+            if not comments_file.exists() and sample_file.exists():
+                import shutil
+                shutil.copy(sample_file, comments_file)
+                logging.info("Created comments.json from sample (customize as you like)")
+
+            # Load comments from user's file
             if comments_file.exists():
                 with open(comments_file, 'r') as f:
                     data = json.load(f)
@@ -705,12 +735,15 @@ class UnpackrApp:
         bar = '█' * filled + '░' * (bar_length - filled)
 
         # Stats - compact but clear, show interesting work being done
-        videos_found = self.stats['videos_healthy'] + self.stats['videos_corrupt'] + self.stats['videos_sample']
-        videos_moved = self.stats['videos_moved']
+        # found = total videos discovered (before processing)
+        # processed = videos that passed health checks and were moved to destination
+        # bad = videos that were corrupt or samples (deleted, not moved)
+        videos_found = self.stats['videos_found']
+        videos_processed = self.stats['videos_moved']
         bad_videos = self.stats['videos_corrupt'] + self.stats['videos_sample']
 
-        # Core stats: found vs moved (success rate at a glance)
-        stats_line = f"  {Style.DIM}found:{Style.RESET_ALL} {Fore.WHITE}{videos_found}{Style.RESET_ALL}  {Style.DIM}moved:{Style.RESET_ALL} {Fore.GREEN}{videos_moved}{Style.RESET_ALL}"
+        # Core stats: found vs processed (success rate at a glance)
+        stats_line = f"  {Style.DIM}found:{Style.RESET_ALL} {Fore.WHITE}{videos_found}{Style.RESET_ALL}  {Style.DIM}processed:{Style.RESET_ALL} {Fore.GREEN}{videos_processed}{Style.RESET_ALL}"
 
         # Show bad videos removed
         if bad_videos > 0:
@@ -849,6 +882,8 @@ class UnpackrApp:
 
             # Find and process videos in this subfolder
             video_files = self.file_handler.find_video_files(subfolder)
+            # Track total videos found (before processing)
+            self.stats['videos_found'] += len(video_files)
             for video_file in video_files:
                 if self.dry_run:
                     logging.info(f"[DRY-RUN] Would validate and move video: {video_file.name}")
@@ -1035,14 +1070,20 @@ class UnpackrApp:
             for folder, _, _ in self.failed_deletions:
                 logging.warning(f"Permanent deletion failure: {folder}")
 
-    def cleanup_empty_folders(self, source_dir: Path):
-        """Final cleanup pass to delete remaining empty folders - recursive, multi-pass."""
+    def cleanup_empty_folders(self, source_dir: Path, show_progress: bool = False):
+        """Final cleanup pass to delete remaining empty folders - recursive, multi-pass.
+
+        Args:
+            source_dir: Root directory to scan
+            show_progress: Show live progress updates during scan
+        """
         logging.info("Starting final cleanup of empty folders (recursive, multi-pass)")
         total_deleted = 0
         max_passes = 5  # Keep trying until nothing left to delete
 
         for pass_num in range(1, max_passes + 1):
             pass_deleted = 0
+            folders_checked = 0
 
             try:
                 # RECURSIVE: Walk through all directories bottom-up
@@ -1050,6 +1091,11 @@ class UnpackrApp:
                 for root, dirs, files in os.walk(source_dir, topdown=False):
                     for dir_name in dirs:
                         folder = Path(root) / dir_name
+                        folders_checked += 1
+
+                        # Show progress every 50 folders (only on first pass and if enabled)
+                        if show_progress and pass_num == 1 and folders_checked % 50 == 0:
+                            print(f"\r{Style.DIM}  Scanned {folders_checked} folders...{Style.RESET_ALL}", end='', flush=True)
 
                         try:
                             # Check if folder is empty
@@ -1068,9 +1114,13 @@ class UnpackrApp:
             except Exception as e:
                 logging.error(f"Error during cleanup pass {pass_num}: {e}")
 
+            # Clear progress line if shown
+            if show_progress and pass_num == 1:
+                print(f"\r{' ' * 50}\r", end='', flush=True)
+
             # If nothing deleted this pass, we're done
             if pass_deleted == 0:
-                logging.info(f"Cleanup complete after {pass_num} passes")
+                logging.info(f"Cleanup complete after {pass_num} passes (checked {folders_checked} folders)")
                 break
             else:
                 logging.info(f"Pass {pass_num}: Deleted {pass_deleted} empty folders")
@@ -1097,7 +1147,7 @@ class UnpackrApp:
   \\__,_|_| |_| .__/ \\__,_|\\___|_|\\_\\_|
              |_|{Style.RESET_ALL}
 
-  {Fore.GREEN}[COMPLETE]{Style.RESET_ALL} {Style.DIM}runtime:{Style.RESET_ALL} {Fore.CYAN}{elapsed_str}{Style.RESET_ALL}
+  {Fore.GREEN}Complete{Style.RESET_ALL} {Style.DIM}runtime:{Style.RESET_ALL} {Fore.CYAN}{elapsed_str}{Style.RESET_ALL}
 
   {Fore.GREEN}▓▓{Style.RESET_ALL} {Style.DIM}FOLDERS{Style.RESET_ALL}
      {Style.DIM}processed....{Style.RESET_ALL} {Fore.WHITE}{self.stats['folders_processed']:>4}{Style.RESET_ALL}
@@ -1107,7 +1157,8 @@ class UnpackrApp:
      {Fore.GREEN}total cleaned: {total_cleaned}{Style.RESET_ALL}
 
   {Fore.GREEN}▓▓{Style.RESET_ALL} {Style.DIM}VIDEOS{Style.RESET_ALL}
-     {Style.DIM}moved (ok)...{Style.RESET_ALL} {Fore.GREEN}{self.stats['videos_moved']:>4}{Style.RESET_ALL}
+     {Style.DIM}found........{Style.RESET_ALL} {Fore.WHITE}{self.stats['videos_found']:>4}{Style.RESET_ALL}
+     {Style.DIM}processed....{Style.RESET_ALL} {Fore.GREEN}{self.stats['videos_moved']:>4}{Style.RESET_ALL}
      {Style.DIM}samples......{Style.RESET_ALL} {Fore.YELLOW}{self.stats['videos_sample']:>4}{Style.RESET_ALL} {Style.DIM}dropped{Style.RESET_ALL}
      {Style.DIM}corrupt......{Style.RESET_ALL} {Fore.RED}{self.stats['videos_corrupt']:>4}{Style.RESET_ALL} {Style.DIM}dropped{Style.RESET_ALL}
      {Style.DIM}failed.......{Style.RESET_ALL} {Fore.RED}{self.stats['videos_failed']:>4}{Style.RESET_ALL}
@@ -1126,6 +1177,12 @@ class UnpackrApp:
 
         if self.failed_deletions:
             print(f"  {Fore.YELLOW}[!] locked folders: {len(self.failed_deletions)}{Style.RESET_ALL}\n")
+
+        # Suggest vhealth for additional validation if videos were processed
+        if self.stats['videos_moved'] > 0:
+            print(f"  {Style.DIM}Tip: Validate processed videos with standalone tool:{Style.RESET_ALL}")
+            print(f"  {Style.DIM}     vhealth <destination>{Style.RESET_ALL}")
+            print(f"  {Style.DIM}     (Checks corruption, finds duplicates, detects low quality){Style.RESET_ALL}\n")
 
 
 def clean_path(path_str: str) -> str:
@@ -1329,7 +1386,7 @@ def main():
             logging.warning("Low disk space warning")
     
         # Check system requirements
-        print(f"[TOOLS] Checking requirements...", end=" ")
+        print(f"Checking requirements...", end=" ")
         system_check = SystemCheck(config)
         tools_status = system_check.check_all_tools()
         if not system_check.display_tool_status(tools_status):
@@ -1373,8 +1430,8 @@ def main():
         work_plan.display()
 
         # Display confirmation (compact)
-        print(f"[INFO] Source: {Fore.CYAN}{source_dir}{Style.RESET_ALL} -> Dest: {Fore.CYAN}{destination_dir}{Style.RESET_ALL}")
-        print(f"[WARN] {Fore.RED}Processed folders will be DELETED{Style.RESET_ALL} | Log: {log_file.name}")
+        print(f"Source: {Fore.CYAN}{source_dir}{Style.RESET_ALL} -> Dest: {Fore.CYAN}{destination_dir}{Style.RESET_ALL}")
+        print(f"{Fore.RED}Processed folders will be DELETED{Style.RESET_ALL} | Log: {log_file.name}")
 
         # Quick pre-flight check before countdown
         if not quick_preflight(config, source_dir, destination_dir):
@@ -1385,11 +1442,9 @@ def main():
             logging.info("User cancelled operation")
             sys.exit(0)
 
-        # Initial cleanup: delete empty folders first for quick wins
-        print()  # Blank line before progress
-        print(f"{Fore.CYAN}[CLEANUP] Scanning for empty folders...{Style.RESET_ALL}")
+        # Initial cleanup: delete empty folders first for quick wins (silent)
         try:
-            app.cleanup_empty_folders(source_dir)
+            app.cleanup_empty_folders(source_dir, show_progress=False)
         except Exception as e:
             logging.error(f"Initial cleanup failed: {e}", exc_info=True)
             print(f"{Fore.YELLOW}Warning: Initial cleanup had errors (continuing anyway){Style.RESET_ALL}")
@@ -1418,9 +1473,9 @@ def main():
                         dest_dir,
                         min_resolution=None,
                         skip_samples=False,
-                        skip_health=True  # Auto-clean mode
+                        skip_health=False  # Full health check
                     )
-                    checker.print_summary(auto_delete=True)
+                    checker.print_summary(auto_delete=False)  # Prompt user before deleting
                     logging.info("Video health check completed")
                 except Exception as e:
                     print(f"{Fore.YELLOW}Video health check failed: {e}{Style.RESET_ALL}")

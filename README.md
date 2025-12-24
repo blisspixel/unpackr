@@ -1,38 +1,106 @@
 # Unpackr
 
-**Automated Usenet video processing tool** - Handles PAR2 repair, RAR extraction, video validation, and cleanup.
+**Turn messy folders of archives into clean, working videos.**
 
-## What It Does
+You have folders full of multi-part RARs, PAR2 files, corrupted videos, samples, and junk files. Unpackr repairs what's fixable, extracts what's archived, validates what plays, and removes what doesn't. You get only the videos that work, organized and ready to watch.
 
-Processes messy download folders automatically:
+**Conservative by design:** Unpackr only post-processes files already on your disk. It does not download content, manage clients, or connect to external services. It operates locally with fail-closed validation (when uncertain, reject rather than proceed), comprehensive logging, and clear audit trails.
 
-1. **Repairs** - PAR2 verification and repair
-2. **Extracts** - Multi-part RAR archives
-3. **Validates** - Video health checks (detects corrupt/truncated files)
-4. **Moves** - Valid videos to destination
-5. **Cleans** - Removes junk files and empty folders
-6. **Protects** - Preserves music/image/document folders
+## Before → After
+
+```
+Before (messy download folder):
+MyVideo/
+├── MyVideo.part01.rar
+├── MyVideo.part02.rar
+├── MyVideo.part03.rar
+├── MyVideo.par2
+├── MyVideo.vol00+01.par2
+├── MyVideo.vol01+02.par2
+├── sample.mkv (15MB)
+├── MyVideo.nfo
+├── MyVideo.sfv
+└── Poster.jpg
+
+After processing:
+Destination/
+└── MyVideo.mkv (validated, playable)
+
+Source/ (cleaned up)
+└── MyVideo/
+    └── Poster.jpg (preserved - non-video content)
+```
+
+## What It Does (End-to-End)
+
+1. **Repairs** - Runs PAR2 verification and repair on corrupted archives
+2. **Extracts** - Unpacks multi-part RAR/7z archives
+3. **Validates** - Checks videos play correctly (detects truncation, corruption)
+4. **Moves** - Only working videos go to destination
+5. **Cleans** - Removes junk files (NFO, SFV, samples) and empty folders
+6. **Protects** - Preserves folders with music, images, or documents
+7. **Reports** - Logs every operation with full context for audit
 
 The workflow processes folders oldest-first (safe for ongoing downloads) and validates videos one-by-one so you see results immediately.
 
-## Quick Start
+## What It Does NOT Do
+
+- Does not download or fetch content from servers
+- Does not manage download clients or automation tools
+- Does not scrape metadata or rename based on online databases
+- Does not organize by genre, year, or media library conventions
+- Does not modify or delete files in the destination directory
+
+## Mental Model
+
+Think of Unpackr as a pipeline that transforms messy Usenet downloads into validated video files:
+
+**Inputs:**
+- Messy folders containing RAR archives, PAR2 files, videos, and junk files
+- Source directory with mixed content (completed and ongoing downloads)
+
+**Outputs:**
+- Validated videos moved to destination directory
+- Junk files removed (NFO, SFV, URL, etc.)
+- Empty folders cleaned up
+- Content folders preserved (music, images, documents)
+
+**Guarantees (Safety Contract):**
+- Never writes outside destination directory; all work happens in source directory
+- Never deletes content folders (music/images/documents meeting configured thresholds)
+- Never moves/deletes a video unless it passes health validation
+- Fails closed when uncertain (rejects suspicious archives/videos)
+- In dry-run mode, performs no destructive operations
+- Destination is write-only (videos added, never modified or deleted)
+
+**Failure Handling:**
+- Automatic retries with exponential backoff
+- Multi-pass cleanup for locked files
+- Detailed logging of all operations and errors
+- Run `unpackr-doctor` for diagnostics
+
+This model guides all design decisions: definitive automation for unattended operation with strong safety guarantees.
+
+## Safe First Run
 
 ```bash
-# Install dependencies and create commands
+# 1. Install dependencies
 pip install -e .
 
-# Check system is ready
+# 2. Check system is ready (validates tools installed)
 unpackr-doctor
 
-# Run (from project directory)
+# 3. Test on one folder first (dry-run mode - no changes made)
+unpackr --source "G:\test_folder" --destination "G:\Videos" --dry-run
+
+# 4. Review what would happen, then run for real
+unpackr --source "G:\test_folder" --destination "G:\Videos"
+
+# 5. Once confident, run on full directory
 unpackr --source "G:\Downloads" --destination "G:\Videos"
-
-# Or use positional arguments
-unpackr "G:\source" "G:\dest"
-
-# Or interactive mode
-unpackr
 ```
+
+**Dry-run mode** shows exactly what would happen without moving or deleting anything. All operations logged with `[DRY-RUN]` prefix. Always test on a single folder first before processing your entire collection.
 
 **Note:** When running from the project directory, use the `unpackr` command (which runs `unpackr.bat`). From other directories, the installed command at `C:\Users\<you>\AppData\Roaming\Python\Python310\Scripts\unpackr.exe` is used.
 
@@ -126,6 +194,23 @@ Shows what would happen without actually moving/deleting files. All operations l
 unpackr --config "custom_config.json" -s "G:\Downloads" -d "G:\Videos"
 ```
 
+### Video Health Check (Optional)
+
+Run additional validation on destination after processing:
+
+```bash
+unpackr --vhealth -s "G:\Downloads" -d "G:\Videos"
+```
+
+Performs full health check on moved videos:
+- Validates video integrity (full decode test)
+- Detects corruption that may have slipped through
+- Finds duplicate videos (exact matches and similar files)
+- Identifies low quality videos (480p or lower, low bitrate)
+- Prompts before deleting bad files
+
+Not enabled by default (adds processing time). Recommended for important collections or if you notice playback issues.
+
 ## What Happens During Processing
 
 ### 1. Pre-Scan
@@ -189,7 +274,7 @@ Shows:
 - Current operation
 - Animated spinner
 
-**Easter Egg:** Random comments appear occasionally (15% chance per folder, max once per 5 folders) for entertainment during long runs.
+**Random Comments:** Occasional progress messages appear during long runs (15% chance per folder, max once per 5 folders). On first run, `comments.sample.json` is copied to `comments.json` which you can customize. Your custom comments are gitignored so they stay private.
 
 ## Configuration
 
@@ -220,6 +305,87 @@ Edit `config_files/config.json`:
 - `min_sample_size_mb` - Videos smaller than this are considered samples (default: 50MB)
 - `min_music_files` / `min_image_files` - How many files needed to preserve a folder
 - `max_log_files` - Keep last N logs (default: 5)
+
+## Safety Contract
+
+Unpackr makes explicit promises about what it will and won't do. These guarantees are upheld through defensive coding, comprehensive validation, and fail-closed design:
+
+### Core Guarantees
+
+1. **Containment** - Never write outside destination directory; all extractions and operations stay within source directory
+2. **Content Preservation** - Never delete folders meeting content thresholds (music ≥3 files, images ≥5 files, documents ≥1 file)
+3. **Validated Operations** - Never move/delete a video unless it passes configured health checks
+4. **Fail-Closed** - When validation is uncertain (corrupt archive list, unclear video state), reject rather than proceed
+5. **Dry-Run Isolation** - In dry-run mode, perform zero destructive operations (no moves, deletes, or writes)
+6. **Idempotent Operations** - File moves use atomic temp-file-then-rename; safe to retry without side effects
+7. **Bounded Resources** - Runtime, recursion depth, and memory usage all have hard limits
+
+### What Gets Deleted
+
+Only these items are removed:
+- Junk files (NFO, SFV, URL, DIZ, TXT, M3U) in folders with videos or archives
+- Sample videos (< 50MB by default, configurable)
+- Corrupt or truncated videos that fail health checks
+- Empty folders (no files, only other empty folders)
+- Folders after successful processing (all contents extracted/moved)
+
+### What Never Gets Deleted
+
+- Videos that pass health validation (moved to destination instead)
+- Content folders with ≥3 music files, ≥5 images, or ≥1 document
+- Folders with unrecognized file types (preserved as possibly important)
+- Any file in destination directory (destination is write-only, never modified or deleted)
+
+### How Safety is Enforced
+
+- **Path validation** - All archive contents validated before extraction (no `..`, no absolute paths, no escapes)
+- **Double-check pattern** - Folder state re-verified immediately before deletion (prevents race conditions)
+- **Comprehensive logging** - Every operation logged with full context for audit
+- **Multi-pass cleanup** - Locked folders retried with delays; never forced if still in use
+- **Disk space checks** - 3x archive size verified free before extraction
+- **Process isolation** - Subprocesses killed if timeout exceeded; resources cleaned up
+
+This contract is tested by the test suite and upheld by all code paths. Future features (WAL-based transactions, policy engine) will strengthen these guarantees further.
+
+## Common Failure Modes (and What Unpackr Does)
+
+**Locked folder (file in use by another process)**
+- Retries deletion with exponential backoff (3 attempts with delays)
+- Falls back to PowerShell forced deletion if needed
+- If still locked, logs and continues (reported at end)
+- Never blocks entire run on single locked file
+
+**Disk full during extraction**
+- Checks 3x archive size available before starting
+- If space runs out mid-extraction, logs error and skips
+- Partial extractions cleaned up (no orphaned files)
+- Continues with next folder
+
+**Corrupt or incomplete archive**
+- PAR2 repair attempted if PAR2 files present
+- If repair fails or impossible, logs reason and deletes archives
+- Folder marked for cleanup, never left in broken state
+- Decision logged with full context
+
+**Incomplete multi-part set (missing .part files)**
+- 7-Zip extraction fails with clear error
+- Logs specific missing parts
+- Archives left in place for manual review
+- Folder not deleted (might be ongoing download)
+
+**Suspicious video (unusual codec, truncated, decode errors)**
+- Fails closed: video deleted rather than moved to destination
+- Reason logged (truncation detected, decode failed, etc.)
+- Guarantees only working videos reach destination
+- Conservative: when uncertain, reject
+
+**Hung subprocess (extraction/repair takes too long)**
+- Dynamic timeouts based on file size (50GB archives get 2 hours)
+- If timeout exceeded, process killed cleanly
+- Resources cleaned up (temp files, handles)
+- Logs timeout with operation context
+
+**Run with these diagnostics:** `unpackr-doctor` shows tool versions, paths, disk space, and validates configuration. When reporting issues, attach the debug output.
 
 ## Safety Features
 

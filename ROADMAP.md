@@ -38,6 +38,39 @@ All critical security vulnerabilities have been addressed.
 - **Location:** utils/safety.py lines 126-182
 - **Test:** Manual testing required with 5GB+ archive extraction
 
+### 4. Secure Extraction Sandbox (Future)
+- **Issue:** Advanced archive attacks beyond path traversal (decompression bombs, symlinks, hardlinks, Unicode normalization)
+- **Impact:** Archives can still cause harm through resource exhaustion or indirect writes
+- **Target:** Two-phase extraction with validation and resource ceilings
+  1. Extract to isolated temp location with resource quotas enforced
+  2. Validate: no symlinks/hardlinks, ceilings not exceeded, no path escapes
+  3. Atomic move to destination only if validation passes
+- **Threats addressed:**
+  - Decompression bombs (10MB archive → 10GB extraction)
+  - Symlink attacks (symlink to system folder + file write)
+  - Hardlink attacks (write outside root via hardlink)
+  - Unicode normalization exploits (paths that normalize to different locations)
+  - Windows reserved names (CON, PRN, AUX, NUL), alternate data streams (ADS)
+  - Archive-within-archive recursion bombs
+- **Resource Ceilings (enforced before accepting extraction):**
+  - **Max total extracted bytes:** 50GB per archive (reject if exceeded)
+  - **Max file count:** 10,000 files per archive (reject if exceeded)
+  - **Max directory depth:** 20 levels (reject deeper nesting)
+  - **Max individual file size:** 25GB (reject larger files)
+  - **Expansion ratio limit:** 100x (10MB archive → max 1GB extracted)
+  - Configurable via `extraction_limits` in config.json
+- **Implementation approach:**
+  - Sandbox extraction with disk quota enforcement (OS-level or manual tracking)
+  - File graph validation (detect links, verify all paths resolve within sandbox)
+  - Whitelist approach: only allow regular files with safe names
+  - Reject extraction if any ceiling exceeded (fail-closed)
+- **Why this completes the threat model:**
+  - Current protections handle known vulnerabilities (path traversal, command injection, buffer overflow)
+  - Sandbox adds defense-in-depth for untrusted inputs (Usenet sources)
+  - Resource ceilings prevent resource exhaustion attacks
+  - Together: comprehensive protection without requiring formal verification
+- **Note:** Not required for basic operation, but recommended for high-value/untrusted sources
+
 ## Phase 2: Stability & Reliability (COMPLETED - v1.1.x)
 
 All stability issues have been resolved.
@@ -90,63 +123,287 @@ Improve performance without sacrificing reliability.
 - **Location:** utils/safety.py lines 49-97, core/archive_processor.py lines 102-105, 182-185
 - **Test:** Manual testing required with various archive sizes (100MB, 1GB, 10GB, 50GB)
 
-### 10. Improved Video Validation
-- **Current:** `'-c:v', 'copy'` only checks container, not actual frame data
-- **Target:** Add frame decode sampling (every 300th frame)
-- **Impact:** Catch more corrupt videos with valid containers
-- **Tradeoff:** Slower validation (~2x time), more accurate
-- **Test:** Add test with corrupt video that has valid container
+### 10. Video Validation Policy Engine
+- **Current:** Fixed heuristics for video health checks (container check, bitrate, truncation, decode test)
+- **Target:** Policy-based validation with evidence and confidence scoring
+- **Impact:** Configurable strictness for different use cases, explainable decisions
+- **Architecture:**
+  - Detectors produce structured evidence (size mismatch, decode errors, duration issues)
+  - Evidence is tagged with confidence level (strong/moderate/weak)
+  - Policy engine aggregates evidence → decision (PASS/FAIL/SUSPICIOUS)
+  - Human-readable explanation ("decode errors + size mismatch; likely truncated")
+- **Output Contract (explicit schema):**
+  - **Evidence fields:** `detector_name`, `severity` (critical/high/medium/low), `confidence` (0.0-1.0), `message`
+  - **Terminal decisions:** PASS (move video), FAIL (delete video), SUSPICIOUS (quarantine for manual review)
+  - **Operational implications:**
+    - PASS: Video moved to destination (guarantee: never delete a passing video)
+    - FAIL: Video deleted, logged with evidence and policy rule attribution
+    - SUSPICIOUS: Video quarantined to separate folder, never auto-deleted
+- **Benefits:**
+  - Tunable strictness (archival-strict vs casual-permissive)
+  - Support for triage workflows (quarantine suspicious, recheck later)
+  - Deterministic, inspectable results (critical for parallelization later)
+  - Frame decode sampling becomes one detector among many
+- **Config example:**
+  ```json
+  {
+    "validation_policy": "strict",  // strict, balanced, permissive
+    "require_full_decode": false,   // enable expensive frame sampling
+    "min_confidence_to_reject": 0.7
+  }
+  ```
+- **Safety Contract Requirements:**
+  - Strengthens: Validated Operations (videos only moved/deleted after policy decision)
+  - Strengthens: Fail-Closed (uncertain = SUSPICIOUS, not PASS)
+  - Upholds: No Silent Deletion (every deletion logged with evidence + policy rule)
+  - Policy engine makes decisions, not individual detectors (prevents inconsistent outcomes)
+- **Test Requirements:**
+  - Test known-good video returns PASS with high confidence
+  - Test truncated video returns FAIL with truncation evidence
+  - Test edge-case video (unusual codec) returns SUSPICIOUS
+  - Test policy variants (strict/balanced/permissive) produce expected decisions
+  - Test evidence aggregation (multiple detectors combine correctly)
+  - Test all deletions logged with policy attribution
 
 ## Phase 4: Usability Improvements
 
-Quality of life features for better user experience.
+Quality of life features for better user experience. All features must uphold Safety Contract guarantees.
 
 ### 11. Cancellation Support
 - **Current:** Ctrl+C waits for operation to complete (up to 10 minutes)
 - **Target:** Check cancellation token in loops, exit quickly
 - **Impact:** Better UX when user wants to stop
-- **Test:** Add test that cancels mid-operation, verify quick exit
+- **Safety Contract Requirements:**
+  - Must not interrupt mid-operation (wait for current operation to complete)
+  - Must leave filesystem in consistent state (no partial extractions or moves)
+  - Upholds: Idempotent Operations, Bounded Resources
+- **Test Requirements:**
+  - Test cancellation mid-operation, verify quick exit
+  - Test cancellation during move operation, verify file either moved or not moved (never partial)
+  - Test cancellation during extraction, verify either complete or cleaned up (no partial extracts)
 
-### 12. Checkpoint & Resume
+### 12. Transactional Checkpoint & Resume (WAL-Based)
 - **Current:** No progress persistence - restart means starting over
-- **Target:** Save checkpoint after each folder, resume on restart
-- **Impact:** Critical for 24+ hour runs with potential interruptions
-- **Implementation:** JSON checkpoint file with atomic writes, no personal data stored
-- **Privacy:** Only store folder paths, operation status, statistics - no file content or user info
-- **Test:** Add test that stops mid-run, verify resume from checkpoint
+- **Target:** Write-ahead log (WAL) for crash-consistent, auditable state management
+- **Impact:** HUGE for reliability in long runs - Makes interruptions completely safe
+  - Power outages, system crashes, or manual interruptions won't lose hours of work
+  - Resume exactly where left off without duplicating destructive operations
+  - Provable guarantee: "never lose a file due to interruption"
+  - Essential for production use on unstable systems or during maintenance windows
+- **Architecture:** Transaction-based state machine with minimal state model
+  - **Unit of record:** Individual operation (folder-level for scans, file-level for moves/deletes)
+  - **Journaled operations:** Moves, deletes, folder removals (destructive only)
+  - **Not journaled:** Extractions, repairs, health checks (safe to retry, produce same output)
+  - Every irreversible operation writes intent BEFORE action:
+    ```
+    Intent: move video A → destination B
+    Commit: move succeeded
+    Intent: delete junk folder X
+    Commit: delete succeeded
+    ```
+  - On restart: read WAL, reconcile incomplete actions, resume safely
+  - Operations become idempotent (safe to retry without side effects)
+- **State Model:**
+  - **States:** PENDING → IN_PROGRESS → COMMITTED → ROLLED_BACK
+  - **PENDING:** Intent recorded, operation not started
+  - **IN_PROGRESS:** Operation started but not confirmed complete
+  - **COMMITTED:** Operation confirmed successful
+  - **ROLLED_BACK:** Operation failed, intent discarded
+  - **Reconciliation rules:**
+    - PENDING on startup → Retry operation (may have been interrupted before start)
+    - IN_PROGRESS on startup → Verify operation completed, commit if yes, retry if no
+    - COMMITTED on startup → Skip (already done)
+    - ROLLED_BACK on startup → Skip (already failed)
+- **What makes operations idempotent:**
+  - **Move:** Check if file already exists at destination before moving (skip if already there)
+  - **Delete:** Check if file/folder still exists before deleting (skip if already gone)
+  - **Folder removal:** Re-validate folder is still removable before deleting (skip if contents changed)
+- **Benefits over simple checkpoint:**
+  - Not just "restart from folder N" but precise per-operation recovery
+  - Audit trail: debug issues with exact timeline of what happened
+  - Foundation for future undo/rollback capabilities
+- **Implementation:**
+  - SQLite for WAL (built-in, transactional, portable)
+  - Table schema: `(operation_id, type, intent_json, state, timestamp)`
+  - Reconcile on startup: finish in-progress, skip committed
+  - Prune old entries after successful run (keep last N runs for audit)
+- **Privacy:** Only store hashed folder paths + operation types, no file content
+- **Safety Contract Requirements:**
+  - Strengthens: Idempotent Operations (makes all operations safely retryable)
+  - Strengthens: Fail-Closed (crash recovery prevents partial state)
+  - Upholds: Content Preservation (never lose tracked files due to interruption)
+  - Journal only "after validation has decided" operations (moves/deletes, not extractions/repairs)
+  - Consistent granularity: file-level for moves, folder-level for deletes
+- **Test Requirements:**
+  - Test SIGKILL mid-operation (move, delete, folder removal), verify recovery on restart
+  - Test power-loss simulation (interrupt during write), verify no data loss
+  - Test duplicate operation detection (restart twice, verify operation only happens once)
+  - Test reconciliation states (PENDING, IN_PROGRESS journaled states recover correctly)
+  - Test WAL pruning (old entries cleaned up after successful run)
 
 ### 13. Enhanced Dry-Run Reporting
 - **Current:** Shows what would happen, but no comparison
 - **Target:** Export JSON report for diff with actual run results
 - **Impact:** Verify tool behaves as expected before running
-- **Test:** Add test comparing dry-run report with actual run
+- **Safety Contract Requirements:**
+  - Strengthens: Dry-Run Isolation (guarantees zero destructive operations in dry-run mode)
+  - Must report all operations that would be performed (moves, deletes, extractions)
+  - Report must be reproducible (same input = same report)
+- **Test Requirements:**
+  - Test dry-run exports JSON report with expected structure
+  - Test dry-run performs zero filesystem modifications (compare before/after state)
+  - Test report diff matches actual run results (same folder processed twice)
 
-## Phase 5: Observability & Metrics
+## Phase 5: Observability & Structured Events
 
-Track performance and identify issues without storing sensitive data.
+Track performance and identify issues through a unified event system with privacy built-in.
 
-### 14. Privacy-Aware Logging Enhancement
-- **Current:** Logs everything including full file paths
-- **Target:** Configurable privacy modes:
-  - **Full** - Current behavior (full paths, all details)
-  - **Medium** - Hash file paths, keep folder structure (default)
-  - **Minimal** - Only operation counts and errors, no paths
-- **Impact:** Better privacy without losing debugging ability
-- **Test:** Add tests for each privacy mode, verify appropriate data redaction
+### Core Architecture: Structured Event Stream
 
-### 15. Metrics & Observability
-- **Collect:** Operation durations, bottlenecks, success rates (aggregated only)
-- **Export:** JSON, CSV formats
-- **Privacy:** Only aggregate statistics, no individual file information
-- **Use Case:** Identify performance regressions, optimize workflow
-- **Test:** Add test that generates metrics, verify no personal data
+Replace string-based logging with structured events that flow through privacy transforms:
 
-### 16. Notification System
-- **Channels:** Email, Discord, Pushbullet, Slack
-- **Events:** Completion, errors, X folders processed
-- **Privacy:** Only send summary statistics, no file paths or names
-- **Use Case:** Long runs (24+ hours) finish while you're away
-- **Test:** Add test for each notification channel (mocked)
+**Event Structure:**
+```python
+Event(
+  type="archive_extract_started",
+  timestamp=...,
+  folder_id="<hash>",  # Always hashed
+  fields={
+    "archive_size_mb": 1500,
+    "tool": "7z",
+    "timeout_seconds": 3600
+  }
+)
+```
+
+**Privacy Transform Pipeline:**
+- Events → PrivacyFilter → Outputs (logs, metrics, notifications)
+- Three modes applied at output time:
+  - **Full:** Raw fields, full paths (for local debugging)
+  - **Medium:** Hashed paths, keep structure (default, safe for GitHub issues)
+  - **Minimal:** Drop all identity, keep only aggregates (for public metrics)
+
+**Benefits:**
+- Single source of truth for all observability
+- Privacy is architectural, not bolted-on
+- Parseable logs enable automated analysis
+- Easy to add new outputs (Prometheus, Grafana, etc.)
+
+### 14. Structured Event Logger
+- **Current:** String-based logs scattered throughout code
+- **Target:** Centralized EventLogger with structured fields
+- **Impact:** Consistent, parseable logs that support multiple output formats
+- **Implementation:**
+  - EventLogger class emits structured events
+  - Events flow through PrivacyFilter based on config
+  - Multiple sinks: file logger, metrics aggregator, notification system
+- **Event types:**
+  - `folder_scan_started/completed`
+  - `archive_extract_started/completed/failed`
+  - `video_health_check_started/completed/failed`
+  - `file_move_started/completed/failed`
+  - `folder_delete_started/completed/failed`
+- **Structured Events Requirements (D from user feedback):**
+  - Every event must be parseable (JSON or structured format)
+  - Every event must be versioned (schema version field)
+  - Every event must be non-PII by default (hashed paths, no filenames unless opt-in)
+  - Every event must be complete for run reconstruction (timestamp, operation ID, outcome)
+- **Safety Contract Requirements:**
+  - Upholds: No Silent Deletion (all deletions emit events with reason)
+  - Events capture Safety Contract violations (extraction path escapes, resource ceiling hits)
+- **Test Requirements:**
+  - Test events are valid JSON and parseable
+  - Test event schema versioning (old events still readable)
+  - Test events contain no PII in default mode
+  - Test event stream reconstructs full run timeline
+  - Test deletion events include policy attribution
+
+### 15. Privacy-Aware Log Export
+- **Current:** Logs include full paths (unsafe to share)
+- **Target:** Three privacy modes applied to event stream
+- **Impact:** Makes it easier to share logs publicly for debugging without exposing private paths
+  - Users can safely share logs with developers or post to GitHub issues
+  - Privacy-preserving defaults protect sensitive folder structures
+  - Still captures enough detail for effective troubleshooting
+- **Implementation:**
+  - Full: `--log-privacy=full` for local debugging
+  - Medium: `--log-privacy=medium` (default) for safe sharing
+  - Minimal: `--log-privacy=minimal` for public metrics
+- **Safety Contract Requirements:**
+  - Privacy modes applied at output time (source events remain complete internally)
+  - Default (Medium) mode must be safe to share publicly (no paths, only hashes)
+  - Full mode requires explicit opt-in (never default)
+- **Test Requirements:**
+  - Test Full mode contains actual paths for debugging
+  - Test Medium mode contains only hashed paths, no raw file names
+  - Test Minimal mode contains only aggregates, no individual operations
+  - Test default is Medium, not Full (privacy by default)
+
+### 16. Metrics from Event Stream
+- **Current:** No systematic performance tracking
+- **Target:** Derive metrics by aggregating structured events
+- **Examples:**
+  - Operation durations (p50, p95, p99 for extract/repair/validate)
+  - Success rates by operation type
+  - Bottleneck identification (which operations take longest)
+  - Resource usage over time
+- **Export formats:** JSON, CSV, potentially Prometheus metrics
+- **Privacy:** Only aggregates, no individual file information
+- **Safety Contract Requirements:**
+  - Metrics derived from events, not separate tracking (single source of truth)
+  - Privacy by default: only aggregates exported, never individual operations
+  - Metrics capture Safety Contract hits (resource ceiling violations, fail-closed decisions)
+- **Test Requirements:**
+  - Test metrics match event stream calculations (verify accuracy)
+  - Test exported metrics contain no PII (only aggregates)
+  - Test metrics include safety stops and resource ceiling hits
+
+### 17. Debug Bundle Generator
+- **Current:** Users manually collect logs, config, environment info
+- **Target:** `unpackr-debug-bundle` command generates sanitized diagnostic package
+- **Contents:**
+  - Logs (with privacy mode Medium automatically applied)
+  - Config (sensitive paths redacted)
+  - Environment info (Python version, OS, disk space, tool versions)
+  - Recent event stream sample (last 1000 events, hashed paths)
+- **Impact:** Makes bug reports actionable without exposing private data
+- **Output:** Zip file safe to attach to GitHub issues
+- **Safety Contract Requirements:**
+  - Bundle generation never modifies source/destination (read-only operation)
+  - Privacy mode Medium enforced (never include raw paths)
+  - Redaction applied to config before inclusion (tool_paths, custom paths)
+- **Test Requirements:**
+  - Test bundle generation performs no filesystem modifications
+  - Test bundle contains no raw paths (all hashed)
+  - Test config redaction removes sensitive values
+  - Test bundle is valid zip and extractable
+
+### 18. Notification System (Event-Driven)
+- **Current:** No notifications
+- **Target:** Subscribe to event types, send notifications via configured channels
+- **Channels:** Email, Discord webhook, Pushbullet, Slack
+- **Events:** Run completion, X folders processed, errors, milestones
+- **Privacy:** Only summary statistics from aggregated events, no file paths
+- **Config example:**
+  ```json
+  {
+    "notifications": {
+      "discord_webhook": "https://...",
+      "on_complete": true,
+      "on_error": true,
+      "every_n_folders": 100
+    }
+  }
+  ```
+- **Safety Contract Requirements:**
+  - Privacy by default: notifications contain only aggregates, never file paths
+  - Opt-in only (notifications disabled by default)
+  - Notification failures never block processing (async, fire-and-forget)
+- **Test Requirements:**
+  - Test notifications contain only aggregates, no paths
+  - Test notification failure doesn't stop processing
+  - Test correct events trigger notifications (completion, errors, milestones)
+  - Test notifications disabled by default
 
 ## Phase 6: Advanced Features (Optional)
 
@@ -159,7 +416,16 @@ Features that add complexity but provide value for specific use cases.
   - Performance metrics over time
 - **Privacy:** Opt-in feature, hash all file paths, configurable retention period
 - **Benefit:** Avoid reprocessing same files
-- **Test:** Add tests for database operations, verify privacy settings
+- **Safety Contract Requirements:**
+  - Opt-in only (disabled by default, no silent data collection)
+  - Privacy by default: only hashed paths stored, never raw filenames
+  - Configurable retention period (auto-prune old data)
+  - Database stored locally only (never uploaded without explicit user action)
+- **Test Requirements:**
+  - Test feature disabled by default
+  - Test database stores only hashed paths
+  - Test retention period pruning works correctly
+  - Test deduplication decisions are correct (same checksum = skip processing)
 
 ### 18. Parallel Video Processing (Within Folder Only)
 - **Current:** Videos processed sequentially within each folder
@@ -170,7 +436,51 @@ Features that add complexity but provide value for specific use cases.
   - Requires careful stats synchronization
   - Complexity tradeoff vs modest gains
   - See Decision Log for why folder-level parallelism is intentionally avoided
-- **Test:** Add concurrency tests, verify thread safety
+- **Safety Contract Requirements:**
+  - Thread-safe stats updates (no race conditions on shared state)
+  - Operations remain deterministic (same input = same output regardless of parallelism)
+  - Upholds: Idempotent Operations (concurrent validation doesn't change outcomes)
+  - Opt-in via config (disabled by default due to HDD penalty risk)
+- **Test Requirements:**
+  - Test concurrent video validation produces correct results
+  - Test stats updates are thread-safe (no lost counts)
+  - Test deterministic outcomes (parallel run = sequential run)
+  - Test disabled by default (requires explicit config)
+
+### 19. Audio Integrity Validation (Optional)
+- **Current:** Only video files validated; audio files preserved but not checked
+- **Target:** Extend validation policy engine to support audio files (MP3, FLAC, AAC, etc.)
+- **Impact:** Broadens tool from "video processor" to "media processor" without scope explosion
+- **Architecture:**
+  - Reuse existing validation policy engine infrastructure
+  - Audio-specific detectors: container check, bitrate validation, duration check, decode test
+  - Same evidence aggregation and policy decisions (PASS/FAIL/SUSPICIOUS)
+  - Same structured events and logging
+- **Scope (what's included):**
+  - Basic decode verification (does the file play?)
+  - Container sanity checks (valid headers, no corruption)
+  - Duration and bitrate checks (reasonable values for format)
+  - Policy-based validation (strict/balanced/permissive modes)
+- **Scope (explicitly excluded - Non-Goals):**
+  - Music metadata enrichment (no fetching tags, album art, or online databases)
+  - Library management (no organizing by artist, album, genre)
+  - Music-specific features (no transcoding, normalization, or format conversion)
+  - Tag editing or standardization
+- **Benefits:**
+  - Catches corrupt audio files before archiving
+  - Same policy framework (tunable strictness)
+  - Same explainability (evidence + reason for rejection)
+  - Same guarantees (fail-closed, logged decisions, no silent deletion)
+- **Safety Contract Requirements:**
+  - Reuses existing Safety Contract guarantees (no new failure modes)
+  - Audio validation uses same policy engine (consistent decisions)
+  - Same logging requirements (evidence + policy attribution)
+  - Opt-in via config (audio validation disabled by default)
+- **Test Requirements:**
+  - Test known-good audio returns PASS
+  - Test truncated audio returns FAIL with evidence
+  - Test policy engine decisions consistent across audio and video
+  - Test disabled by default (requires explicit config)
 
 ## Ongoing Quality
 
@@ -216,9 +526,15 @@ Only tackle these when adding major features that would benefit from refactoring
 
 ### Platform Support
 - **Linux/Mac Compatibility**
-- **Current:** Windows-specific (PowerShell, path handling)
-- **Target:** Platform abstraction layer
-- **Note:** Low priority unless demand exists
+- **Current:** Windows-specific (PowerShell, path handling, batch files)
+- **Target:** Platform abstraction layer with conditional imports
+- **Impact:** Cross-platform support would expand the audience significantly
+  - Linux users running Usenet on NAS/servers are a large potential audience
+  - macOS users with media servers would benefit
+  - Even partial support (core features only) would be valuable
+  - Docker containerization becomes possible
+- **Implementation approach:** Abstract platform-specific operations (file deletion, process management)
+- **Note:** Moderate priority - harder than other features but high value for audience expansion
 
 ## Non-Goals
 
@@ -230,6 +546,8 @@ Explicitly **not** on the roadmap to maintain focus:
 - **Plugin System** - Adds complexity, prefer core features
 - **Real-time Dashboard** - Overkill for use case, terminal UI sufficient
 - **Parallel Folder Processing** - See Decision Log below
+- **Silent Deletion** - Every deletion must be logged with reason and attributable to policy rule. No files deleted without explicit justification in logs.
+- **Music Metadata Enrichment** - Even if audio validation is added (Phase 6.19), will NOT fetch tags, album art, or online metadata. Unpackr validates integrity, not library management.
 
 ## Decision Log
 
@@ -285,6 +603,44 @@ Sequential folder processing is intentionally chosen for performance and safety 
 - Aggregate statistics only, never individual file details
 - Configurable retention periods for all stored data
 - Clear user control over what data is logged/tracked
+
+## Out of Scope (For Now)
+
+These concepts were evaluated but are out of scope for the current project philosophy. They may be revisited if specific needs arise:
+
+### Formal Invariants Suite
+- **Concept:** Define formal invariants (e.g., "no output outside destination root") and prove them via automated verification
+- **Out of scope because:** Too academic for a pragmatic tool; doesn't improve unattended correctness enough to justify complexity
+- **Current approach:** Test coverage + defensive coding + Safety Contract (explicit guarantees) provide equivalent safety
+- **May revisit if:** Formal verification tools become lightweight enough for pragmatic use
+
+### Full Domain Model Refactoring (Release/Artifacts/Evidence)
+- **Concept:** Rewrite around structured entities (Release, ArchiveSet, ParitySet, MediaArtifact) instead of folder-centric processing
+- **Out of scope because:** Would require rewriting 80% of codebase without clear immediate benefit to correctness or usability
+- **Current approach:** Pragmatic folder-based processing works reliably and is well-tested
+- **May revisit if:** Adding SQLite-based features (WAL, deduplication) where domain model provides clear value
+- **Status:** Documented as aspirational architecture, not near-term goal
+
+### Quarantine/Trash System for Deletions
+- **Concept:** Move files to quarantine instead of deleting, allow manual review/recovery
+- **Out of scope because:** Contradicts design philosophy (definitive automation for unattended Usenet workflows)
+- **User expectation:** Overnight automation with clear outcomes (valid videos moved, junk deleted), not manual triage
+- **Current approach:** Dry-run mode for testing, detailed logs for audit, "prompt before delete" for interactive use
+- **May revisit if:** User feedback shows demand for review workflows
+
+### Self-Tuning Performance Intelligence
+- **Concept:** Machine learning system that tracks extraction/repair speeds over time and adapts timeouts
+- **Out of scope because:** Over-engineered; doesn't improve reliability enough to justify ML complexity
+- **Current approach:** Dynamic timeouts based on file size with conservative assumptions work well
+- **Alternative:** Users can override via config if their hardware is consistently faster/slower
+- **May revisit if:** Performance profiling shows systematic timeout issues that simple heuristics can't solve
+
+### Real-Time Reasoning UI / Decision Traces
+- **Concept:** Per-folder "why" explanations (why classified as junk, why video failed, confidence scores)
+- **Out of scope because:** Would clutter CLI output for typical unattended use; most users don't need this detail
+- **Current approach:** Detailed logs capture reasoning for debugging; `--verbose` mode for those who want it
+- **Partial adoption:** Video validation policy engine (Phase 3.10) will include explainable decisions in logs
+- **May revisit if:** Interactive use cases (user sitting at terminal) become more common than unattended runs
 
 ## Code Style Guide
 
@@ -426,6 +782,21 @@ When implementing roadmap items:
 
 **Last Updated:** 2025-12-24
 
-**Next Review:** After Phase 3 completion
+## Current Status
 
-**Current Status:** Phase 1 and 2 completed. Phase 3 two-thirds complete (8 of 10 items done).
+**Completed Phases:**
+- Phase 0: Recent Completions (v1.0.x) - Foundation quality improvements
+- Phase 1: Critical Security Fixes (v1.1.x) - Path traversal, command injection, buffer management
+- Phase 2: Stability & Reliability (v1.1.x) - Exception handling, memory leaks, race conditions, config validation
+
+**In Progress:**
+- Phase 3: Performance Optimization (v1.2.x)
+  - Item 8: Optimize Folder Scanning - COMPLETED
+  - Item 9: Dynamic Timeouts - COMPLETED
+  - Item 10: Video Validation Policy Engine - PLANNED (next major feature)
+
+**Next Up:**
+- Complete Phase 3 (Video Validation Policy Engine)
+- Phase 4: Usability Improvements (Cancellation, WAL-based Resume, Dry-Run Reporting)
+- Phase 5: Observability & Structured Events
+- Phase 6: Advanced Features (Optional)

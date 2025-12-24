@@ -11,8 +11,8 @@ long_description = readme_file.read_text(encoding='utf-8') if readme_file.exists
 
 setup(
     name="unpackr",
-    version="1.0.0",
-    description="Modern CLI tool for automated Usenet video processing",
+    version="1.2.0",
+    description="Turn messy folders of archives into clean, working videos",
     long_description=long_description,
     long_description_content_type="text/markdown",
     python_requires=">=3.7",

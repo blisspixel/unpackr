@@ -155,6 +155,9 @@ config_files/config.json.backup
 config_files/config.json.bak
 config_files/*.bak
 
+# User's custom comments (keep comments.sample.json in repo)
+config_files/comments.json
+
 # Temporary files
 *.tmp
 *.temp
@@ -233,3 +236,4 @@ archive/temp/
 /.claude
 /.claude
 nul
+_ul
