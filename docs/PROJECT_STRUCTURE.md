@@ -24,12 +24,6 @@ Configuration
 config.json            # App settings
 ```
 
-### `/scripts/`
-Utility scripts
-```
-movierenamer.py        # Movie renaming utility
-```
-
 ### `/core/`
 Business logic modules (6 files)
 ```
@@ -82,7 +76,6 @@ Historical versions and backups
 **Logical Organization:** Everything has a clear home:
 - Executables → `bin/`
 - Configuration → `config_files/`
-- Utilities → `scripts/`
 - Source code → `core/` and `utils/`
 - Quality assurance → `tests/`
 - Documentation → `docs/`
