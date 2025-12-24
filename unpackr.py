@@ -1288,16 +1288,10 @@ def countdown_prompt(seconds: int = 10) -> bool:
         True if user didn't cancel, False if cancelled
     """
     try:
-        print(f"{Fore.GREEN}Starting in {seconds} seconds... (Press Ctrl+C to cancel){Style.RESET_ALL}", end='', flush=True)
-        for i in range(seconds, 0, -1):
+        # Simple approach: just show dots and sleep
+        print(f"{Fore.GREEN}Starting in {seconds} seconds... (Press Ctrl+C to cancel){Style.RESET_ALL}")
+        for i in range(seconds):
             time.sleep(1)
-            # Use backspace to overwrite numbers in place (more portable than \r)
-            if i > 1:
-                sys.stdout.write('\b' * (len(str(i+1)) + 1))
-                sys.stdout.write(f"{i} ")
-                sys.stdout.flush()
-        sys.stdout.write('\b' * (len(str(1)) + 1))
-        print("Starting now!          ")
         return True
     except KeyboardInterrupt:
         print(Fore.RED + "\n\nOperation cancelled by user." + Style.RESET_ALL)
@@ -1446,12 +1440,16 @@ def main():
             logging.info("User cancelled operation")
             sys.exit(0)
 
-        # Show that processing has begun
-        print(f"{Fore.CYAN}Initializing...{Style.RESET_ALL}", flush=True)
-
-        # Initial cleanup: delete empty folders first for quick wins (silent)
+        # Initial cleanup: delete empty folders first for quick wins
+        # Skip on first pass if there are many folders (will be cleaned up at end anyway)
         try:
-            app.cleanup_empty_folders(source_dir, show_progress=False)
+            num_video_folders = len(work_plan.video_folders)
+            if num_video_folders < 50:
+                print(f"{Fore.CYAN}Initial cleanup...{Style.RESET_ALL}", flush=True)
+                app.cleanup_empty_folders(source_dir, show_progress=False)
+            else:
+                # Skip initial cleanup when there are many folders (too slow)
+                logging.info(f"Skipping initial cleanup ({num_video_folders} folders - will clean up at end)")
         except Exception as e:
             logging.error(f"Initial cleanup failed: {e}", exc_info=True)
             print(f"{Fore.YELLOW}Warning: Initial cleanup had errors (continuing anyway){Style.RESET_ALL}")

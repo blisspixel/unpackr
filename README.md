@@ -19,16 +19,43 @@ MyVideo/
 ├── MyVideo.vol01+02.par2
 ├── sample.mkv (15MB)
 ├── MyVideo.nfo
-├── MyVideo.sfv
-└── Poster.jpg
+└── MyVideo.sfv
 
 After processing:
 Destination/
 └── MyVideo.mkv (validated, playable)
 
 Source/ (cleaned up)
-└── MyVideo/
-    └── Poster.jpg (preserved - non-video content)
+└── MyVideo/ (deleted - empty after video moved)
+```
+
+**What happens to each file:**
+- `.rar` files → Extracted, then deleted
+- `.par2` files → Used for repair, then deleted
+- `sample.mkv` → Deleted (< 50MB)
+- `.nfo`, `.sfv` → Deleted (junk files)
+- `MyVideo.mkv` → Validated and moved to destination
+- Folder → Deleted (empty after processing)
+
+**Example with preserved content (music folder):**
+```
+Before:
+MusicVideos/
+├── concert.part01.rar
+├── concert.par2
+├── song1.mp3
+├── song2.mp3
+└── song3.mp3  (3 music files)
+
+After:
+Destination/
+└── concert.mkv
+
+Source/ (folder preserved - has 3+ music files)
+└── MusicVideos/
+    ├── song1.mp3
+    ├── song2.mp3
+    └── song3.mp3
 ```
 
 ## What It Does (End-to-End)
