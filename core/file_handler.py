@@ -46,6 +46,7 @@ class FileHandler:
 
         Handles:
         - Windows forbidden characters: < > : " / \\ | ? *
+        - Unicode/Cyrillic transliteration to ASCII
         - Control characters and unicode weirdness
         - Multiple dots/spaces/underscores
         - Leading/trailing dots, spaces, underscores
@@ -78,8 +79,44 @@ class FileHandler:
         for bad_char, replacement in replacements.items():
             name = name.replace(bad_char, replacement)
 
-        # Remove control characters (ASCII 0-31) and other problematic unicode
-        name = ''.join(char for char in name if ord(char) >= 32 and ord(char) != 127)
+        # Transliterate Unicode to ASCII (handle Cyrillic, accents, etc.)
+        # Manual transliteration map for common characters
+        transliteration_map = {
+            # Cyrillic
+            'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'Yo', 'Ж': 'Zh',
+            'З': 'Z', 'И': 'I', 'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M', 'Н': 'N', 'О': 'O',
+            'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U', 'Ф': 'F', 'Х': 'Kh', 'Ц': 'Ts',
+            'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch', 'Ъ': '', 'Ы': 'Y', 'Ь': '', 'Э': 'E', 'Ю': 'Yu', 'Я': 'Ya',
+            'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo', 'ж': 'zh',
+            'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o',
+            'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'kh', 'ц': 'ts',
+            'ч': 'ch', 'ш': 'sh', 'щ': 'shch', 'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+            # Common accented characters
+            'á': 'a', 'à': 'a', 'â': 'a', 'ä': 'a', 'ã': 'a', 'å': 'a',
+            'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
+            'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i',
+            'ó': 'o', 'ò': 'o', 'ô': 'o', 'ö': 'o', 'õ': 'o',
+            'ú': 'u', 'ù': 'u', 'û': 'u', 'ü': 'u',
+            'ñ': 'n', 'ç': 'c', 'ß': 'ss',
+            'Á': 'A', 'À': 'A', 'Â': 'A', 'Ä': 'A', 'Ã': 'A', 'Å': 'A',
+            'É': 'E', 'È': 'E', 'Ê': 'E', 'Ë': 'E',
+            'Í': 'I', 'Ì': 'I', 'Î': 'I', 'Ï': 'I',
+            'Ó': 'O', 'Ò': 'O', 'Ô': 'O', 'Ö': 'O', 'Õ': 'O',
+            'Ú': 'U', 'Ù': 'U', 'Û': 'U', 'Ü': 'U',
+            'Ñ': 'N', 'Ç': 'C',
+        }
+
+        # Apply transliteration
+        transliterated = []
+        for char in name:
+            if char in transliteration_map:
+                transliterated.append(transliteration_map[char])
+            else:
+                transliterated.append(char)
+        name = ''.join(transliterated)
+
+        # Filter to ASCII printable characters only
+        name = ''.join(char for char in name if 32 <= ord(char) < 127)
 
         # Normalize multiple separators
         name = name.replace('..', '.').replace('--', '-').replace('__', '_')
@@ -88,9 +125,10 @@ class FileHandler:
         # Remove leading/trailing dots, spaces, underscores, dashes
         name = name.strip('. _-')
 
-        # Ensure name isn't empty after sanitization
+        # Ensure name isn't empty after sanitization (use timestamp fallback)
         if not name:
-            name = 'video'
+            import time
+            name = f'file_{int(time.time())}'
 
         # Windows reserved names (CON, PRN, AUX, etc.) - add underscore suffix
         reserved_names = {
@@ -137,8 +175,10 @@ class FileHandler:
             if not folder.exists() or not folder.is_dir():
                 logging.warning(f"Folder not accessible: {folder}")
                 return []
-            
-            return [f for f in folder.rglob('*') if f.suffix.lower() in video_extensions]
+
+            # Only look for videos directly in this folder (not recursive)
+            # Subfolders are processed separately via _process_subfolder
+            return [f for f in folder.iterdir() if f.is_file() and f.suffix.lower() in video_extensions]
             
         except Exception as e:
             logging.error(f"Error finding video files in {folder}: {e}")

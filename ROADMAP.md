@@ -4,6 +4,44 @@ Planned improvements organized in logical implementation order. Focus on securit
 
 ## Recently Fixed (v1.2.x)
 
+### UI/UX Improvements (v1.2.1 - COMPLETED)
+
+**Status:** COMPLETED - Modern, responsive progress display with clearer feedback
+
+**Changes:**
+1. **Improved Progress Labels**
+   - Changed "found" to "found videos" for clarity
+   - Changed folder count from "3/351" to "3/351 folders"
+   - Added "empty:" stat to show empty folders deleted
+
+2. **Faster UI Updates**
+   - Videos in current folder processed before subfolders (immediate visible progress)
+   - Progress updates at start of each folder (no long delays)
+   - Folder context shown consistently across all operations (PAR2, extraction, validation)
+
+3. **Better File Scanning**
+   - Changed from recursive `rglob()` to non-recursive `iterdir()` in find_video_files()
+   - Processes videos in current folder before diving into subfolders
+   - More predictable and responsive behavior
+
+4. **Enhanced Filename Sanitization**
+   - Cyrillic and accented characters transliterated to ASCII equivalents
+   - Timestamp fallback instead of generic "video" name
+   - Better handling of Unicode filenames
+
+5. **Rarity-Based Comments System** (optional feature, not documented in main README)
+   - Weighted rarity tiers with visual effects (dim/normal/bright)
+   - JSON-based configuration with backwards compatibility
+   - 3-folder cooldown to prevent spam
+   - Comments show as additional context line, not replacing status
+
+**Files Modified:**
+- [unpackr.py](unpackr.py) - UI display improvements, comment system
+- [core/file_handler.py](core/file_handler.py) - Improved sanitization, non-recursive scanning
+- [setup.py](setup.py) - Version bump to 1.2.1
+
+**Priority:** P1 - Quality of life improvements completed
+
 ### Windows UTF-8 Console Encoding Fix (COMPLETED)
 
 **Status:** FIXED - Unicode character encoding resolved

@@ -289,22 +289,24 @@ Re-attempts folders that were locked:
 ```
   unpackr
 
-  [████████████░░░░░░░░] 60% │ 18/30
-  found: 24  moved: 21  bad: 3  extracted: 8  repaired: 5  cleaned: 15  junk: 142
+  [████████████░░░░░░░░] 60% │ 18/30 folders
+  found videos: 24  processed: 21  bad: 3  extracted: 8  repaired: 5  empty: 2
   speed: 2.3 folders/min  time left: 0:08:45  saved: 36 min
 
-  > Extracting: Release.part001.rar
-  ⠙ working
+  > [foldername] filename.mkv
+  │ Processing comment here
+  ⠙ validating
 ```
 
 Shows:
-- Progress bar with percentage
-- Stats: videos (found/moved/bad), work (extracted/repaired), cleanup (folders/junk)
+- Progress bar with percentage and folder count
+- Stats: found videos, processed videos, bad/rejected, archives extracted, PAR2 repaired, empty folders cleaned
 - Speed, ETA, and time saved estimate (conservative 2 min/folder baseline)
-- Current operation
-- Animated spinner
+- Current folder and file being processed
+- Optional contextual comments (configurable frequency)
+- Animated spinner with current action
 
-**Random Comments:** Occasional progress messages appear during long runs (15% chance per folder, max once per 5 folders). On first run, `comments.sample.json` is copied to `comments.json` which you can customize. Your custom comments are gitignored so they stay private.
+**Progress Comments:** Optional contextual messages appear during processing using a rarity system (common/uncommon/rare/epic/legendary with different visual effects). Comments are stored in `config_files/comments.json` which you can customize. Your custom comments are gitignored so they stay private.
 
 ## Configuration
 

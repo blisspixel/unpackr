@@ -1,71 +1,80 @@
 {
-  "_comment": "Sample comments for Unpackr's random progress messages",
-  "_instructions": "On first run, this file is copied to comments.json. Edit comments.json to customize your messages. This sample file shows the expected format.",
-  "comments": [
-    "Still faster than doing this manually...",
-    "Checking another folder. Thrilling.",
-    "Processing files. Living the dream.",
-    "RAR extraction in progress. Patience is a virtue.",
-    "PAR2 repair. Because files like to break.",
-    "Video validation. Quality control is important.",
-    "Folder cleanup. Making things tidy.",
-    "Another archive extracted. Progress.",
-    "Checking video integrity. Trust but verify.",
-    "Removing junk files. One less NFO in the world.",
-    "Moving validated videos. They deserve a good home.",
-    "Empty folder deleted. Minimalism achieved.",
-    "Archive repaired successfully. Crisis averted.",
-    "Sample video detected. Good riddance.",
-    "Processing continues. Coffee recommended.",
-    "Folder processing. Still going strong.",
-    "Video health check passed. Winner winner.",
-    "Corrupt video found. Better luck next time.",
-    "PAR2 verification complete. All good here.",
-    "7-Zip extraction. Unzipping the future.",
-    "Cleaning up this folder like it's the morning after a hackathon",
-    "Multipart archives detected. Because simple is apparently illegal in storage land",
-    "Repairing damage with the confidence of someone who read the man page once",
-    "Extracting... please remain seated until the filesystem stops screaming",
-    "Found another README.txt. I respect the effort. I will still ignore it",
-    "Nested archives detected: recursion isn't a bug, it's a lifestyle",
-    "PAR2 files spotted. Redundancy levels: majestic",
-    "Validating media: does it play, or does it merely claim to?",
-    "Checksum says: 'I don't trust you.' Honestly, same",
-    "This folder has more parts than a LEGO set and none of the instructions",
-    "Organizing output so Future You doesn't file an angry bug report",
-    "Retrying because the filesystem asked for 'just a minute' and meant 20",
-    "Indexing chaos into order. Please hold while I perform miracles",
-    "Disk usage: ambitious. Storage plan: optimistic",
-    "Deleting junk responsibly. Like recycling, but with logs",
-    "The archive fought back. The archive lost (eventually)",
-    "Renaming files that were clearly named by a sleep-deprived raccoon",
-    "Processing archives that have trust issues (700 parts? really?)",
-    "Validating content with the scrutiny of a disappointed librarian",
-    "Found 15 'sample' files. Someone's collecting trailers apparently",
-    "PAR2 repair engaged. Fixing what the internet broke",
-    "Extraction speed: adequate. Drama level: moderate",
-    "Another NFO file. Adding to the unread pile",
-    "Codec analysis complete. This video has... opinions",
-    "Disk space: exists. Barely",
-    "Processing folder 47 of 300. Automation was the right choice",
-    "Video validation: passed. Unlike that one commit you made at 3am",
-    "Corrupt archive detected. Logged and removed.",
-    "Folder cleaned. Your future self owes me coffee",
-    "Running checksums like I'm debugging production on a Friday",
-    "Archive extraction: 98% complete. Time remaining: who knows anymore",
-    "Quality check: passed. This video is less broken than expected",
-    "Organizing files with the energy of someone who's seen some things",
-    "Nested RARs within ZIPs within 7z. It's archives all the way down",
-    "PAR2 says everything's fine. PAR2 has never lied to me before",
-    "Processing at speeds that would make a 90s modem jealous",
-    "Found duplicate files. One of them has to go. Democracy isn't an option",
-    "This filename defies all conventions. Fixing",
-    "Validation complete. Library is now 12% less haunted",
-    "You're gonna need a bigger hard drive",
-    "Houston, we have a storage problem",
-    "May the disk space be with you",
-    "One does not simply walk into 700-part archives",
-    "With great storage comes great responsibility",
-    "All work and no play makes Jack a dull boy. But this? This is both"
-  ]
+  "rarities": {
+    "common": {
+      "weight": 60,
+      "color": "white",
+      "effect": "dim"
+    },
+    "uncommon": {
+      "weight": 25,
+      "color": "green",
+      "effect": "normal"
+    },
+    "rare": {
+      "weight": 10,
+      "color": "cyan",
+      "effect": "bright"
+    },
+    "epic": {
+      "weight": 4,
+      "color": "magenta",
+      "effect": "bright"
+    },
+    "legendary": {
+      "weight": 1,
+      "color": "yellow",
+      "effect": "legendary",
+      "animation": "glow"
+    }
+  },
+  "comments": {
+    "common": [
+      "Extracting archives: the moment of truth",
+      "Sample file detected. Declined politely",
+      "NFO located. Ignoring confidently",
+      "Validating video: trust but verify",
+      "Cleanup pass: removing the obvious junk",
+      "Nested folders: because simplicity is overrated",
+      "PAR2 repair: fixing someone else’s upload choices",
+      "Another multi-part archive assembled successfully",
+      "Keeping the good files. Deleting the noise",
+      "Destination folder stays clean. That’s the deal"
+    ],
+    "uncommon": [
+      "700 parts for one file. Nobody asked for this, yet here we are",
+      "Duplicate download detected: past-you and present-you disagreed",
+      "This archive has more parts than a group project",
+      "Your folder structure has lore",
+      "Found an .exe next to the videos. Bold move",
+      "Three releases, same title: perfection is a lifestyle",
+      "This directory is 90% packaging and 10% content",
+      "Disk space check: reality has entered the chat"
+    ],
+    "rare": [
+      "Initiating containment field around corrupted sectors",
+      "Rerouting power to decompression arrays",
+      "Stabilizing data streams for extraction",
+      "Prime Directive: complete the validation pass",
+      "Deploying redundant safety checks (again)",
+      "Scanning for the one real file hiding in 400 folders",
+      "Attempting diplomacy with wildly inconsistent timestamps",
+      "Computer: initiate cleanup protocol"
+    ],
+    "epic": [
+      "Fun fact: RAR is from 1993. This format has outlived many trends",
+      "Fun fact: PAR2 exists because the internet is held together by hope",
+      "Subspace anomaly detected: folder contains folder contains folder",
+      "Validation complete: the file is playable, sane, and surprisingly well-formed",
+      "Sample files eliminated: the teaser economy has collapsed",
+      "Archive restored: order extracted from entropy"
+    ],
+    "legendary": [
+      "The destination folder remains pure. The source folder tells the full story",
+      "I can process any video collection. This one has… a very specific personality",
+      "Routine maintenance: nothing unusual detected (the logs disagree)",
+      "Fascinating: you downloaded five versions and kept the one with the worst naming",
+      "This is a file organizer. Your folders are a psychological profile",
+      "Judgment subroutines: disabled. Validation: enabled"
+    ]
+  }
 }

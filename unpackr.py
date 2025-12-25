@@ -18,7 +18,24 @@ import random
 from collections import deque
 from pathlib import Path
 from datetime import datetime, timedelta
-from colorama import init, Fore, Style
+from colorama import init, Fore, Back, Style
+
+# Set UTF-8 encoding for Windows console to handle special characters in easter eggs
+if sys.platform == 'win32':
+    try:
+        # For Python 3.7+
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8')
+            sys.stderr.reconfigure(encoding='utf-8')
+        # For older Python versions
+        else:
+            import codecs
+            sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+            sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
+        # Also set console code page to UTF-8
+        os.system('chcp 65001 >nul 2>&1')
+    except:
+        pass  # Fallback to default encoding if UTF-8 setup fails
 
 from core import Config, setup_logging
 from core.file_handler import FileHandler
@@ -501,6 +518,9 @@ class UnpackrApp:
 
         moved_count = 0
 
+        # Update progress immediately when starting a folder
+        self._update_progress(current, total, f"Scanning folder: {folder.name[:57]}")
+
         # Process PAR2 files FIRST - verify/repair archives before extraction
         # This is more efficient: if no repair needed, PAR2 files are deleted early (saves disk I/O)
         # If repair fails, corrupted archives are deleted, skipping extraction entirely
@@ -543,9 +563,12 @@ class UnpackrApp:
                     success = True
                     archive_error = False
                 else:
-                    # Pass progress callback to show extraction progress
+                    # Pass progress callback to show extraction progress with folder context
                     def extraction_progress(idx, total_archives, msg):
-                        self._update_progress(current, total, msg)
+                        # Add folder context to extraction message
+                        folder_context = f"[{folder.name[:30]}]" if len(folder.name) > 30 else f"[{folder.name}]"
+                        msg_with_context = f"{folder_context} {msg}"
+                        self._update_progress(current, total, msg_with_context)
                         self.stuck_detector.mark_progress()  # Mark progress during extraction
 
                     success = self.archive_processor.process_rar_files(folder, progress_callback=extraction_progress)
@@ -559,20 +582,15 @@ class UnpackrApp:
         else:
             # PAR2 repair failed - archives already deleted
             archive_error = True
-        
-        # Process subfolders
-        for subfolder in folder.iterdir():
-            if subfolder.is_dir():
-                self._process_subfolder(subfolder, destination_dir)
-        
-        # Process video files
+
+        # Process video files FIRST (before recursing into subfolders)
         video_files = self.file_handler.find_video_files(folder)
 
         # Remove sample/preview videos if full version exists
         video_files = self._remove_sample_videos(video_files)
 
-        # Track total videos found (before processing)
-        self.stats['videos_found'] += len(video_files)
+        # Note: videos_found is already set from work_plan.total_videos in run()
+        # Don't increment here to avoid double-counting
 
         for idx, video_file in enumerate(video_files, 1):
             # Show folder context and video being validated
@@ -606,7 +624,12 @@ class UnpackrApp:
                     logging.info(f"Deleting corrupt video: {video_file.name}")
                     if self.file_handler.wait_for_file_release(str(video_file)):
                         self.file_handler.delete_video_file_with_retry(video_file)
-        
+
+        # Process subfolders AFTER processing videos in this folder
+        for subfolder in folder.iterdir():
+            if subfolder.is_dir():
+                self._process_subfolder(subfolder, destination_dir)
+
         # Clean up folder if possible
         if self.file_handler.is_folder_empty_or_removable(folder, par2_error, archive_error):
             if self.dry_run:
@@ -657,33 +680,78 @@ class UnpackrApp:
 
             # Load comments from user's file
             if comments_file.exists():
-                with open(comments_file, 'r') as f:
+                with open(comments_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                    return data.get('comments', [])
+                    # Support both old format (list) and new format (dict with rarities)
+                    if isinstance(data.get('comments'), dict):
+                        return data  # New rarity-based format
+                    else:
+                        return data.get('comments', [])  # Old flat list format
         except Exception as e:
             logging.debug(f"Could not load comments: {e}")
         return []
 
     def _get_random_comment(self, current_folder: int):
         """
-        Randomly return a snarky comment (15% chance per folder).
+        Randomly return a snarky comment with rarity-based drop rates.
 
         Args:
             current_folder: Current folder number being processed
 
         Returns:
-            Comment string or None
+            Tuple of (comment, rarity, color, effect) or None
         """
-        # Don't show comment if we just showed one recently (within 5 folders)
-        if current_folder - self.last_comment_folder < 5:
+        # Don't show comment if we just showed one recently (within 3 folders)
+        if current_folder - self.last_comment_folder < 3:
             return None
 
-        # 15% chance to show a comment (increased for better user experience)
-        if self.comments and random.random() < 0.15:
-            self.last_comment_folder = current_folder
-            return random.choice(self.comments)
+        # Check if we have comments loaded
+        if not self.comments:
+            return None
 
-        return None
+        self.last_comment_folder = current_folder
+
+        # Support old format (flat list)
+        if isinstance(self.comments, list):
+            return (random.choice(self.comments), None, Fore.YELLOW)
+
+        # New rarity-based format
+        rarities = self.comments.get('rarities', {})
+        comments_by_rarity = self.comments.get('comments', {})
+
+        # Build weighted pool of rarities
+        rarity_pool = []
+        for rarity_name, rarity_config in rarities.items():
+            weight = rarity_config.get('weight', 1)
+            rarity_pool.extend([rarity_name] * weight)
+
+        if not rarity_pool:
+            return None
+
+        # Roll for rarity
+        selected_rarity = random.choice(rarity_pool)
+        rarity_config = rarities[selected_rarity]
+        comment_list = comments_by_rarity.get(selected_rarity, [])
+
+        if not comment_list:
+            return None
+
+        comment = random.choice(comment_list)
+
+        # Get color from colorama
+        color_map = {
+            'white': Fore.WHITE,
+            'green': Fore.GREEN,
+            'cyan': Fore.CYAN,
+            'magenta': Fore.MAGENTA,
+            'yellow': Fore.YELLOW,
+            'red': Fore.RED,
+            'blue': Fore.BLUE
+        }
+        color = color_map.get(rarity_config.get('color', 'yellow'), Fore.YELLOW)
+        effect = rarity_config.get('effect', 'normal')
+
+        return (comment, selected_rarity, color, effect)
 
     def _spinner_loop(self):
         """Background thread - updates spinner every second."""
@@ -694,8 +762,8 @@ class UnpackrApp:
                     # Just update the spinner character in-place
                     spinner = self.spinner_frames[self.spinner_index]
                     self.spinner_index = (self.spinner_index + 1) % len(self.spinner_frames)
-                    # Move to line 12, column 3 (spinner line) and update just that character
-                    sys.stdout.write(f'\033[12;3H{Fore.GREEN}{spinner}{Style.RESET_ALL}')
+                    # Move to line 13, column 3 (spinner line) and update just that character
+                    sys.stdout.write(f'\033[13;3H{Fore.GREEN}{spinner}{Style.RESET_ALL}')
                     sys.stdout.flush()
 
     def _update_progress(self, current: int, total: int, action: str):
@@ -743,7 +811,7 @@ class UnpackrApp:
         bad_videos = self.stats['videos_corrupt'] + self.stats['videos_sample']
 
         # Core stats: found vs processed (success rate at a glance)
-        stats_line = f"  {Style.DIM}found:{Style.RESET_ALL} {Fore.WHITE}{videos_found}{Style.RESET_ALL}  {Style.DIM}processed:{Style.RESET_ALL} {Fore.GREEN}{videos_processed}{Style.RESET_ALL}"
+        stats_line = f"  {Style.DIM}found videos:{Style.RESET_ALL} {Fore.WHITE}{videos_found}{Style.RESET_ALL}  {Style.DIM}processed:{Style.RESET_ALL} {Fore.GREEN}{videos_processed}{Style.RESET_ALL}"
 
         # Show bad videos removed
         if bad_videos > 0:
@@ -759,6 +827,9 @@ class UnpackrApp:
         # Show cleanup progress
         if self.stats['folders_deleted'] > 0:
             stats_line += f"  {Style.DIM}cleaned:{Style.RESET_ALL} {Fore.YELLOW}{self.stats['folders_deleted']}{Style.RESET_ALL}"
+
+        if self.stats['empty_folders_deleted'] > 0:
+            stats_line += f"  {Style.DIM}empty:{Style.RESET_ALL} {Fore.CYAN}{self.stats['empty_folders_deleted']}{Style.RESET_ALL}"
 
         if self.stats['junk_files_deleted'] > 0:
             stats_line += f"  {Style.DIM}junk:{Style.RESET_ALL} {Fore.YELLOW}{self.stats['junk_files_deleted']}{Style.RESET_ALL}"
@@ -782,7 +853,7 @@ class UnpackrApp:
             sys.stdout.write('\033[7;1H')  # Move to line 7, column 1
 
         # Progress bar
-        sys.stdout.write(f"  {Style.DIM}[{Style.RESET_ALL}{Fore.GREEN}{bar}{Style.DIM}]{Style.RESET_ALL} {Fore.WHITE}{percent}%{Style.RESET_ALL} {Style.DIM}│{Style.RESET_ALL} {Fore.WHITE}{current}{Style.RESET_ALL}{Style.DIM}/{total}{Style.RESET_ALL}\033[K\n")
+        sys.stdout.write(f"  {Style.DIM}[{Style.RESET_ALL}{Fore.GREEN}{bar}{Style.DIM}]{Style.RESET_ALL} {Fore.WHITE}{percent}%{Style.RESET_ALL} {Style.DIM}│{Style.RESET_ALL} {Fore.WHITE}{current}{Style.RESET_ALL}{Style.DIM}/{total} folders{Style.RESET_ALL}\033[K\n")
 
         # Stats
         sys.stdout.write(f"{stats_line}\033[K\n")
@@ -808,16 +879,83 @@ class UnpackrApp:
         sys.stdout.write(f"  {Style.DIM}speed:{Style.RESET_ALL} {Fore.CYAN}{throughput:>5.1f}{Style.RESET_ALL} {Style.DIM}folders/min  time left:{Style.RESET_ALL} {Fore.CYAN}{eta}{Style.RESET_ALL}  {Style.DIM}saved:{Style.RESET_ALL} {Fore.MAGENTA}{time_saved_str}{Style.RESET_ALL}\033[K\n")
         sys.stdout.write("\n")
 
-        # Current action (line 11) - shows what's happening (with occasional easter egg)
-        comment = self._get_random_comment(current)
-        if comment:
-            # Show snarky comment instead of action (easter egg!)
-            sys.stdout.write(f"  {Style.DIM}>{Style.RESET_ALL} {Fore.YELLOW}{comment[:75]}{Style.RESET_ALL}\033[K\n")
-        else:
-            sys.stdout.write(f"  {Style.DIM}>{Style.RESET_ALL} {action[:80]:<80}\033[K\n")
+        # Extract the operation verb and the file/folder from action
+        # Action format examples:
+        # "Scanning folder: test"
+        # "[test] Validate 4/42: filename.mp4"
+        # "PAR2 verify/repair: foldername"
+        # "Extract 5 archives: foldername"
 
-        # Spinner line (line 12) - animates continuously
-        sys.stdout.write(f"  {Fore.GREEN}{spinner}{Style.RESET_ALL} {Style.DIM}working{Style.RESET_ALL}\033[K")
+        # Determine the verb/operation
+        verb = "working"
+        target = action
+
+        if "Scanning" in action or "Finding" in action or "Checking" in action:
+            verb = "scanning"
+            # Extract target after the colon
+            if ":" in action:
+                target = action.split(":", 1)[1].strip()
+        elif "PAR2" in action or "verify" in action or "repair" in action:
+            verb = "repairing"
+            if ":" in action:
+                target = action.split(":", 1)[1].strip()
+        elif "Extract" in action or "Extracting" in action:
+            verb = "extracting"
+            # Keep folder context like "[folder] Extracting: file.rar"
+            if "]" in action and ":" in action:
+                folder_part = action.split("]")[0] + "]"
+                filename_part = action.split(":")[-1].strip()
+                target = f"{folder_part} {filename_part}"
+            elif ":" in action:
+                target = action.split(":", 1)[1].strip()
+        elif "Validate" in action:
+            verb = "validating"
+            # Extract folder and filename: "[folder] Validate 4/42: filename"
+            # Keep folder context and filename
+            if "]" in action and ":" in action:
+                # Extract [folder] and filename parts
+                folder_part = action.split("]")[0] + "]"
+                filename_part = action.split(":")[-1].strip()
+                target = f"{folder_part} {filename_part}"
+            elif ":" in action:
+                target = action.split(":")[-1].strip()
+
+        # Current file/folder (line 11)
+        sys.stdout.write(f"  {Style.DIM}>{Style.RESET_ALL} {target[:80]:<80}\033[K\n")
+
+        # Easter egg comment (line 12) - optional snarky comment with rarity
+        comment_result = self._get_random_comment(current)
+        if comment_result:
+            # Unpack rarity info
+            if isinstance(comment_result, tuple) and len(comment_result) >= 3:
+                comment, rarity, color = comment_result[0], comment_result[1], comment_result[2]
+                effect = comment_result[3] if len(comment_result) > 3 else ''
+
+                # Apply visual effects based on rarity
+                if effect == 'legendary':
+                    # Special legendary effect: rockets + gold/yellow + bright (1% drop!)
+                    sys.stdout.write(f"  {Style.DIM}│{Style.RESET_ALL} {Fore.YELLOW}{Style.BRIGHT}🚀 {comment[:71]} 🚀{Style.RESET_ALL}\033[K\n")
+                else:
+                    # Normal rarity effects
+                    style = ''
+                    if effect == 'dim':
+                        style = Style.DIM
+                    elif effect == 'bright':
+                        style = Style.BRIGHT
+                    elif effect == 'bright_bold':
+                        style = Style.BRIGHT
+                    elif effect == 'normal':
+                        style = Style.NORMAL
+
+                    sys.stdout.write(f"  {Style.DIM}│{Style.RESET_ALL} {color}{style}{comment[:75]}{Style.RESET_ALL}\033[K\n")
+            else:
+                # Old format fallback
+                sys.stdout.write(f"  {Style.DIM}│{Style.RESET_ALL} {Fore.YELLOW}{comment_result[:75]}{Style.RESET_ALL}\033[K\n")
+        else:
+            sys.stdout.write("\033[K\n")  # Clear line if no comment
+
+        # Spinner line (line 13) - spinner + verb
+        sys.stdout.write(f"  {Fore.GREEN}{spinner}{Style.RESET_ALL} {Style.DIM}{verb}{Style.RESET_ALL}\033[K")
 
         sys.stdout.flush()
     
@@ -949,6 +1087,9 @@ class UnpackrApp:
         # Track preserved folders
         self.stats['folders_preserved'] = len(self.work_plan.content_folders)
 
+        # Initialize videos_found from pre-scan total
+        self.stats['videos_found'] = self.work_plan.total_videos
+
         self.start_time = time.time()
         total = len(video_folders)
 
@@ -962,10 +1103,6 @@ class UnpackrApp:
 
         try:
             for i, folder in enumerate(video_folders, 1):
-                # Initialize dashboard on first folder
-                if i == 1:
-                    self._update_progress(0, total, f"Initializing... {total} folders queued")
-
                 # Safety checks
                 if not loop_guard.tick():
                     logging.error("[SAFETY] Folder processing loop exceeded safety limit")
