@@ -12,7 +12,7 @@
     "min_sample_size_mb": 50,
     "max_log_files": 3,
     "log_folder": "logs",
-    "image_collection_threshold": 5,
+    "image_collection_threshold": 10,
     "file_move_max_attempts": 3,
     "file_delete_max_attempts": 5,
     "file_delete_retry_delay": 1,

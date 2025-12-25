@@ -192,7 +192,8 @@ class ArchiveProcessor:
                 par2_cmd + ['r', str(par2_file)],
                 timeout=par2_timeout,
                 cwd=folder,
-                operation=f"PAR2 repair: {par2_file.name}"
+                operation=f"PAR2 repair: {par2_file.name}",
+                use_temp_files=True  # PAR2 can output large amounts of data, use temp files
             )
             elapsed = time.time() - start_time
 

@@ -325,8 +325,9 @@ Edit `config_files/config.json`:
   "document_extensions": [".pdf", ".doc", ".docx", ".txt", ".xls", ".xlsx"],
   "removable_extensions": [".nfo", ".sfv", ".url", ".diz", ".txt", ".m3u"],
   "min_sample_size_mb": 50,
-  "min_music_files": 3,
-  "min_image_files": 5,
+  "min_music_files": 10,
+  "min_image_files": 10,
+  "min_documents": 10,
   "max_log_files": 3,
   "log_folder": "logs"
 }
@@ -335,7 +336,9 @@ Edit `config_files/config.json`:
 **Key settings:**
 - `tool_paths` - Custom paths to external tools (arrays try in order)
 - `min_sample_size_mb` - Videos smaller than this are considered samples (default: 50MB)
-- `min_music_files` / `min_image_files` / `min_documents` - How many files needed to preserve a folder
+- `min_music_files` - Folders with at least this many music files are preserved (default: 10)
+- `min_image_files` - Folders with at least this many image files AND ≥10MB total are preserved (default: 10)
+- `min_documents` - Folders with at least this many document files are preserved (default: 10)
 - `max_log_files` - Keep last N logs (default: 3)
 
 ### Customizing What Gets Kept vs Deleted
@@ -352,11 +355,11 @@ Setting this high effectively disables sample detection.
 ```json
 {
   "min_music_files": 3,
-  "min_image_files": 5,
+  "min_image_files": 3,
   "min_documents": 1
 }
 ```
-Lower thresholds = more folders preserved.
+Lower thresholds = more folders preserved. Note: Image folders also require ≥10MB total size regardless of file count to distinguish actual image collections from cover art.
 
 **Want to keep .txt files?**
 ```json

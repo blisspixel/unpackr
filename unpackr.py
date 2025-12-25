@@ -257,13 +257,24 @@ class UnpackrApp:
         self.current_action = ""  # Current action text
         self.progress_current = 0  # Current progress
         self.progress_total = 0  # Total progress
+        self.current_comment_display = None  # Store current comment to persist across updates
         self.spinner_thread = None  # Background spinner thread
         self.spinner_running = False  # Control flag for spinner thread
         self.spinner_lock = threading.Lock()  # Thread safety for spinner updates
 
         # Load snarky comments for easter eggs
         self.comments = self._load_comments()
-        self.last_comment_folder = -1  # Track when we last showed a comment
+        self.last_comment_folder = -10  # Track when we last showed a comment (start at -10 so first folder shows)
+
+        # Debug: Log if comments loaded successfully
+        if self.comments:
+            if isinstance(self.comments, dict):
+                num_categories = len(self.comments.get('comments', {}))
+                logging.debug(f"Loaded rarity-based comments with {num_categories} categories")
+            else:
+                logging.debug(f"Loaded {len(self.comments)} flat comments")
+        else:
+            logging.warning("No comments loaded - easter eggs disabled")
 
     def scan_and_plan(self, source_dir: Path) -> WorkPlan:
         """
@@ -552,7 +563,8 @@ class UnpackrApp:
             for file in folder.iterdir():
                 if file.is_file():
                     ext_lower = file.suffix.lower()
-                    if ext_lower == '.rar' or rar_pattern.match(ext_lower) or ext_lower == '.7z' or sevenz_pattern.match(ext_lower):
+                    filename_lower = file.name.lower()
+                    if ext_lower == '.rar' or rar_pattern.match(ext_lower) or ext_lower == '.7z' or '.7z.' in filename_lower:
                         archive_files.append(file)
             if archive_files:
                 # More specific message - show archive count
@@ -694,6 +706,7 @@ class UnpackrApp:
     def _get_random_comment(self, current_folder: int):
         """
         Randomly return a snarky comment with rarity-based drop rates.
+        Comments persist for the entire folder - only change when moving to new eligible folder.
 
         Args:
             current_folder: Current folder number being processed
@@ -701,19 +714,34 @@ class UnpackrApp:
         Returns:
             Tuple of (comment, rarity, color, effect) or None
         """
-        # Don't show comment if we just showed one recently (within 3 folders)
-        if current_folder - self.last_comment_folder < 3:
+        # Check if we need to generate a new comment (every 10 folders)
+        should_show_comment = current_folder - self.last_comment_folder >= 10
+
+        # Clear stored comment if we've moved past it
+        # Only clear if the current folder shouldn't show this old comment
+        if current_folder != self.last_comment_folder and not should_show_comment:
+            self.current_comment_display = None
+
+        # If we have a valid comment for the current eligible folder, return it
+        if self.current_comment_display is not None and current_folder == self.last_comment_folder:
+            return self.current_comment_display
+
+        # Don't show comment if cooldown hasn't elapsed
+        if not should_show_comment:
             return None
 
         # Check if we have comments loaded
         if not self.comments:
             return None
 
+        # Generate new comment for this folder
         self.last_comment_folder = current_folder
 
         # Support old format (flat list)
         if isinstance(self.comments, list):
-            return (random.choice(self.comments), None, Fore.YELLOW)
+            comment_result = (random.choice(self.comments), None, Fore.YELLOW)
+            self.current_comment_display = comment_result
+            return comment_result
 
         # New rarity-based format
         rarities = self.comments.get('rarities', {})
@@ -751,7 +779,9 @@ class UnpackrApp:
         color = color_map.get(rarity_config.get('color', 'yellow'), Fore.YELLOW)
         effect = rarity_config.get('effect', 'normal')
 
-        return (comment, selected_rarity, color, effect)
+        comment_result = (comment, selected_rarity, color, effect)
+        self.current_comment_display = comment_result
+        return comment_result
 
     def _spinner_loop(self):
         """Background thread - updates spinner every second."""
@@ -785,7 +815,9 @@ class UnpackrApp:
 
         if self.start_time:
             elapsed = time.time() - self.start_time
-            if current > 0 and elapsed >= 1.0:
+            # Need at least 10 folders and 30 seconds for meaningful speed estimate
+            # Early folders are often just quick scans, which inflates the speed
+            if current >= 10 and elapsed >= 30.0:
                 avg_time = elapsed / current
                 remaining = (total - current) * avg_time
                 eta = str(timedelta(seconds=int(remaining))).split('.')[0]
@@ -998,7 +1030,8 @@ class UnpackrApp:
                 for file in subfolder.iterdir():
                     if file.is_file():
                         ext_lower = file.suffix.lower()
-                        if ext_lower == '.rar' or rar_pattern.match(ext_lower) or ext_lower == '.7z' or sevenz_pattern.match(ext_lower):
+                        filename_lower = file.name.lower()
+                        if ext_lower == '.rar' or rar_pattern.match(ext_lower) or ext_lower == '.7z' or '.7z.' in filename_lower:
                             archive_files.append(file)
 
                 archive_error = False
@@ -1090,8 +1123,18 @@ class UnpackrApp:
         # Initialize videos_found from pre-scan total
         self.stats['videos_found'] = self.work_plan.total_videos
 
+        # Reset all run state (ensure nothing persists from previous runs)
         self.start_time = time.time()
-        total = len(video_folders)
+        self.progress_current = 0
+        self.current_comment_display = None
+        self.last_comment_folder = -10  # Reset to allow first folder to show comment
+
+        # Use actual folder count that updates as we process
+        # Start with initial scan count
+        self.progress_total = len(video_folders)
+        total = self.progress_total
+
+        logging.info(f"Starting run: {total} folders to process")
 
         # Safety: Initialize runtime limit from config
         from utils.safety import OperationTimer
@@ -1103,6 +1146,10 @@ class UnpackrApp:
 
         try:
             for i, folder in enumerate(video_folders, 1):
+                # Debug: Log first iteration to confirm enumerate starts at 1
+                if i == 1:
+                    logging.info(f"Processing first folder (i=1): {folder.name}")
+
                 # Safety checks
                 if not loop_guard.tick():
                     logging.error("[SAFETY] Folder processing loop exceeded safety limit")

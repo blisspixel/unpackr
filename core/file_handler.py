@@ -62,6 +62,19 @@ class FileHandler:
         name = path.stem
         ext = path.suffix
 
+        # Fix misnamed video files like .mp4.1, .mkv.bak, etc.
+        # Check if stem ends with a video extension
+        video_exts = {'.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg'}
+        name_lower = name.lower()
+        for video_ext in video_exts:
+            if name_lower.endswith(video_ext):
+                # file.mp4.1 -> name="file.mp4", ext=".1"
+                # Change to: name="file", ext=".mp4"
+                name = name[:-len(video_ext)]
+                ext = video_ext
+                logging.info(f"Fixed misnamed video extension: {filename} -> {name}{ext}")
+                break
+
         # Replace forbidden Windows characters with safe alternatives
         replacements = {
             '<': '(',
@@ -235,6 +248,7 @@ class FileHandler:
         """
         removable_extensions = self.config.removable_extensions
         image_count = 0
+        image_total_bytes = 0
         image_extensions = self.config.image_extensions
 
         for file in folder.iterdir():
@@ -247,11 +261,18 @@ class FileHandler:
             # Count image files (distinguish between single cover art vs image collection)
             if file_ext in image_extensions:
                 image_count += 1
-                threshold = getattr(self.config, 'image_collection_threshold', 5)
-                if image_count >= threshold:  # >= threshold images = collection, preserve folder
-                    logging.info(f"Folder '{folder}' not deleted: contains image collection ({image_count}+ images)")
+                try:
+                    image_total_bytes += file.stat().st_size
+                except (OSError, FileNotFoundError):
+                    pass
+                # Match scan logic: need both min_image_files threshold AND >10MB to be considered a collection
+                # Just having 5-10 cover art images shouldn't protect the folder
+                image_total_mb = image_total_bytes / (1024 * 1024)
+                min_images = self.config.min_image_files
+                if image_count > min_images and image_total_mb > 10:
+                    logging.info(f"Folder '{folder}' not deleted: contains image collection ({image_count} images, {image_total_mb:.1f}MB)")
                     return False
-                continue  # Single images (cover art) are treated as removable
+                continue  # Single images and small collections (cover art) are treated as removable
 
             # Check if it's a removable file (junk)
             elif file_ext in removable_extensions or (file_ext.startswith('.r') and file_ext[2:].isdigit()):
