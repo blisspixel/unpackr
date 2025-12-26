@@ -23,7 +23,7 @@ class SafetyLimits:
     # Process timeouts (seconds) - Defaults for small files
     RAR_EXTRACTION_TIMEOUT = 300  # 5 minutes per RAR (default, will be calculated dynamically)
     PAR2_REPAIR_TIMEOUT = 600     # 10 minutes per PAR2 (default, will be calculated dynamically)
-    VIDEO_CHECK_TIMEOUT = 60      # 1 minute per video
+    VIDEO_CHECK_TIMEOUT = 180     # 3 minutes per video (increased for large 4K files)
     FFMPEG_TIMEOUT = 45           # 45 seconds for ffmpeg
 
     # PERFORMANCE: Dynamic timeout calculation parameters

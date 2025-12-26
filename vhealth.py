@@ -1,5 +1,5 @@
 """
-Video Health Checker - Standalone utility for validating video files.
+vhealth - Check videos for corruption, find duplicates, detect samples
 
 Usage:
     vhealth "C:\Videos"                    # Check all videos in folder
@@ -15,8 +15,11 @@ from pathlib import Path
 from colorama import init, Fore, Style
 from typing import List, Tuple
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent))
+# Add parent directory to path for imports (so it works from any directory)
+# Get the directory where vhealth.py is located (the unpackr directory)
+script_dir = Path(__file__).resolve().parent
+if str(script_dir) not in sys.path:
+    sys.path.insert(0, str(script_dir))
 
 from core import Config
 from core.video_processor import VideoProcessor
@@ -55,15 +58,14 @@ class VideoHealthChecker:
             self._check_video(path, min_resolution, skip_health=skip_health)
         elif path.is_dir():
             video_files = self._find_videos(path)
-            print(f"\n{Fore.CYAN}Found {len(video_files)} video files{Style.RESET_ALL}")
+            print(f"\n{Fore.CYAN}{path}{Style.RESET_ALL}")
+            print(f"{Style.DIM}Found {len(video_files)} videos{Style.RESET_ALL}\n")
 
             # Quick pre-scan for samples and low-res if not skipping
             delete_bad_now = False
             auto_clean = skip_health  # If --clean flag used, auto-delete without prompting
 
             if not skip_samples or min_resolution:
-                print(f"{Style.DIM}Initial check...{Style.RESET_ALL}\n")
-
                 # Count small files and samples separately
                 small_files = []
                 sample_name_files = []
@@ -77,12 +79,21 @@ class VideoHealthChecker:
 
                 # Check resolution if specified
                 if min_resolution:
-                    print(f"{Style.DIM}Checking resolution...{Style.RESET_ALL}\n")
-                    for video in video_files:
-                        if video not in small_files:  # Skip small files
+                    non_small = [v for v in video_files if v not in small_files]
+                    if non_small:
+                        print(f"{Style.DIM}Checking resolution ({len(non_small)} files)...{Style.RESET_ALL}\n")
+                        for i, video in enumerate(non_small, 1):
+                            filename = video.name[:70] + '...' if len(video.name) > 70 else video.name
+                            print(f"\r  {Style.DIM}[{i}/{len(non_small)}]{Style.RESET_ALL} {filename}", end='', flush=True)
                             resolution = self._get_resolution(video)
                             if resolution and not self._meets_min_resolution(resolution, min_resolution):
+                                res_str = f"{resolution[0]}x{resolution[1]}"
+                                print(f"\r  {Style.DIM}[{i}/{len(non_small)}]{Style.RESET_ALL} {filename[:50]}... {Fore.YELLOW}{res_str}{Style.RESET_ALL}")
                                 self.low_res_videos.append((video, resolution))
+                            else:
+                                # Clear line for good files
+                                print(f"\r{' ' * 120}\r", end='', flush=True)
+                        print(f"\r{' ' * 120}\r", end='', flush=True)  # Clear final line
 
                 # Store results
                 self.sample_videos = small_files
@@ -91,13 +102,16 @@ class VideoHealthChecker:
                 total_bad = len(self.sample_videos) + len(self.low_res_videos)
                 if total_bad > 0:
                     remaining_count = len(video_files) - total_bad
-                    print(f"{Fore.YELLOW}Found:{Style.RESET_ALL}")
-                    print(f"  {len(small_files)} small files {Style.DIM}(<50MB){Style.RESET_ALL}")
-                    if sample_name_files:
-                        print(f"  {len(sample_name_files)} named 'sample'")
+                    print(f"\n{Fore.YELLOW}Pre-scan results:{Style.RESET_ALL}")
+                    if small_files:
+                        print(f"  {len(small_files)} small {Style.DIM}(<50MB){Style.RESET_ALL}", end='')
+                        if sample_name_files:
+                            print(f" {Style.DIM}({len(sample_name_files)} samples){Style.RESET_ALL}")
+                        else:
+                            print()
                     if self.low_res_videos:
-                        print(f"  {len(self.low_res_videos)} low resolution")
-                    print(f"  {remaining_count} remaining to check\n")
+                        print(f"  {len(self.low_res_videos)} low-res {Style.DIM}(below {min_resolution}){Style.RESET_ALL}")
+                    print(f"  {Fore.WHITE}{remaining_count}{Style.RESET_ALL} {Style.DIM}remaining{Style.RESET_ALL}\n")
 
                     # Auto-delete if --clean flag, otherwise ask
                     if auto_clean:
@@ -119,52 +133,83 @@ class VideoHealthChecker:
                     self._delete_videos(bad_files)
                     print()
 
+            # Check for duplicates BEFORE health check (no point checking same file twice)
+            if not skip_health:
+                remaining_files = [v for v in video_files if not (delete_bad_now and (v in self.sample_videos or any(vv == v for vv, _ in self.low_res_videos)))]
+                print(f"{Style.DIM}Checking for duplicates...{Style.RESET_ALL}\n")
+                self._detect_duplicates(remaining_files)
+
+                # Delete duplicates if requested
+                if delete_bad_now and self.duplicate_videos:
+                    dupes_to_delete = [v for v, _, _ in self.duplicate_videos]
+                    if dupes_to_delete:
+                        print(f"{Fore.YELLOW}Found {len(dupes_to_delete)} duplicates{Style.RESET_ALL}\n")
+                        self._delete_videos(dupes_to_delete)
+                        print()
+
             # Now do health checks on remaining videos (if not skipping)
             if not skip_health:
-                videos_to_check = [v for v in video_files if not (delete_bad_now and (v in self.sample_videos or any(vv == v for vv, _ in self.low_res_videos)))]
+                videos_to_check = [v for v in video_files
+                                  if v.exists()
+                                  and not (delete_bad_now and (v in self.sample_videos or any(vv == v for vv, _ in self.low_res_videos)))
+                                  and v not in [vv for vv, _, _ in self.duplicate_videos]]
 
                 if not videos_to_check:
                     return
 
-                print(f"{Style.DIM}Checking {len(videos_to_check)} videos...{Style.RESET_ALL}\n")
+                print(f"{Style.DIM}Health check ({len(videos_to_check)} files)...{Style.RESET_ALL}\n")
 
                 # Track problems for display
                 problems = []
+                healthy_count = 0
+                bad_count = 0
 
                 for i, video in enumerate(videos_to_check, 1):
-                    # Show progress
-                    if len(videos_to_check) > 5:
-                        print(f"\r{Style.DIM}  {i}/{len(videos_to_check)}{Style.RESET_ALL}", end='', flush=True)
+                    filename = video.name[:65] + '...' if len(video.name) > 65 else video.name
 
                     # Skip if file no longer exists
                     if not video.exists():
                         continue
 
+                    # Show counts first (fixed position), then progress, then filename
+                    counts = f"{Fore.GREEN}{healthy_count} ok{Style.RESET_ALL}"
+                    if bad_count > 0:
+                        counts += f"  {Fore.RED}{bad_count} bad{Style.RESET_ALL}"
+
+                    print(f"\r  {counts}  {Style.DIM}[{i}/{len(videos_to_check)}]{Style.RESET_ALL} {filename}{' ' * 20}", end='', flush=True)
+
                     # Check the video
                     result = self._check_video_silent(video)
 
-                    # Only track problems
-                    if result != 'healthy':
+                    # Update counts after check
+                    if result == 'healthy':
+                        healthy_count += 1
+                        # Update counts on same line
+                        counts = f"{Fore.GREEN}{healthy_count} ok{Style.RESET_ALL}"
+                        if bad_count > 0:
+                            counts += f"  {Fore.RED}{bad_count} bad{Style.RESET_ALL}"
+                        print(f"\r  {counts}  {Style.DIM}[{i}/{len(videos_to_check)}]{Style.RESET_ALL} {filename}{' ' * 20}", end='', flush=True)
+                    else:
+                        # Problem found - show it and keep it visible
+                        bad_count += 1
+                        counts = f"{Fore.GREEN}{healthy_count} ok{Style.RESET_ALL}  {Fore.RED}{bad_count} bad{Style.RESET_ALL}"
+                        print(f"\r{' ' * 150}\r", end='', flush=True)  # Clear line
+                        print(f"  {counts}  {Style.DIM}[{i}/{len(videos_to_check)}]{Style.RESET_ALL} {filename[:55]}... {Fore.RED}{result}{Style.RESET_ALL}")
                         problems.append((video, result))
 
-                # Clear progress line
-                if len(videos_to_check) > 5:
-                    print(f"\r{' ' * 20}\r", end='')
-
-                # Show problems found
-                if problems:
-                    print()
-                    for video, status in problems:
-                        print(f"{video.name}")
-                        print(f"  {status}")
-                        print()
+                # Clear line and show final summary
+                print(f"\r{' ' * 120}\r", end='', flush=True)
+                print(f"{Fore.GREEN}{healthy_count} healthy{Style.RESET_ALL}", end='')
+                if bad_count > 0:
+                    print(f"  |  {Fore.RED}{bad_count} corrupt{Style.RESET_ALL}\n")
                 else:
-                    print()
+                    print(f"\n")
 
-            # Duplicate detection (after health checks)
-            if not skip_health:
-                print(f"{Style.DIM}Checking for duplicates...{Style.RESET_ALL}\n")
-                self._detect_duplicates(video_files)
+                # Delete corrupt files if requested
+                if delete_bad_now and problems:
+                    corrupt_files = [v for v, _ in problems]
+                    self._delete_videos(corrupt_files)
+                    print()
         else:
             print(f"{Fore.RED}Path not found: {path}{Style.RESET_ALL}")
 
@@ -318,39 +363,30 @@ class VideoHealthChecker:
                 unique_duplicates.append((video, original, reason))
         self.duplicate_videos = unique_duplicates
 
-        # Strategy 4: Similar names + similar sizes (potential duplicates for manual review)
-        checked_pairs = set()
-        for i, video1 in enumerate(valid_videos):
-            if video1 in [v for v, _, _ in self.duplicate_videos]:
-                continue  # Already confirmed as duplicate
+        # Strategy 4: Only flag files with "copy" or "duplicate" in filename
+        # This is much more conservative - only obvious duplicates
+        duplicate_patterns = ['(copy)', '- copy', ' copy', '(duplicate)', ' duplicate', '- duplicate']
 
-            for video2 in valid_videos[i+1:]:
-                if video2 in [v for v, _, _ in self.duplicate_videos]:
-                    continue
+        for video in valid_videos:
+            if video in [v for v, _, _ in self.duplicate_videos]:
+                continue  # Skip confirmed duplicates
 
-                # Avoid checking same pair twice
-                pair_key = tuple(sorted([str(video1), str(video2)]))
-                if pair_key in checked_pairs:
-                    continue
-                checked_pairs.add(pair_key)
+            filename_lower = video.name.lower()
 
-                # Compare names
-                name1 = video1.stem.lower()
-                name2 = video2.stem.lower()
-                similarity = SequenceMatcher(None, name1, name2).ratio()
+            # Check if filename contains duplicate markers
+            for pattern in duplicate_patterns:
+                if pattern in filename_lower:
+                    # Find the original (file without the duplicate marker)
+                    # Try to find a matching file without the pattern
+                    original_name = video.name
+                    for p in duplicate_patterns:
+                        original_name = original_name.replace(p, '').replace('  ', ' ')
 
-                # Compare sizes (within 1% - tighter threshold)
-                try:
-                    size1 = video1.stat().st_size
-                    size2 = video2.stat().st_size
-                    size_diff = abs(size1 - size2) / max(size1, size2)
+                    original_path = video.parent / original_name
 
-                    # Very high name similarity + nearly identical size = potential duplicate
-                    # Require 95% name match AND <1% size difference
-                    if similarity >= 0.95 and size_diff <= 0.01:
-                        self.potential_duplicates.append((video1, video2, similarity))
-                except:
-                    continue
+                    if original_path.exists() and original_path != video:
+                        self.duplicate_videos.append((video, original_path, "Duplicate filename pattern"))
+                    break
 
     def _find_videos(self, directory: Path) -> List[Path]:
         """Find all video files in directory and subdirectories."""
@@ -642,29 +678,46 @@ class VideoHealthChecker:
         failed_count = 0
         total_freed_mb = 0
 
-        print(f"\n{Style.DIM}Deleting...{Style.RESET_ALL}\n")
+        print(f"\n{Style.DIM}Deleting {len(videos)} files...{Style.RESET_ALL}\n")
 
-        for video in videos:
+        for i, video in enumerate(videos, 1):
             try:
                 size_mb = video.stat().st_size / (1024 * 1024)
+                filename = video.name[:55] + '...' if len(video.name) > 55 else video.name
+
+                # Show current file being deleted with running count
+                status_line = f"  {Style.DIM}[{i}/{len(videos)}]{Style.RESET_ALL} {filename}  {Fore.GREEN}{deleted_count} deleted{Style.RESET_ALL}"
+                if failed_count > 0:
+                    status_line += f"  {Fore.RED}{failed_count} failed{Style.RESET_ALL}"
+                print(f"\r{status_line}", end='', flush=True)
+
                 video.unlink()
                 deleted_count += 1
                 total_freed_mb += size_mb
-                print(f"  {Fore.GREEN}ok{Style.RESET_ALL}  {video.name}")
+
+                # Update running count after successful delete
+                status_line = f"  {Style.DIM}[{i}/{len(videos)}]{Style.RESET_ALL} {filename}  {Fore.GREEN}{deleted_count} deleted{Style.RESET_ALL}"
+                if failed_count > 0:
+                    status_line += f"  {Fore.RED}{failed_count} failed{Style.RESET_ALL}"
+                print(f"\r{status_line}", end='', flush=True)
             except Exception as e:
                 failed_count += 1
-                print(f"  {Fore.RED}err{Style.RESET_ALL} {video.name} {Style.DIM}({e}){Style.RESET_ALL}")
+                # Show failure and keep it visible
+                print(f"\r{' ' * 120}\r", end='', flush=True)
+                print(f"  {Style.DIM}[{i}/{len(videos)}]{Style.RESET_ALL} {filename[:50]}... {Fore.RED}failed{Style.RESET_ALL}")
 
-        print(f"\n{Fore.GREEN}Deleted {deleted_count}{Style.RESET_ALL} {Style.DIM}({total_freed_mb:.1f}MB freed){Style.RESET_ALL}")
+        # Clear line and show final summary
+        print(f"\r{' ' * 120}\r", end='', flush=True)
+        print(f"{Fore.GREEN}{deleted_count} deleted{Style.RESET_ALL} {Style.DIM}({total_freed_mb:.1f}MB freed){Style.RESET_ALL}")
 
         if failed_count > 0:
-            print(f"{Fore.YELLOW}Failed {failed_count}{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}{failed_count} failed{Style.RESET_ALL}")
 
 
 def main():
     """Main entry point for vhealth command."""
     parser = argparse.ArgumentParser(
-        description="Video health checker - Validate video files and detect issues",
+        description="Check videos for corruption, find duplicates, detect samples and low-res files",
         epilog="Examples:\n"
                "  vhealth \"C:\\Videos\"\n"
                "  vhealth \"C:\\Videos\\movie.mkv\"\n"
@@ -695,8 +748,8 @@ def main():
         logging.basicConfig(level=logging.ERROR, format='%(message)s')  # Only errors, suppress warnings
 
     # Print header
-    print(f"\n{Fore.CYAN}vhealth{Style.RESET_ALL} {Style.DIM}v1.0{Style.RESET_ALL}")
-    print(f"{Style.DIM}Video health checker and validator{Style.RESET_ALL}\n")
+    print(f"\n{Fore.CYAN}vhealth{Style.RESET_ALL} {Style.DIM}v1.2.1{Style.RESET_ALL}")
+    print(f"{Style.DIM}Check videos for corruption, duplicates, samples{Style.RESET_ALL}\n")
 
     # Load config
     if args.config:
