@@ -5,7 +5,7 @@
     "document_extensions": [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".rtf", ".odt"],
     "ebook_extensions": [".epub", ".mobi", ".azw", ".azw3", ".pdf"],
     "archive_extensions": [".zip", ".7z", ".rar"],
-    "removable_extensions": [".sfv", ".nfo", ".srr", ".srs", ".url", ".db", ".nzb", ".txt", ".xml", ".dat", ".exe", ".htm", ".log"],
+    "removable_extensions": [".sfv", ".nfo", ".srr", ".srs", ".url", ".db", ".nzb", ".txt", ".xml", ".dat", ".exe", ".htm", ".html", ".log", ".json", ".encr", ".encrypted", ".md5", ".sha1", ".sha256", ".torrent", ".magnet"],
     "min_music_files": 10,
     "min_image_files": 10,
     "min_documents": 10,

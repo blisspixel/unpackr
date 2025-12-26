@@ -50,6 +50,21 @@ class ArchiveProcessor:
 
             # Find 7z files - only .7z or .7z.001 (7z auto-handles .7z.002+)
             sevenz_files = list(folder.glob('*.7z')) + list(folder.glob('*.7z.001'))
+
+            # Check for incomplete 7z archives starting at higher part numbers (e.g., .7z.100)
+            # These indicate an incomplete download and should be warned about
+            all_7z_parts = list(folder.glob('*.7z.*'))
+            for file in all_7z_parts:
+                filename_lower = file.name.lower()
+                # Look for pattern like .7z.XXX where XXX > 1
+                if '.7z.' in filename_lower:
+                    parts = filename_lower.split('.7z.')
+                    if len(parts) == 2 and parts[1].isdigit():
+                        part_num = int(parts[1])
+                        if part_num > 1 and not any('.7z.001' in f.name.lower() or f.name.lower().endswith('.7z') for f in all_7z_parts):
+                            logging.warning(f"Incomplete 7z archive detected in {folder}: {file.name} (missing parts 1-{part_num-1})")
+                            break  # Only warn once per folder
+
             archive_files = rar_files + sevenz_files
 
             if not archive_files:

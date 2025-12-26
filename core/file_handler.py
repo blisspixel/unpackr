@@ -250,11 +250,17 @@ class FileHandler:
         image_count = 0
         image_total_bytes = 0
         image_extensions = self.config.image_extensions
+        music_extensions = self.config.music_extensions
+        document_extensions = self.config.document_extensions
 
         for file in folder.iterdir():
             if file.is_dir():
-                logging.info(f"Folder '{folder}' not deleted: contains subdirectory '{file.name}'")
-                return False
+                # Recursively check if subdirectory is also removable
+                if not self.is_folder_empty_or_removable(file, par2_error, archive_error):
+                    logging.info(f"Folder '{folder}' not deleted: contains non-removable subdirectory '{file.name}'")
+                    return False
+                # Subdirectory is removable, continue checking other files
+                continue
 
             file_ext = file.suffix.lower()
 
@@ -275,7 +281,17 @@ class FileHandler:
                 continue  # Single images and small collections (cover art) are treated as removable
 
             # Check if it's a removable file (junk)
-            elif file_ext in removable_extensions or (file_ext.startswith('.r') and file_ext[2:].isdigit()):
+            # Also check for incomplete RAR parts like .part033.rar.1 (filename contains .rar or .part)
+            # Also check for incomplete 7z parts like .7z.100 (filename contains .7z.)
+            # Also check for misnamed videos like .mp4.1 (treat as removable if extraction failed)
+            # Also check for files with no extension (typically junk in download folders)
+            filename_lower = file.name.lower()
+            is_misnamed_video = any(f'.{ext}.' in filename_lower for ext in ['mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm'])
+            if (file_ext in removable_extensions or
+                file_ext == '' or  # Files with no extension (e.g., "abusefile")
+                (file_ext.startswith('.r') and len(file_ext) == 3 and file_ext[2:].isdigit()) or
+                '.rar.' in filename_lower or '.7z.' in filename_lower or '.part' in filename_lower or
+                (is_misnamed_video and archive_error)):
                 continue
 
             # If PAR2 processing failed, treat PAR2 files as removable junk

@@ -118,6 +118,7 @@ class WorkPlan:
     def __init__(self):
         self.video_folders = []
         self.content_folders = []
+        self.junk_folders = []  # Folders with only junk files - to be deleted
         self.loose_videos = []
         self.total_videos = 0
         self.total_rars = 0
@@ -142,6 +143,10 @@ class WorkPlan:
             'path': folder,
             'reason': reason
         })
+
+    def add_junk_folder(self, folder: Path):
+        """Add a junk folder to delete."""
+        self.junk_folders.append(folder)
         
     def add_loose_video(self, video: Path):
         """Add a loose video file."""
@@ -306,7 +311,29 @@ class UnpackrApp:
         for i, folder in enumerate(folders, 1):
             sys.stdout.write(f"\r[PRE-SCAN] Analyzing {i}/{len(folders)} folders...")
             sys.stdout.flush()
-            
+
+            # First pass: Fix misnamed video files (.mp4.1, .wmv.1, etc.)
+            # This must happen BEFORE counting, so renamed files are detected as videos
+            for file in folder.iterdir():
+                if file.is_file():
+                    filename_lower = file.name.lower()
+                    # Check if filename contains a video extension followed by another extension
+                    video_exts = ['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg']
+                    for video_ext in video_exts:
+                        if f'{video_ext}.' in filename_lower:
+                            # File like "video.mp4.1" - rename to "video.mp4"
+                            new_name = file.name[:file.name.lower().rindex(video_ext) + len(video_ext)]
+                            new_path = file.parent / new_name
+                            try:
+                                if not new_path.exists():
+                                    file.rename(new_path)
+                                    logging.info(f"Renamed misnamed video: {file.name} -> {new_name}")
+                                else:
+                                    logging.warning(f"Cannot rename {file.name} - target already exists: {new_name}")
+                            except Exception as e:
+                                logging.error(f"Failed to rename {file.name}: {e}")
+                            break
+
             # Count videos, RARs, 7z, PAR2s, and content files (optimized single-pass)
             video_extensions = set(self.config.video_extensions)
             music_extensions = set(self.config.music_extensions)
@@ -393,7 +420,9 @@ class UnpackrApp:
                         reasons.append(f"{document_files} documents")
                     reason_str = ", ".join(reasons)
                     plan.add_content_folder(folder, reason_str)
-            # Otherwise: not a video folder and not enough content to preserve - will be skipped/deleted
+                else:
+                    # Not a video folder and not enough content - mark as junk to be deleted
+                    plan.add_junk_folder(folder)
         
         # Check for loose video files (optimized single-pass)
         video_extensions = {'.mp4', '.avi', '.mkv', '.mov'}
@@ -1197,6 +1226,27 @@ class UnpackrApp:
                     except Exception as e:
                         logging.error(f"Error processing loose video {video}: {e}")
 
+            # Delete junk folders identified in pre-scan
+            if self.work_plan.junk_folders:
+                logging.info(f"Deleting {len(self.work_plan.junk_folders)} junk folders identified in pre-scan")
+                for junk_folder in self.work_plan.junk_folders:
+                    try:
+                        if self.dry_run:
+                            logging.info(f"[DRY-RUN] Would delete junk folder: {junk_folder}")
+                            self.stats['folders_deleted'] += 1
+                        else:
+                            # Check if folder is still removable (contents might have changed)
+                            if self.file_handler.is_folder_empty_or_removable(junk_folder, par2_error=False, archive_error=False):
+                                if self.file_handler.safe_delete_folder(junk_folder):
+                                    self.stats['folders_deleted'] += 1
+                                    logging.info(f"Deleted junk folder: {junk_folder.name}")
+                                else:
+                                    logging.warning(f"Failed to delete junk folder: {junk_folder.name}")
+                            else:
+                                logging.info(f"Skipping junk folder (no longer removable): {junk_folder.name}")
+                    except Exception as e:
+                        logging.error(f"Error deleting junk folder {junk_folder}: {e}")
+
         finally:
             # Stop spinner thread
             self._stop_spinner_thread()
@@ -1333,44 +1383,28 @@ class UnpackrApp:
  | | | | '_ \\| '_ \\ / _` |/ __| |/ / '__|
  | |_| | | | | |_) | (_| | (__|   <| |
   \\__,_|_| |_| .__/ \\__,_|\\___|_|\\_\\_|
-             |_|{Style.RESET_ALL}
+             |_|{Style.RESET_ALL}  {Fore.GREEN}complete{Style.RESET_ALL} {Style.DIM}- runtime:{Style.RESET_ALL} {Fore.CYAN}{elapsed_str}{Style.RESET_ALL}
 
-  {Fore.GREEN}Complete{Style.RESET_ALL} {Style.DIM}runtime:{Style.RESET_ALL} {Fore.CYAN}{elapsed_str}{Style.RESET_ALL}
-
-  {Fore.GREEN}▓▓{Style.RESET_ALL} {Style.DIM}FOLDERS{Style.RESET_ALL}
-     {Style.DIM}processed....{Style.RESET_ALL} {Fore.WHITE}{self.stats['folders_processed']:>4}{Style.RESET_ALL}
-     {Style.DIM}deleted......{Style.RESET_ALL} {Fore.GREEN}{self.stats['folders_deleted']:>4}{Style.RESET_ALL}
-     {Style.DIM}empty........{Style.RESET_ALL} {Fore.CYAN}{self.stats['empty_folders_deleted']:>4}{Style.RESET_ALL}
-     {Style.DIM}preserved....{Style.RESET_ALL} {Fore.MAGENTA}{self.stats['folders_preserved']:>4}{Style.RESET_ALL}
-     {Fore.GREEN}total cleaned: {total_cleaned}{Style.RESET_ALL}
-
-  {Fore.GREEN}▓▓{Style.RESET_ALL} {Style.DIM}VIDEOS{Style.RESET_ALL}
-     {Style.DIM}found........{Style.RESET_ALL} {Fore.WHITE}{self.stats['videos_found']:>4}{Style.RESET_ALL}
-     {Style.DIM}processed....{Style.RESET_ALL} {Fore.GREEN}{self.stats['videos_moved']:>4}{Style.RESET_ALL}
-     {Style.DIM}samples......{Style.RESET_ALL} {Fore.YELLOW}{self.stats['videos_sample']:>4}{Style.RESET_ALL} {Style.DIM}dropped{Style.RESET_ALL}
-     {Style.DIM}corrupt......{Style.RESET_ALL} {Fore.RED}{self.stats['videos_corrupt']:>4}{Style.RESET_ALL} {Style.DIM}dropped{Style.RESET_ALL}
-     {Style.DIM}failed.......{Style.RESET_ALL} {Fore.RED}{self.stats['videos_failed']:>4}{Style.RESET_ALL}
-
-  {Fore.GREEN}▓▓{Style.RESET_ALL} {Style.DIM}ARCHIVES{Style.RESET_ALL}
-     {Style.DIM}extracted....{Style.RESET_ALL} {Fore.CYAN}{self.stats['rars_extracted']:>4}{Style.RESET_ALL}
-     {Style.DIM}repaired.....{Style.RESET_ALL} {Fore.MAGENTA}{self.stats['par2s_repaired']:>4}{Style.RESET_ALL}
-""")
+  {Style.DIM}FOLDERS{Style.RESET_ALL}  processed: {Fore.WHITE}{self.stats['folders_processed']:>4}{Style.RESET_ALL}  |  deleted: {Fore.GREEN}{self.stats['folders_deleted']:>4}{Style.RESET_ALL}  |  empty: {Fore.CYAN}{self.stats['empty_folders_deleted']:>4}{Style.RESET_ALL}  |  preserved: {Fore.MAGENTA}{self.stats['folders_preserved']:>4}{Style.RESET_ALL}  |  {Fore.GREEN}total cleaned: {total_cleaned}{Style.RESET_ALL}
+  {Style.DIM}VIDEOS{Style.RESET_ALL}   found: {Fore.WHITE}{self.stats['videos_found']:>4}{Style.RESET_ALL}  |  processed: {Fore.GREEN}{self.stats['videos_moved']:>4}{Style.RESET_ALL}  |  samples: {Fore.YELLOW}{self.stats['videos_sample']:>4}{Style.RESET_ALL}  |  corrupt: {Fore.RED}{self.stats['videos_corrupt']:>4}{Style.RESET_ALL}  |  failed: {Fore.RED}{self.stats['videos_failed']:>4}{Style.RESET_ALL}
+  {Style.DIM}ARCHIVES{Style.RESET_ALL} extracted: {Fore.CYAN}{self.stats['rars_extracted']:>4}{Style.RESET_ALL}  |  repaired: {Fore.MAGENTA}{self.stats['par2s_repaired']:>4}{Style.RESET_ALL}""")
 
         if self.stats['files_sanitized'] > 0:
-            print(f"  {Fore.GREEN}▓▓{Style.RESET_ALL} {Style.DIM}FILES{Style.RESET_ALL}")
-            print(f"     {Style.DIM}sanitized....{Style.RESET_ALL} {Fore.CYAN}{self.stats['files_sanitized']:>4}{Style.RESET_ALL}\n")
+            print(f"  {Style.DIM}FILES{Style.RESET_ALL}    sanitized: {Fore.CYAN}{self.stats['files_sanitized']:>4}{Style.RESET_ALL}")
 
+        # Show warnings/tips on same line if possible
+        warnings = []
         if self.stats['safety_stops'] > 0:
-            print(f"  {Fore.RED}[!] SAFETY STOPS: {self.stats['safety_stops']}{Style.RESET_ALL}\n")
-
+            warnings.append(f"{Fore.RED}SAFETY STOPS: {self.stats['safety_stops']}{Style.RESET_ALL}")
         if self.failed_deletions:
-            print(f"  {Fore.YELLOW}[!] locked folders: {len(self.failed_deletions)}{Style.RESET_ALL}\n")
+            warnings.append(f"{Fore.YELLOW}locked folders: {len(self.failed_deletions)}{Style.RESET_ALL}")
+
+        if warnings:
+            print(f"\n  {' | '.join(warnings)}")
 
         # Suggest vhealth for additional validation if videos were processed
         if self.stats['videos_moved'] > 0:
-            print(f"  {Style.DIM}Tip: Validate processed videos with standalone tool:{Style.RESET_ALL}")
-            print(f"  {Style.DIM}     vhealth <destination>{Style.RESET_ALL}")
-            print(f"  {Style.DIM}     (Checks corruption, finds duplicates, detects low quality){Style.RESET_ALL}\n")
+            print(f"\n  {Style.DIM}Tip: Run 'vhealth <destination>' to validate videos{Style.RESET_ALL}")
 
 
 def clean_path(path_str: str) -> str:
