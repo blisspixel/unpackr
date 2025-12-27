@@ -86,22 +86,22 @@ The workflow processes folders oldest-first (safe for ongoing downloads) and val
 Unpackr focuses on **one thing done well**: cleaning up messy download folders.
 
 **What we intentionally don't include:**
-- ❌ Web dashboards - A cleanup script doesn't need a browser UI
-- ❌ Interactive prompts - Breaks unattended batch operation
-- ❌ Machine learning - Not enough signal for meaningful adaptation
-- ❌ Telemetry servers - Local tool, local logs
-- ❌ Write-ahead logging - Over-engineered for this use case
+- Web dashboards - A cleanup script doesn't need a browser UI
+- Interactive prompts - Breaks unattended batch operation
+- Machine learning - Not enough signal for meaningful adaptation
+- Telemetry servers - Local tool, local logs
+- Write-ahead logging - Over-engineered for this use case
 
 **What matters:**
-- ✅ **Safety invariants** - Never delete validated videos, never write outside destination
-- ✅ **Clear error messages** - Know exactly what went wrong and where
-- ✅ **Comprehensive tests** - 243+ tests covering real scenarios
-- ✅ **Simple configuration** - Works out of the box, easy to customize
-- ✅ **Defensive coding** - Retries, validation, fail-closed logic
+- **Safety invariants** - Never delete validated videos, never write outside destination
+- **Clear error messages** - Know exactly what went wrong and where
+- **Comprehensive tests** - 243+ tests covering real scenarios
+- **Simple configuration** - Works out of the box, easy to customize
+- **Defensive coding** - Retries, validation, fail-closed logic
 
 **Every feature must answer:** Does this help clean up download folders better? If not, it's removed.
 
-See [docs/AYAHUASCA_ROADMAP.md](docs/AYAHUASCA_ROADMAP.md) for the full design reassessment.
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the development roadmap.
 
 ## Mental Model
 
