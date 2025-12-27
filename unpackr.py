@@ -42,9 +42,10 @@ from core.file_handler import FileHandler
 from core.archive_processor import ArchiveProcessor
 from core.video_processor import VideoProcessor
 from utils.system_check import SystemCheck
-from utils.safety import (GLOBAL_RUNTIME_LIMIT, LoopSafety, RecursionSafety, 
+from utils.safety import (GLOBAL_RUNTIME_LIMIT, LoopSafety, RecursionSafety,
                           SafetyLimits, StuckDetector)
 from utils.defensive import InputValidator, StateValidator, ValidationError
+from utils.dry_run_summary import DryRunPlan
 
 
 class ThreadSafeStats:
@@ -248,6 +249,7 @@ class UnpackrApp:
         self.archive_processor = ArchiveProcessor(config)
         self.video_processor = VideoProcessor(config)
         self.dry_run = False  # Set to True for dry-run mode
+        self.dry_run_plan = None  # DryRunPlan for collecting operations in dry-run mode
         self.start_time = None
         self.work_plan = None
         # MEMORY FIX: Use bounded deque to prevent unbounded memory growth in 24+ hour runs
@@ -533,6 +535,12 @@ class UnpackrApp:
                     sample_video.unlink()
                     logging.info(f"Deleted sample video: {sample_video.name}")
                 else:
+                    if self.dry_run_plan:
+                        try:
+                            size = sample_video.stat().st_size
+                            self.dry_run_plan.add_video_delete(sample_video, "sample/preview file")
+                        except:
+                            self.dry_run_plan.add_video_delete(sample_video, "sample/preview file")
                     logging.info(f"[DRY-RUN] Would delete sample video: {sample_video.name}")
             except Exception as e:
                 logging.error(f"Failed to delete sample video {sample_video}: {e}")
@@ -569,6 +577,8 @@ class UnpackrApp:
             self._update_progress(current, total, f"PAR2 verify/repair: {folder.name[:50]}")
             self.stuck_detector.mark_progress()  # Mark progress before long PAR2 operation
             if self.dry_run:
+                if self.dry_run_plan:
+                    self.dry_run_plan.add_par2_process(folder, len(par2_files))
                 logging.info(f"[DRY-RUN] Would verify/repair {len(par2_files)} PAR2 files in {folder}")
                 success = True
                 par2_error = False
@@ -600,6 +610,13 @@ class UnpackrApp:
                 self._update_progress(current, total, f"Extract {len(archive_files)} archives: {folder.name[:40]}")
                 self.stuck_detector.mark_progress()  # Mark progress before extraction
                 if self.dry_run:
+                    if self.dry_run_plan:
+                        for archive in archive_files:
+                            try:
+                                size = archive.stat().st_size
+                                self.dry_run_plan.add_archive_extract(archive, size)
+                            except:
+                                self.dry_run_plan.add_archive_extract(archive, 0)
                     logging.info(f"[DRY-RUN] Would extract {len(archive_files)} archives in {folder}")
                     success = True
                     archive_error = False
@@ -639,6 +656,12 @@ class UnpackrApp:
             self._update_progress(current, total, f"{folder_context} Validate {idx}/{len(video_files)}: {video_file.name[:40]}")
 
             if self.dry_run:
+                if self.dry_run_plan:
+                    try:
+                        size = video_file.stat().st_size
+                        self.dry_run_plan.add_video_move(video_file, size, "unknown")
+                    except:
+                        self.dry_run_plan.add_video_move(video_file, 0, "unknown")
                 logging.info(f"[DRY-RUN] Would validate video: {video_file}")
                 # In dry-run, simulate success
                 logging.info(f"[DRY-RUN] Would move {video_file.name} to {destination_dir}")
@@ -674,6 +697,8 @@ class UnpackrApp:
         # Clean up folder if possible
         if self.file_handler.is_folder_empty_or_removable(folder, par2_error, archive_error):
             if self.dry_run:
+                if self.dry_run_plan:
+                    self.dry_run_plan.add_folder_delete(folder)
                 logging.info(f"[DRY-RUN] Would delete folder: {folder}")
                 self.stats['folders_deleted'] += 1
             else:
@@ -1254,6 +1279,10 @@ class UnpackrApp:
             sys.stdout.write('\r' + ' '*100 + '\r')
             sys.stdout.flush()
 
+            # Print dry-run summary if in dry-run mode
+            if self.dry_run and self.dry_run_plan:
+                self.dry_run_plan.print_summary()
+
     def retry_failed_deletions(self, max_passes: int = 3, wait_seconds: int = 30):
         """
         Retry deletion of folders that failed during main processing.
@@ -1632,6 +1661,7 @@ def main():
             app = UnpackrApp(config)
             app.dry_run = args.dry_run
             if args.dry_run:
+                app.dry_run_plan = DryRunPlan()  # Initialize plan collector
                 print(f"{Fore.YELLOW}[DRY-RUN MODE] No files will be modified{Style.RESET_ALL}")
                 logging.info("Dry-run mode enabled - no modifications will be made")
         except Exception as e:
