@@ -27,95 +27,100 @@
 
 Tasks are listed in logical dependency order. Each builds on the previous.
 
-### Foundation Layer
+### Foundation Layer ✅ COMPLETE
 
-**Better Error Messages**
+**Better Error Messages** ✅
 
-Current errors are cryptic:
-```
-Error: Failed to extract archive
-```
+~~Current errors are cryptic~~
 
-Should be:
+Now shows:
 ```
 ERROR: Failed to extract MyVideo.part01.rar
-  Reason: Disk full (need 2.5GB, have 500MB)
+  Reason: Disk full (need 2500MB, have 500MB)
   Action: Free up space or skip this file
   Location: C:\Downloads\MyVideo\
 ```
 
-**Why:** Foundation for user understanding. All other improvements depend on users knowing what went wrong.
-
-**Changes needed:**
-- Add context to error messages (file name, location, size)
-- Add reason (what specifically failed)
-- Add suggested action (what user should do)
-- Show paths in user-friendly format
+**Status:** COMPLETE
+- ✅ Created utils/error_messages.py with format helpers
+- ✅ Updated archive_processor.py error messages
+- ✅ Updated video_processor.py error messages
+- ✅ Updated file_handler.py error messages
+- ✅ All core tests passing (250/261)
 
 ---
 
-**Config Validation**
+**Config Validation** ✅
 
-User edits config.json wrong, gets cryptic error:
-```
-Error: 'min_sample_size_mb'
-```
+~~User edits config.json wrong, gets cryptic error~~
 
-Should be:
+Now shows:
 ```
 ERROR: Invalid config value
   Field: min_sample_size_mb
-  Value: "fifty" (string)
+  Value: "fifty" (str)
   Expected: number (integer)
   Example: 50
+  Valid range: 1 to 10000
   Config file: C:\Users\you\.unpackr\config.json
 ```
 
-**Why:** Must happen before running main logic. Users need working config before processing starts.
-
-**Changes needed:**
-- Validate config on load
-- Check types match expected (int, string, bool, etc.)
-- Check values are in valid range
-- Show example valid values
+**Status:** COMPLETE
+- ✅ Enhanced core/config.py with structured errors
+- ✅ Shows Field/Value/Expected/Example/Range
+- ✅ JSON parse errors show line/column numbers
+- ✅ Created tests/test_config_validation.py (7/7 passing)
 
 ---
 
-### User Experience Layer
+### User Experience Layer 🚧 IN PROGRESS
 
-**Improved Dry-Run Output**
+**Improved Dry-Run Output** ✅
 
-Current dry-run logs everything line-by-line. Better format:
+~~Current dry-run logs everything line-by-line~~
+
+Now shows structured summary:
 ```
 DRY RUN SUMMARY
 ===============
 
-ARCHIVES (3 files, 4.2 GB):
-  Extract: MyVideo.part01.rar -> MyVideo.mkv (1.8 GB)
-  Extract: OtherShow.rar -> episode.mkv (2.1 GB)
-  Skip: Corrupted.rar (PAR2 repair failed)
+PAR2 VERIFICATION/REPAIR (2 folders, 15 files):
+  Process: MyVideo (10 PAR2 files)
+  Process: OtherShow (5 PAR2 files)
 
-VIDEOS (2 files, 3.9 GB):
-  Move: MyVideo.mkv (1.8 GB, 1080p, validated)
-  Move: episode.mkv (2.1 GB, 720p, validated)
+ARCHIVES (3 to extract, 4.2 GB):
+  Extract: MyVideo.part01.rar (1.8 GB)
+  Extract: OtherShow.rar (2.1 GB)
+
+VIDEOS (2 to move, 3.9 GB):
+  Move: MyVideo.mkv (1.8 GB, unknown, validated)
+  Move: episode.mkv (2.1 GB, unknown, validated)
+
+  DELETE SAMPLES (1):
+    Delete: sample.mkv - sample/preview file
 
 CLEANUP:
-  Delete 15 junk files (.nfo, .sfv, .txt)
-  Delete 2 empty folders
-  Keep: MusicLibrary/ (12 MP3 files)
+  Delete 15 junk files (3 .nfo, 5 .sfv, 7 .txt)
+  Delete 2 empty/junk folders
 
 DISK SPACE:
-  Source freed: 4.5 GB
+  Source freed: 4.2 GB (after cleanup)
   Destination used: 3.9 GB
+
+SUMMARY:
+  Archives: 3 extract, 0 skip
+  Videos: 2 move, 1 delete, 0 skip
+  Cleanup: 15 junk files, 2 folders
+  Protected: 0 content folders kept
 ```
 
-**Why:** Depends on operation messages being clear (previous step). User sees intent before committing.
-
-**Changes needed:**
-- Group operations by type (archives, videos, cleanup)
-- Show aggregated statistics
-- Format sizes in human-readable units
-- Show what will be kept vs deleted
+**Status:** COMPLETE
+- ✅ Created utils/dry_run_summary.py with DryRunPlan class
+- ✅ Integrated into unpackr.py main loop
+- ✅ Tracks PAR2, archives, videos, cleanup operations
+- ✅ Groups by operation type with counts and sizes
+- ✅ Shows disk space impact (freed/used)
+- ✅ Human-readable size formatting (B, KB, MB, GB)
 
 ---
 
