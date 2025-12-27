@@ -54,18 +54,29 @@ class Config:
                 # Validate loaded config before applying
                 is_valid, errors = self._validate_config(user_config)
                 if not is_valid:
-                    print(f"Configuration validation failed for {config_path}:")
+                    print(f"\nConfiguration validation failed:")
+                    print(f"  Config file: {config_path.absolute()}")
+                    print()
                     for error in errors:
-                        print(f"  - {error}")
-                    print("\nUsing default configuration.")
+                        print(error)
+                        print()
+                    print("Using default configuration instead.")
                     return
 
                 self.config.update(user_config)
         except json.JSONDecodeError as e:
-            print(f"Error: Invalid JSON in config file {config_path}: {e}")
+            print(f"\nERROR: Invalid JSON in config file")
+            print(f"  Config file: {config_path.absolute()}")
+            print(f"  Problem: {e}")
+            print(f"  Line: {e.lineno}, Column: {e.colno}")
+            print()
+            print("Fix the JSON syntax and try again.")
             print("Using default configuration.")
         except Exception as e:
-            print(f"Warning: Could not load config from {config_path}: {e}")
+            print(f"\nERROR: Could not load config file")
+            print(f"  Config file: {config_path.absolute()}")
+            print(f"  Problem: {e}")
+            print()
             print("Using default configuration.")
     
     def save_config(self, config_path: Path):
@@ -95,41 +106,75 @@ class Config:
 
         # Validate numeric ranges
         numeric_fields = {
-            'min_music_files': (0, 1000, "Minimum music files"),
-            'min_image_files': (0, 1000, "Minimum image files"),
-            'min_documents': (0, 1000, "Minimum documents"),
-            'min_sample_size_mb': (1, 10000, "Minimum sample size"),
-            'max_log_files': (1, 100, "Maximum log files"),
-            'max_runtime_hours': (1, 168, "Maximum runtime hours"),
-            'max_videos_per_folder': (1, 10000, "Maximum videos per folder"),
-            'max_subfolder_depth': (1, 50, "Maximum subfolder depth"),
-            'stuck_timeout_hours': (1, 24, "Stuck timeout hours"),
+            'min_music_files': (0, 1000, "Minimum music files", 10),
+            'min_image_files': (0, 1000, "Minimum image files", 10),
+            'min_documents': (0, 1000, "Minimum documents", 10),
+            'min_sample_size_mb': (1, 10000, "Minimum sample size", 50),
+            'max_log_files': (1, 100, "Maximum log files", 5),
+            'max_runtime_hours': (1, 168, "Maximum runtime hours", 24),
+            'max_videos_per_folder': (1, 10000, "Maximum videos per folder", 100),
+            'max_subfolder_depth': (1, 50, "Maximum subfolder depth", 10),
+            'stuck_timeout_hours': (1, 24, "Stuck timeout hours", 4),
         }
 
-        for field, (min_val, max_val, display_name) in numeric_fields.items():
+        for field, (min_val, max_val, display_name, example) in numeric_fields.items():
             if field in config:
                 value = config[field]
                 if not isinstance(value, int):
-                    errors.append(f"{display_name} ({field}) must be an integer, got {type(value).__name__}")
+                    errors.append(
+                        f"ERROR: Invalid config value\n"
+                        f"  Field: {field}\n"
+                        f"  Value: {repr(value)} ({type(value).__name__})\n"
+                        f"  Expected: number (integer)\n"
+                        f"  Example: {example}\n"
+                        f"  Valid range: {min_val} to {max_val}"
+                    )
                 elif value < min_val or value > max_val:
-                    errors.append(f"{display_name} ({field}) must be between {min_val} and {max_val}, got {value}")
+                    errors.append(
+                        f"ERROR: Invalid config value\n"
+                        f"  Field: {field}\n"
+                        f"  Value: {value}\n"
+                        f"  Expected: number between {min_val} and {max_val}\n"
+                        f"  Example: {example}"
+                    )
 
         # Validate list fields (must be lists of strings)
-        list_fields = [
-            'video_extensions', 'music_extensions', 'image_extensions',
-            'document_extensions', 'ebook_extensions', 'archive_extensions',
-            'removable_extensions'
-        ]
+        list_fields = {
+            'video_extensions': ['.mp4', '.mkv', '.avi'],
+            'music_extensions': ['.mp3', '.flac', '.wav'],
+            'image_extensions': ['.jpg', '.png', '.gif'],
+            'document_extensions': ['.pdf', '.doc', '.txt'],
+            'ebook_extensions': ['.epub', '.mobi', '.pdf'],
+            'archive_extensions': ['.zip', '.rar', '.7z'],
+            'removable_extensions': ['.nfo', '.sfv', '.txt']
+        }
 
-        for field in list_fields:
+        for field, examples in list_fields.items():
             if field in config:
                 value = config[field]
                 if not isinstance(value, list):
-                    errors.append(f"{field} must be a list, got {type(value).__name__}")
+                    errors.append(
+                        f"ERROR: Invalid config value\n"
+                        f"  Field: {field}\n"
+                        f"  Value: {repr(value)} ({type(value).__name__})\n"
+                        f"  Expected: list of strings\n"
+                        f"  Example: {examples}"
+                    )
                 elif not all(isinstance(ext, str) for ext in value):
-                    errors.append(f"{field} must contain only strings")
+                    errors.append(
+                        f"ERROR: Invalid config value\n"
+                        f"  Field: {field}\n"
+                        f"  Problem: List contains non-string values\n"
+                        f"  Expected: All entries must be strings\n"
+                        f"  Example: {examples}"
+                    )
                 elif not all(ext.startswith('.') for ext in value):
-                    errors.append(f"{field} entries must start with '.' (e.g., '.mp4')")
+                    errors.append(
+                        f"ERROR: Invalid config value\n"
+                        f"  Field: {field}\n"
+                        f"  Problem: Extensions must start with '.'\n"
+                        f"  Example: {examples} (note the dots)"
+                    )
 
         # Validate tool_paths (if present)
         if 'tool_paths' in config:
