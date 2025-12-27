@@ -15,6 +15,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.defensive import InputValidator, StateValidator, ErrorRecovery, ValidationError
 from core.safety_invariants import InvariantEnforcer
+from utils.error_messages import log_error
 
 
 class FileHandler:
@@ -435,19 +436,36 @@ class FileHandler:
         
         # Defensive: check source is accessible
         if not StateValidator.check_file_accessible(source):
-            logging.error(f"Source file not accessible: {source}")
+            log_error(
+                what_failed=f"Cannot move {source.name}",
+                reason="Source file not accessible or doesn't exist",
+                action="Check if file exists and is not locked by another process",
+                location=source.parent
+            )
             return False
-        
+
         # Defensive: check destination is writable
         if not StateValidator.check_dir_writable(destination_dir):
-            logging.error(f"Destination directory not writable: {destination_dir}")
+            log_error(
+                what_failed=f"Cannot move {source.name}",
+                reason="Destination directory not writable",
+                action="Check folder permissions and disk space",
+                location=destination_dir
+            )
             return False
         
         # Defensive: check disk space
         try:
             file_size_mb = source.stat().st_size / (1024 * 1024)
             if not StateValidator.check_disk_space(destination_dir, required_mb=int(file_size_mb * 1.1)):
-                logging.error(f"Insufficient disk space for {source.name}")
+                import shutil
+                available = shutil.disk_usage(destination_dir).free / (1024 * 1024)
+                log_error(
+                    what_failed=f"Cannot move {source.name}",
+                    reason=f"Insufficient disk space (need {int(file_size_mb * 1.1)}MB, have {int(available)}MB)",
+                    action="Free up disk space in destination",
+                    location=destination_dir
+                )
                 return False
         except Exception as e:
             logging.warning(f"Cannot check disk space: {e}")
@@ -489,11 +507,21 @@ class FileHandler:
                 logging.info(f"Moved file: {source.name} -> {destination_file}")
                 return True
             else:
-                logging.error(f"Failed to move file: {source}")
+                log_error(
+                    what_failed=f"Move failed: {source.name}",
+                    reason="shutil.move() returned None or False",
+                    action="Check file permissions and disk space",
+                    location=source.parent
+                )
                 return False
-                
+
         except Exception as e:
-            logging.error(f"Error moving file {source}: {e}", exc_info=True)
+            log_error(
+                what_failed=f"Error moving file: {source.name}",
+                reason=str(e),
+                action="Check file is not locked and destination is accessible",
+                location=source.parent
+            )
             return False
     
     def delete_video_file_with_retry(self, video_file: Path, max_attempts: int = None,
@@ -545,7 +573,12 @@ class FileHandler:
             except Exception as e:
                 logging.error(f"Attempt {attempt + 1}/{max_attempts} - Error deleting {video_file}: {e}")
 
-        logging.error(f"Failed to delete video file {video_file} after {max_attempts} attempts")
+        log_error(
+            what_failed=f"Failed to delete video: {video_file.name}",
+            reason=f"File locked or inaccessible after {max_attempts} attempts",
+            action="Close any programs using this file or restart system",
+            location=video_file.parent
+        )
         return False
     
     def wait_for_file_release(self, file_path: str, max_attempts: int = None,

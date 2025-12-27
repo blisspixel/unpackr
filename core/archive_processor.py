@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.safety import SubprocessSafety, SafetyLimits, LoopSafety
 from utils.defensive import StateValidator
 from utils.system_check import SystemCheck
+from utils.error_messages import log_error, format_disk_space_error, format_extraction_error, format_timeout_error
 from core.safety_invariants import InvariantEnforcer
 
 
@@ -110,12 +111,24 @@ class ArchiveProcessor:
                     # Use 3x multiplier as conservative estimate for extraction space needed
                     required_space_mb = int(file_size_mb * 3)
                     if not StateValidator.check_disk_space(folder, required_mb=required_space_mb):
-                        logging.error(f"Insufficient disk space to extract {archive_file.name} (need ~{required_space_mb}MB)")
+                        import shutil
+                        available = shutil.disk_usage(folder).free / (1024 * 1024)
+                        log_error(
+                            what_failed=f"Cannot extract {archive_file.name}",
+                            reason=f"Disk full (need {required_space_mb}MB, have {int(available)}MB)",
+                            action="Free up space or skip this file",
+                            location=folder
+                        )
                         continue  # Skip this archive
 
                     # SECURITY: Check archive contents for path traversal before extraction
                     if not self._validate_archive_paths(archive_file, folder, sevenzip_cmd):
-                        logging.error(f"SECURITY: Archive {archive_file.name} contains unsafe paths (path traversal attempt) - SKIPPING")
+                        log_error(
+                            what_failed=f"SECURITY: Blocked {archive_file.name}",
+                            reason="Archive contains unsafe paths (path traversal attempt)",
+                            action="Do not extract this archive - it may be malicious",
+                            location=archive_file.parent
+                        )
                         continue  # Skip this malicious archive
 
                     # PERFORMANCE: Calculate dynamic timeout based on file size (handles 50GB+ archives)
@@ -138,10 +151,34 @@ class ArchiveProcessor:
                         speed_mbps = file_size_mb / elapsed if elapsed > 0 else 0
                         logging.info(f"Extracted {archive_file.name} ({file_size_mb:.1f}MB in {elapsed:.1f}s, {speed_mbps:.1f}MB/s)")
                     else:
-                        logging.error(f"Archive extraction failed for {archive_file}:\nStdout: {stdout}\nStderr: {stderr}")
+                        # Determine reason from stderr
+                        reason = "Unknown error"
+                        if "timeout" in stderr.lower() or "timeout" in stdout.lower():
+                            reason = f"Operation timed out after {extraction_timeout}s"
+                        elif "password" in stderr.lower():
+                            reason = "Archive is password-protected"
+                        elif "corrupt" in stderr.lower() or "broken" in stderr.lower():
+                            reason = "Archive is corrupted or incomplete"
+                        elif "cannot find" in stderr.lower():
+                            reason = "Archive file not accessible"
+                        else:
+                            reason = f"7z returned error code {code}"
+
+                        log_error(
+                            what_failed=f"Failed to extract {archive_file.name}",
+                            reason=reason,
+                            action="Check if archive is complete, not password-protected, and not corrupted",
+                            location=archive_file.parent,
+                            details=stderr[:300] if stderr else None
+                        )
 
                 except Exception as e:
-                    logging.error(f"Error extracting {archive_file}: {e}")
+                    log_error(
+                        what_failed=f"Unexpected error extracting {archive_file.name}",
+                        reason=str(e),
+                        action="Check archive file is accessible and not locked by another process",
+                        location=archive_file.parent
+                    )
 
             # Delete RAR files after extraction attempt
             self._delete_archive_files(folder)
@@ -158,7 +195,12 @@ class ArchiveProcessor:
                 return True
             
         except Exception as e:
-            logging.error(f"Unexpected error during RAR extraction for {folder}: {e}")
+            log_error(
+                what_failed="Archive processing failed",
+                reason=str(e),
+                action="Check folder permissions and disk space",
+                location=folder
+            )
             return False
     
     def process_par2_files(self, folder: Path) -> bool:
@@ -234,8 +276,13 @@ class ArchiveProcessor:
 
             if repair_failed or (not success and code != 0):
                 # Repair failed - archives are corrupted beyond repair
-                logging.error(f"PAR2 repair FAILED after {elapsed:.1f}s for {folder} - deleting corrupted archives")
-                logging.error(f"Exit code: {code}, Output:\nStdout: {stdout[:500]}\nStderr: {stderr[:500]}")
+                log_error(
+                    what_failed="PAR2 repair failed",
+                    reason=f"Archives are corrupted beyond repair (completed in {elapsed:.1f}s)",
+                    action="Download missing PAR2 files or re-download archives",
+                    location=folder,
+                    details=f"Exit code: {code}\nStdout: {stdout[:300]}\nStderr: {stderr[:300]}"
+                )
 
                 # Delete PAR2 files
                 self._delete_files_by_extension(folder, '.par2')
@@ -260,11 +307,21 @@ class ArchiveProcessor:
                 return True
 
             # Timeout or unknown error
-            logging.error(f"PAR2 operation timed out or failed unexpectedly for {folder}")
+            log_error(
+                what_failed="PAR2 operation failed",
+                reason="Operation timed out or returned unexpected error",
+                action="Check if PAR2 files are valid and archives are accessible",
+                location=folder
+            )
             return False
 
         except Exception as e:
-            logging.error(f"Unexpected error during PAR2 processing for {folder}: {e}")
+            log_error(
+                what_failed="PAR2 processing failed",
+                reason=str(e),
+                action="Check folder permissions and PAR2 file validity",
+                location=folder
+            )
             return False
     
     def _delete_archive_files(self, folder: Path):

@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.safety import SubprocessSafety, SafetyLimits
 from utils.system_check import SystemCheck
 from core.safety_invariants import ValidationCache, ValidationResult, ValidationDecision
+from utils.error_messages import log_error
 from datetime import datetime
 
 
@@ -47,7 +48,12 @@ class VideoProcessor:
 
         # Check if file size is 0 or suspiciously small
         if file_size_mb < 1:
-            logging.error(f"Video too small ({file_size_mb:.2f}MB): {video_file.name}")
+            log_error(
+                what_failed=f"Video file rejected: {video_file.name}",
+                reason=f"File too small ({file_size_mb:.2f}MB)",
+                action="Check if download completed or extraction failed",
+                location=video_file.parent
+            )
             if check_quality:
                 return (False, False, None, None)
             return False
@@ -100,7 +106,12 @@ class VideoProcessor:
 
             # Validate duration exists and is reasonable
             if not duration_seconds or duration_seconds < 10:
-                logging.error(f"Invalid or missing duration ({duration_seconds}s): {video_file.name}")
+                log_error(
+                    what_failed=f"Video validation failed: {video_file.name}",
+                    reason=f"Invalid or missing duration ({duration_seconds}s)",
+                    action="File may be corrupted or incomplete - re-extract or re-download",
+                    location=video_file.parent
+                )
                 if check_quality:
                     return (False, False, None, resolution)
                 return False
@@ -113,7 +124,12 @@ class VideoProcessor:
 
                 # If actual size is less than 70% of expected, likely truncated
                 if size_ratio < 0.70:
-                    logging.error(f"Video appears truncated: {file_size_mb:.1f}MB actual vs {expected_size_mb:.1f}MB expected (ratio: {size_ratio:.2f}): {video_file.name}")
+                    log_error(
+                        what_failed=f"Video appears truncated: {video_file.name}",
+                        reason=f"{file_size_mb:.1f}MB actual vs {expected_size_mb:.1f}MB expected (ratio: {size_ratio:.2f})",
+                        action="Re-extract archive or re-download file",
+                        location=video_file.parent
+                    )
                     if check_quality:
                         return (False, False, None, resolution)
                     return False
@@ -137,13 +153,23 @@ class VideoProcessor:
 
             # Check for errors in decode
             if not success:
-                logging.error(f"Video decode test timed out or failed: {video_file.name}")
+                log_error(
+                    what_failed=f"Video decode test failed: {video_file.name}",
+                    reason="Operation timed out or ffmpeg failed to run",
+                    action="Check if file is playable and ffmpeg is working",
+                    location=video_file.parent
+                )
                 if check_quality:
                     return (False, False, None, resolution)
                 return False
 
             if code != 0:
-                logging.error(f"Video decode returned error code {code}: {video_file.name}")
+                log_error(
+                    what_failed=f"Video decode failed: {video_file.name}",
+                    reason=f"ffmpeg returned error code {code}",
+                    action="File may be corrupted - re-extract or re-download",
+                    location=video_file.parent
+                )
                 if check_quality:
                     return (False, False, None, resolution)
                 return False
@@ -164,7 +190,13 @@ class VideoProcessor:
                 stderr_lower = stderr.lower()
                 for keyword in error_keywords:
                     if keyword.lower() in stderr_lower:
-                        logging.error(f"Video corruption detected ({keyword}): {video_file.name}\nFFMPEG output: {stderr[:500]}")
+                        log_error(
+                            what_failed=f"Video corruption detected: {video_file.name}",
+                            reason=f"Corruption indicator found: {keyword}",
+                            action="Re-extract archive or re-download file",
+                            location=video_file.parent,
+                            details=f"ffmpeg output: {stderr[:300]}"
+                        )
                         if check_quality:
                             return (False, False, None, resolution)
                         return False
@@ -229,7 +261,12 @@ class VideoProcessor:
                 return (True, False, None, None)
             return True  # Assume healthy if can't check
         except Exception as e:
-            logging.error(f"Error during video health check for {video_file.name}: {e}")
+            log_error(
+                what_failed=f"Video health check failed: {video_file.name}",
+                reason=str(e),
+                action="Check if file is accessible and ffmpeg is working",
+                location=video_file.parent
+            )
             if check_quality:
                 return (False, False, None, None)
             return False

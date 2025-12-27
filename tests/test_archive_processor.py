@@ -154,8 +154,10 @@ class TestExtractionProcess:
 
         with patch('core.archive_processor.logging.error') as mock_error:
             result = processor.process_rar_files(temp_dir)
-            # Should log error about disk space
-            assert any('disk space' in str(call).lower() for call in mock_error.call_args_list)
+            # Should log error about disk space (new multi-line format)
+            assert mock_error.called
+            error_message = str(mock_error.call_args_list).lower()
+            assert 'disk' in error_message and ('space' in error_message or 'full' in error_message)
 
     @patch('core.archive_processor.SubprocessSafety.run_with_timeout')
     @patch('core.archive_processor.StateValidator.check_disk_space')
