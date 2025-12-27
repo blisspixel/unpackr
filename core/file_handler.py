@@ -14,18 +14,20 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.defensive import InputValidator, StateValidator, ErrorRecovery, ValidationError
+from core.safety_invariants import InvariantEnforcer
 
 
 class FileHandler:
     """Handles file and folder operations."""
-    
-    def __init__(self, config, stats=None):
+
+    def __init__(self, config, stats=None, destination_root=None):
         """
         Initialize the file handler.
 
         Args:
             config: Config instance with file extensions and settings
             stats: Optional stats dict to track sanitization count
+            destination_root: Optional destination root for safety invariants
         """
         # Defensive: validate config
         if config is None:
@@ -33,6 +35,9 @@ class FileHandler:
 
         self.config = config
         self.stats = stats  # Optional stats tracking
+        self.enforcer = None
+        if destination_root:
+            self.enforcer = InvariantEnforcer(destination_root, config)
 
         # Defensive: verify config has required attributes
         required_attrs = ['video_extensions', 'removable_extensions']
@@ -453,6 +458,14 @@ class FileHandler:
             sanitized_name = self.sanitize_filename(source.name)
             destination_file = destination_dir / sanitized_name
 
+            # Safety check: enforce invariants before moving if enforcer is configured
+            if self.enforcer:
+                try:
+                    self.enforcer.enforce_move(source, destination_file)
+                except Exception as e:
+                    logging.error(f"Safety check prevented move of {source}: {e}")
+                    return False
+
             # Log if filename was changed
             if sanitized_name != source.name:
                 logging.info(f"Sanitized filename: '{source.name}' -> '{sanitized_name}'")
@@ -504,6 +517,14 @@ class FileHandler:
             max_attempts = getattr(self.config, 'file_delete_max_attempts', 5)
         if retry_delay is None:
             retry_delay = getattr(self.config, 'file_delete_retry_delay', 1)
+
+        # Safety check: enforce invariants before deletion if enforcer is configured
+        if self.enforcer:
+            try:
+                self.enforcer.enforce_delete(video_file)
+            except Exception as e:
+                logging.error(f"Safety check prevented deletion of {video_file}: {e}")
+                return False
 
         current_delay = retry_delay
 

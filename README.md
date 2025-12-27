@@ -224,22 +224,51 @@ Shows what would happen without actually moving/deleting files. All operations l
 unpackr --config "custom_config.json" -s "G:\Downloads" -d "G:\Videos"
 ```
 
-### Video Health Check (Optional)
+### vhealth - Video Health Checker (Companion Tool)
 
-Run additional validation on destination after processing:
+**Purpose:** Deep clean and validate your video collection after unpackr has processed it.
 
+**When to use:**
+1. **After unpackr:** Polish your destination folder - remove duplicates, verify all videos play correctly
+2. **Standalone:** Clean up any existing video collection, even if not processed by unpackr
+3. **Maintenance:** Run periodically on your video library to find new problems
+
+**Basic usage:**
 ```bash
-unpackr --vhealth -s "G:\Downloads" -d "G:\Videos"
+# Clean and validate a video folder (auto-deletes bad files after 5-second countdown)
+vhealth "G:\Videos"
+
+# With resolution threshold (also removes low-res videos)
+vhealth "G:\Videos" --min-resolution 720p
 ```
 
-Performs full health check on moved videos:
-- Validates video integrity (full decode test)
-- Detects corruption that may have slipped through
-- Finds duplicate videos (exact matches and similar files)
-- Identifies low quality videos (480p or lower, low bitrate)
-- Prompts before deleting bad files
+**What it does:**
+1. **Finds samples** - Files <50MB (typical sample size) → deleted immediately
+2. **Detects duplicates** - Exact matches (same size + hash) → deleted immediately
+3. **Health checks remaining videos** - Full decode test for corruption → deletes corrupt ones immediately
+4. **Shows progress** - Live counter with animated spinner and ETA
 
-Not enabled by default (adds processing time). Recommended for important collections or if you notice playback issues.
+**Key differences from unpackr:**
+- **unpackr** = Extract archives, validate basics, move good videos to destination
+- **vhealth** = Deep validation, duplicate detection, aggressive cleanup of destination
+
+**Why separate tools?**
+- **Performance:** Duplicate detection is expensive - don't slow down main workflow
+- **Flexibility:** Run vhealth weekly on your collection, or skip if you trust unpackr's validation
+- **Clarity:** Two focused tools vs one complex tool with many flags
+
+**Safety features:**
+- 5-second countdown with clear warning before any deletions
+- Only deletes obvious problems (exact duplicates, failed decode tests)
+- Shows running totals (794 ok, 3 bad) so you see what's happening
+- Cancel anytime with Ctrl+C - already-deleted files stay deleted (progressive cleanup)
+
+**Conservative duplicate detection:**
+- ✓ Exact size + hash match = duplicate
+- ✓ Same duration + hash match = re-encoded duplicate
+- ✗ Similar filenames = NOT considered duplicate (avoids false positives like cd1/cd2, series episodes)
+
+**Not enabled by default in unpackr** (adds significant processing time). Run separately when you want thorough validation.
 
 ## What Happens During Processing
 

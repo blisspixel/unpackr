@@ -12,6 +12,8 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.safety import SubprocessSafety, SafetyLimits
 from utils.system_check import SystemCheck
+from core.safety_invariants import ValidationCache, ValidationResult, ValidationDecision
+from datetime import datetime
 
 
 class VideoProcessor:
@@ -197,9 +199,28 @@ class VideoProcessor:
                         quality_reason = f"Low bitrate for 720p ({bitrate_kbps:.0f} kb/s)"
 
                 logging.info(f"Video health check PASSED: {video_file.name} ({file_size_mb:.1f}MB, {duration_seconds:.1f}s){' - ' + quality_reason if is_low_quality else ''}")
+
+                # Register validated video with ValidationCache to prevent accidental deletion
+                decision = ValidationDecision.FAIL_LOW_QUALITY if is_low_quality else ValidationDecision.PASS
+                ValidationCache.set(video_file, ValidationResult(
+                    path=video_file,
+                    decision=decision,
+                    timestamp=datetime.now(),
+                    metadata={'size_mb': file_size_mb, 'duration_s': duration_seconds, 'resolution': resolution}
+                ))
+
                 return (True, is_low_quality, quality_reason, resolution)
 
             logging.info(f"Video health check PASSED: {video_file.name} ({file_size_mb:.1f}MB, {duration_seconds:.1f}s)")
+
+            # Register validated video with ValidationCache to prevent accidental deletion
+            ValidationCache.set(video_file, ValidationResult(
+                path=video_file,
+                decision=ValidationDecision.PASS,
+                timestamp=datetime.now(),
+                metadata={'size_mb': file_size_mb, 'duration_s': duration_seconds}
+            ))
+
             return True
 
         except FileNotFoundError:

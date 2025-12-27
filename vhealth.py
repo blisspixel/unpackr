@@ -196,23 +196,38 @@ class VideoHealthChecker:
                         else:
                             eta_str = f"{Style.DIM}~{eta_seconds:.0f}s{Style.RESET_ALL}"
 
-                    # Spinner animation
-                    spinner = spinner_frames[i % len(spinner_frames)]
+                    # Check the video with animated spinner
+                    import threading
+                    stop_spinner = threading.Event()
+                    spinner_idx = [0]  # Use list to allow modification in thread
 
-                    # Show counts first (fixed position), then progress, then filename
-                    counts = f"{Fore.GREEN}{healthy_count} ok{Style.RESET_ALL}"
-                    if bad_count > 0:
-                        counts += f"  {Fore.RED}{bad_count} bad{Style.RESET_ALL}"
+                    def animate_spinner():
+                        """Update spinner while video check runs."""
+                        while not stop_spinner.is_set():
+                            counts = f"{Fore.GREEN}{healthy_count} ok{Style.RESET_ALL}"
+                            if bad_count > 0:
+                                counts += f"  {Fore.RED}{bad_count} bad{Style.RESET_ALL}"
 
-                    status_line = f"  {counts}  {Style.DIM}[{i}/{len(videos_to_check)}]{Style.RESET_ALL}"
-                    if eta_str:
-                        status_line += f"  {eta_str}"
-                    status_line += f"  {Style.DIM}{spinner}{Style.RESET_ALL} {filename[:45]}"
+                            spinner = spinner_frames[spinner_idx[0] % len(spinner_frames)]
+                            status_line = f"  {counts}  {Style.DIM}[{i}/{len(videos_to_check)}]{Style.RESET_ALL}"
+                            if eta_str:
+                                status_line += f"  {eta_str}"
+                            status_line += f"  {Fore.CYAN}{spinner}{Style.RESET_ALL} {filename[:45]}"
 
-                    print(f"\r{status_line}{' ' * 10}", end='', flush=True)
+                            print(f"\r{status_line}{' ' * 10}", end='', flush=True)
+                            spinner_idx[0] += 1
+                            time.sleep(0.1)  # Update 10 times per second
+
+                    # Start spinner animation in background thread
+                    spinner_thread = threading.Thread(target=animate_spinner, daemon=True)
+                    spinner_thread.start()
 
                     # Check the video
                     result = self._check_video_silent(video)
+
+                    # Stop spinner
+                    stop_spinner.set()
+                    spinner_thread.join(timeout=0.2)
 
                     # Update counts after check
                     if result == 'healthy':
@@ -635,37 +650,45 @@ class VideoHealthChecker:
 
         # Show details for problem videos
         if self.corrupt_videos:
-            print(f"{Fore.RED}Corrupt{Style.RESET_ALL}")
-            for video in self.corrupt_videos:
-                size_mb = video.stat().st_size / (1024 * 1024)
-                print(f"  {video.name} {Style.DIM}({size_mb:.1f}MB){Style.RESET_ALL}")
-            print()
+            existing_corrupt = [v for v in self.corrupt_videos if v.exists()]
+            if existing_corrupt:
+                print(f"{Fore.RED}Corrupt{Style.RESET_ALL}")
+                for video in existing_corrupt:
+                    size_mb = video.stat().st_size / (1024 * 1024)
+                    print(f"  {video.name} {Style.DIM}({size_mb:.1f}MB){Style.RESET_ALL}")
+                print()
 
         if self.sample_videos:
-            print(f"{Fore.YELLOW}Samples{Style.RESET_ALL}")
-            for video in self.sample_videos:
-                size_mb = video.stat().st_size / (1024 * 1024)
-                print(f"  {video.name} {Style.DIM}({size_mb:.1f}MB){Style.RESET_ALL}")
-            print()
+            existing_samples = [v for v in self.sample_videos if v.exists()]
+            if existing_samples:
+                print(f"{Fore.YELLOW}Samples{Style.RESET_ALL}")
+                for video in existing_samples:
+                    size_mb = video.stat().st_size / (1024 * 1024)
+                    print(f"  {video.name} {Style.DIM}({size_mb:.1f}MB){Style.RESET_ALL}")
+                print()
 
         if self.low_res_videos:
-            print(f"{Fore.YELLOW}Low quality{Style.RESET_ALL}")
-            for video, resolution in self.low_res_videos:
-                size_mb = video.stat().st_size / (1024 * 1024)
-                if resolution:
-                    width, height = resolution
-                    print(f"  {video.name} {Style.DIM}({width}x{height}, {size_mb:.1f}MB){Style.RESET_ALL}")
-                else:
-                    print(f"  {video.name} {Style.DIM}({size_mb:.1f}MB){Style.RESET_ALL}")
-            print()
+            existing_low_res = [(v, r) for v, r in self.low_res_videos if v.exists()]
+            if existing_low_res:
+                print(f"{Fore.YELLOW}Low quality{Style.RESET_ALL}")
+                for video, resolution in existing_low_res:
+                    size_mb = video.stat().st_size / (1024 * 1024)
+                    if resolution:
+                        width, height = resolution
+                        print(f"  {video.name} {Style.DIM}({width}x{height}, {size_mb:.1f}MB){Style.RESET_ALL}")
+                    else:
+                        print(f"  {video.name} {Style.DIM}({size_mb:.1f}MB){Style.RESET_ALL}")
+                print()
 
         if self.duplicate_videos:
-            print(f"{Fore.YELLOW}Duplicates{Style.RESET_ALL}")
-            for video, original, reason in self.duplicate_videos:
-                size_mb = video.stat().st_size / (1024 * 1024)
-                print(f"  {video.name} {Style.DIM}-> {original.name}{Style.RESET_ALL}")
-                print(f"    {Style.DIM}{reason} ({size_mb:.1f}MB){Style.RESET_ALL}")
-            print()
+            existing_dupes = [(v, o, r) for v, o, r in self.duplicate_videos if v.exists()]
+            if existing_dupes:
+                print(f"{Fore.YELLOW}Duplicates{Style.RESET_ALL}")
+                for video, original, reason in existing_dupes:
+                    size_mb = video.stat().st_size / (1024 * 1024)
+                    print(f"  {video.name} {Style.DIM}-> {original.name}{Style.RESET_ALL}")
+                    print(f"    {Style.DIM}{reason} ({size_mb:.1f}MB){Style.RESET_ALL}")
+                print()
 
         if self.potential_duplicates:
             print(f"{Style.DIM}Potential duplicates{Style.RESET_ALL}")
@@ -709,9 +732,9 @@ class VideoHealthChecker:
         print(f"\n{Style.DIM}Deleting {len(videos)} files...{Style.RESET_ALL}\n")
 
         for i, video in enumerate(videos, 1):
+            filename = video.name[:55] + '...' if len(video.name) > 55 else video.name
             try:
                 size_mb = video.stat().st_size / (1024 * 1024)
-                filename = video.name[:55] + '...' if len(video.name) > 55 else video.name
 
                 # Show current file being deleted with running count
                 status_line = f"  {Style.DIM}[{i}/{len(videos)}]{Style.RESET_ALL} {filename}  {Fore.GREEN}{deleted_count} deleted{Style.RESET_ALL}"

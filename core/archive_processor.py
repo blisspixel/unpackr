@@ -14,15 +14,19 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.safety import SubprocessSafety, SafetyLimits, LoopSafety
 from utils.defensive import StateValidator
 from utils.system_check import SystemCheck
+from core.safety_invariants import InvariantEnforcer
 
 
 class ArchiveProcessor:
     """Handles archive extraction and repair operations."""
-    
-    def __init__(self, config=None):
+
+    def __init__(self, config=None, destination_root=None):
         """Initialize the archive processor."""
         self.config = config or {}
         self.system_check = SystemCheck(config)
+        self.enforcer = None
+        if destination_root:
+            self.enforcer = InvariantEnforcer(destination_root, config)
     
     def process_rar_files(self, folder: Path, progress_callback=None) -> bool:
         """
@@ -290,6 +294,15 @@ class ArchiveProcessor:
             extension: File extension to delete (e.g., '.rar')
         """
         for file in folder.glob('*' + extension):
+            # Safety check: enforce invariants before deletion if enforcer is configured
+            if self.enforcer:
+                try:
+                    # For archives, pass extraction_verified=True since we only call this after successful extraction
+                    self.enforcer.enforce_delete(file, extraction_verified=True)
+                except Exception as e:
+                    logging.error(f"Safety check prevented deletion of {file}: {e}")
+                    continue  # Skip this file
+
             # Try deleting with retries for locked files
             for attempt in range(3):
                 try:
