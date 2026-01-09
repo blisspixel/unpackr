@@ -253,6 +253,47 @@ class TestDuplicateDetectionConservative:
         # Should detect copy pattern
         assert len(checker.duplicate_videos) > 0
 
+    def test_fav_prefix_kept_over_duplicate(self, checker, temp_dir):
+        """Test that files starting with 'fav' are kept when duplicates found."""
+        # Create two identical files - one with fav prefix
+        normal = temp_dir / "video.mp4"
+        favorite = temp_dir / "fav video.mp4"
+
+        content = b"identical video data " * 100000
+        normal.write_bytes(content)
+        favorite.write_bytes(content)
+
+        checker._detect_duplicates([normal, favorite])
+
+        # Should detect one as duplicate
+        assert len(checker.duplicate_videos) == 1
+
+        # The duplicate should be the non-fav file, keeper should be fav
+        dupe, keeper, reason = checker.duplicate_videos[0]
+        assert keeper.name.lower().startswith('fav'), f"Expected fav file to be kept, but keeper is {keeper.name}"
+        assert not dupe.name.lower().startswith('fav'), f"Expected non-fav file to be duplicate, but dupe is {dupe.name}"
+
+    def test_fav_prefix_with_copy_pattern(self, checker, temp_dir):
+        """Test that fav prefix is preferred even with copy pattern in filename."""
+        # Create original and a fav-marked copy
+        original = temp_dir / "video.mp4"
+        fav_copy = temp_dir / "fav video (copy).mp4"
+
+        content = b"video data " * 100000
+        original.write_bytes(content)
+        fav_copy.write_bytes(content)
+
+        checker._detect_duplicates([original, fav_copy])
+
+        # Should detect one as duplicate
+        assert len(checker.duplicate_videos) >= 1
+
+        # The fav file should be kept even though it has (copy) in name
+        for dupe, keeper, reason in checker.duplicate_videos:
+            if keeper.name.lower().startswith('fav') or dupe.name.lower().startswith('fav'):
+                # If fav is involved, it should be the keeper
+                assert keeper.name.lower().startswith('fav'), f"Expected fav file to be kept, but keeper is {keeper.name}"
+
 
 class TestIntegrationVhealth:
     """Integration tests for complete vhealth workflows."""
@@ -294,6 +335,44 @@ class TestIntegrationVhealth:
         # Check duplicates
         checker._detect_duplicates(videos)
         assert len(checker.duplicate_videos) > 0
+
+    def test_no_double_deletion(self, checker, temp_dir):
+        """Test that files are not deleted twice when using delete_bad=True and print_summary(auto_delete=True)."""
+        # Create a sample file that will be detected and deleted
+        sample = temp_dir / "sample_video.mp4"
+        sample.write_bytes(b"small sample")  # Small file = sample
+
+        # Create a larger file that won't be a sample
+        normal = temp_dir / "normal.mp4"
+        normal.write_bytes(b"normal video " * 5000000)  # ~65MB
+
+        # Track deletion calls
+        delete_calls = []
+        original_delete = checker._delete_videos
+
+        def tracking_delete(videos):
+            delete_calls.append(list(videos))
+            original_delete(videos)
+
+        checker._delete_videos = tracking_delete
+
+        # Run check_path with delete_bad=True
+        checker.check_path(temp_dir, delete_bad=True, skip_health=True)
+
+        # Run print_summary with auto_delete=True
+        checker.print_summary(auto_delete=True)
+
+        # Count how many times each file was attempted to be deleted
+        all_deleted = []
+        for call in delete_calls:
+            all_deleted.extend([v.name for v in call if v.exists() or v.name in [f.name for f in all_deleted]])
+
+        # Each file should only appear once across all deletion calls
+        # (files that were already deleted won't exist, so they shouldn't be in subsequent calls)
+        from collections import Counter
+        counts = Counter(all_deleted)
+        duplicates = {f: c for f, c in counts.items() if c > 1}
+        assert len(duplicates) == 0, f"Files deleted multiple times: {duplicates}"
 
 
 if __name__ == '__main__':

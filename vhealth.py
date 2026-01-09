@@ -1,4 +1,4 @@
-"""
+r"""
 vhealth - Check videos for corruption, find duplicates, detect samples
 
 Usage:
@@ -133,6 +133,9 @@ class VideoHealthChecker:
                 bad_files = self.sample_videos + [v for v, _ in self.low_res_videos]
                 if bad_files:
                     self._delete_videos(bad_files)
+                    # Clear lists so print_summary doesn't try to delete again
+                    self.sample_videos = []
+                    self.low_res_videos = []
                     print()
 
             # Check for duplicates BEFORE health check (no point checking same file twice)
@@ -147,6 +150,8 @@ class VideoHealthChecker:
                     if dupes_to_delete:
                         print(f"{Fore.YELLOW}Found {len(dupes_to_delete)} duplicates{Style.RESET_ALL}")
                         self._delete_videos(dupes_to_delete)
+                        # Clear list so print_summary doesn't try to delete again
+                        self.duplicate_videos = []
                 else:
                     print(f"{Fore.GREEN}No duplicates found{Style.RESET_ALL}")
 
@@ -214,7 +219,8 @@ class VideoHealthChecker:
                                 status_line += f"  {eta_str}"
                             status_line += f"  {Fore.CYAN}{spinner}{Style.RESET_ALL} {filename[:45]}"
 
-                            print(f"\r{status_line}{' ' * 10}", end='', flush=True)
+                            # Clear line first, then print status
+                            print(f"\r{' ' * 120}\r{status_line}", end='', flush=True)
                             spinner_idx[0] += 1
                             time.sleep(0.1)  # Update 10 times per second
 
@@ -233,11 +239,8 @@ class VideoHealthChecker:
                     if result == 'healthy':
                         healthy_count += 1
                     else:
-                        # Problem found - show it and keep it visible
+                        # Problem found - just count it, show at end
                         bad_count += 1
-                        print(f"\r{' ' * 150}\r", end='', flush=True)  # Clear line
-                        counts = f"{Fore.GREEN}{healthy_count} ok{Style.RESET_ALL}  {Fore.RED}{bad_count} bad{Style.RESET_ALL}"
-                        print(f"  {counts}  {Style.DIM}[{i}/{len(videos_to_check)}]{Style.RESET_ALL} {filename[:50]}  {Fore.RED}{result}{Style.RESET_ALL}")
                         problems.append((video, result))
 
                 # Clear line and show final summary
@@ -252,6 +255,8 @@ class VideoHealthChecker:
                 if delete_bad_now and problems:
                     corrupt_files = [v for v, _ in problems]
                     self._delete_videos(corrupt_files)
+                    # Clear list so print_summary doesn't try to delete again
+                    self.corrupt_videos = []
                     print()
         else:
             print(f"{Fore.RED}Path not found: {path}{Style.RESET_ALL}")
@@ -263,9 +268,29 @@ class VideoHealthChecker:
         2. Similar size + duration + hash (thorough, catches re-encodes)
         3. Filename patterns (copy, duplicate, etc.)
         4. Similar names + similar size (potential duplicates)
+        
+        When duplicates found, keeps files starting with 'fav' prefix.
         """
         import hashlib
         from difflib import SequenceMatcher
+
+        def is_favorite(path: Path) -> bool:
+            """Check if file is marked as favorite (starts with 'fav')."""
+            return path.name.lower().startswith('fav')
+
+        def pick_keeper(file1: Path, file2: Path) -> tuple:
+            """Pick which file to keep. Returns (duplicate, keeper)."""
+            # Prefer files starting with 'fav'
+            fav1 = is_favorite(file1)
+            fav2 = is_favorite(file2)
+            
+            if fav1 and not fav2:
+                return (file2, file1)  # Keep file1 (fav)
+            elif fav2 and not fav1:
+                return (file1, file2)  # Keep file2 (fav)
+            else:
+                # Neither or both are fav - keep first one found
+                return (file2, file1)
 
         # Filter to only existing, healthy videos
         valid_videos = [v for v in video_files if v.exists() and v not in self.corrupt_videos and v not in self.sample_videos]
@@ -295,7 +320,9 @@ class VideoHealthChecker:
 
                             if file_hash in hashes:
                                 # Confirmed duplicate (size + hash match)
-                                self.duplicate_videos.append((video, hashes[file_hash], "Exact match (size + hash)"))
+                                dupe, keeper = pick_keeper(video, hashes[file_hash])
+                                hashes[file_hash] = keeper  # Update to keep the preferred one
+                                self.duplicate_videos.append((dupe, keeper, "Exact match (size + hash)"))
                             else:
                                 hashes[file_hash] = video
                     except:
@@ -364,7 +391,9 @@ class VideoHealthChecker:
 
                             if file_hash in hashes:
                                 # Different sizes but same duration + hash = likely re-encode or duplicate
-                                self.duplicate_videos.append((video, hashes[file_hash], "Same duration + hash"))
+                                dupe, keeper = pick_keeper(video, hashes[file_hash])
+                                hashes[file_hash] = keeper
+                                self.duplicate_videos.append((dupe, keeper, "Same duration + hash"))
                             else:
                                 hashes[file_hash] = video
                     except:
@@ -393,7 +422,8 @@ class VideoHealthChecker:
                 # Look for original file
                 potential_original = video.parent / original_name
                 if potential_original.exists() and potential_original != video:
-                    self.duplicate_videos.append((video, potential_original, f"Filename pattern ('{matched_pattern.strip()}')"))
+                    dupe, keeper = pick_keeper(video, potential_original)
+                    self.duplicate_videos.append((dupe, keeper, f"Filename pattern ('{matched_pattern.strip()}')"))
 
 
         # Deduplicate the confirmed duplicates list (a file might be caught by multiple strategies)
@@ -428,7 +458,8 @@ class VideoHealthChecker:
                     original_path = video.parent / original_name
 
                     if original_path.exists() and original_path != video:
-                        self.duplicate_videos.append((video, original_path, "Duplicate filename pattern"))
+                        dupe, keeper = pick_keeper(video, original_path)
+                        self.duplicate_videos.append((dupe, keeper, "Duplicate filename pattern"))
                     break
 
     def _find_videos(self, directory: Path) -> List[Path]:
@@ -796,10 +827,10 @@ def main():
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG, format='%(message)s')
     else:
-        logging.basicConfig(level=logging.ERROR, format='%(message)s')  # Only errors, suppress warnings
+        logging.basicConfig(level=logging.CRITICAL, format='%(message)s')  # Suppress all but critical
 
     # Print header
-    print(f"\n{Fore.CYAN}vhealth{Style.RESET_ALL} {Style.DIM}v1.2.1{Style.RESET_ALL}")
+    print(f"\n{Fore.CYAN}vhealth{Style.RESET_ALL} {Style.DIM}v1.3.0{Style.RESET_ALL}")
     print(f"{Style.DIM}Check videos for corruption, duplicates, samples{Style.RESET_ALL}\n")
 
     # Load config

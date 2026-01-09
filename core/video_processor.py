@@ -20,10 +20,16 @@ from datetime import datetime
 class VideoProcessor:
     """Handles video file validation and health checks."""
     
-    def __init__(self, config=None):
-        """Initialize the video processor."""
+    def __init__(self, config=None, process_tracker=None):
+        """Initialize the video processor.
+        
+        Args:
+            config: Configuration object
+            process_tracker: Object with 'active_process' attribute for cancellation support
+        """
         self.config = config or {}
         self.system_check = SystemCheck(config)
+        self.process_tracker = process_tracker
     
     def check_video_health(self, video_file: Path, check_quality: bool = False) -> tuple:
         """
@@ -71,7 +77,8 @@ class VideoProcessor:
                 ffmpeg_cmd + ['-i', str(video_file)],
                 timeout=10,  # Metadata check should be fast
                 operation=f"Video metadata check: {video_file.name}",
-                expected_codes=[0, 1]  # ffmpeg returns 1 when no output file specified (normal for metadata check)
+                expected_codes=[0, 1],  # ffmpeg returns 1 when no output file specified (normal for metadata check)
+                process_tracker=self.process_tracker
             )
 
             # Parse duration, bitrate, and resolution from ffmpeg output
@@ -148,7 +155,8 @@ class VideoProcessor:
                     '-'
                 ],
                 timeout=SafetyLimits.VIDEO_CHECK_TIMEOUT,
-                operation=f"Video decode test: {video_file.name}"
+                operation=f"Video decode test: {video_file.name}",
+                process_tracker=self.process_tracker
             )
 
             # Check for errors in decode

@@ -352,6 +352,12 @@ class EventBuilder:
         parent_event_id: Optional[str] = None
     ) -> StructuredEvent:
         """Emit archive extraction completed event."""
+        # Calculate extraction speed if file exists and duration > 0
+        try:
+            extraction_speed = (path.stat().st_size / (1024 * 1024)) / duration if duration > 0 else 0
+        except (FileNotFoundError, OSError):
+            extraction_speed = 0
+        
         return self.emitter.emit(
             EventType.ARCHIVE_EXTRACTION_COMPLETED,
             f"Extracted {files_extracted} files from {path.name}",
@@ -362,7 +368,7 @@ class EventBuilder:
                 'files_extracted': files_extracted
             },
             metadata={
-                'extraction_speed_mbps': (path.stat().st_size / (1024 * 1024)) / duration if duration > 0 else 0
+                'extraction_speed_mbps': extraction_speed
             },
             parent_event_id=parent_event_id
         )
@@ -630,7 +636,7 @@ class EventAnalyzer:
             event_type_prefix: Prefix to match (e.g., 'VIDEO_VALIDATION')
 
         Returns:
-            Success rate (0.0 to 1.0)
+            Success rate (0.0 to 1.0) based on terminal states (passed/completed vs failed)
         """
         relevant_events = [
             e for e in self.events
@@ -640,12 +646,21 @@ class EventAnalyzer:
         if not relevant_events:
             return 0.0
 
-        completed = sum(
+        # Count only terminal states for meaningful success rate
+        passed = sum(
             1 for e in relevant_events
             if 'COMPLETED' in e.event_type.name or 'PASSED' in e.event_type.name
         )
+        failed = sum(
+            1 for e in relevant_events
+            if 'FAILED' in e.event_type.name
+        )
+        
+        total_terminal = passed + failed
+        if total_terminal == 0:
+            return 0.0
 
-        return completed / len(relevant_events)
+        return passed / total_terminal
 
     def get_average_duration(self, event_type: EventType) -> Optional[float]:
         """

@@ -183,6 +183,62 @@ def test_safety_limits_config(runner: SafetyTestRunner):
     runner.test("SafetyLimits: Total time limit defined", SafetyLimits.MAX_TOTAL_PROCESSING_TIME > 0)
 
 
+def test_process_tracker(runner: SafetyTestRunner):
+    """Test subprocess process tracking for cancellation."""
+    print(f"\n{Fore.YELLOW}[Process Tracker Tests]{Style.RESET_ALL}")
+    
+    # Create a mock process tracker
+    class MockTracker:
+        def __init__(self):
+            self.active_process = None
+    
+    tracker = MockTracker()
+    
+    # Test that process is tracked during execution
+    import platform
+    if platform.system() == 'Windows':
+        # Run a quick command with tracker
+        success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
+            ['cmd', '/c', 'echo test'],
+            timeout=5,
+            operation="Tracked command",
+            process_tracker=tracker
+        )
+        # After completion, active_process should be None
+        runner.test("ProcessTracker: Clears after completion", tracker.active_process is None)
+        runner.test("ProcessTracker: Command succeeded", success)
+    else:
+        runner.test("ProcessTracker: Skipped (non-Windows)", True)
+
+
+def test_cancellation_flag(runner: SafetyTestRunner):
+    """Test cancellation flag behavior in UnpackrApp."""
+    print(f"\n{Fore.YELLOW}[Cancellation Flag Tests]{Style.RESET_ALL}")
+    
+    from core import Config
+    from unpackr import UnpackrApp
+    
+    # Create app with default config
+    config = Config(None)
+    app = UnpackrApp(config)
+    
+    # Test initial state
+    runner.test("Cancellation: Initial flag is False", app.cancellation_requested == False)
+    runner.test("Cancellation: Initial active_process is None", app.active_process is None)
+    
+    # Test flag can be set
+    app.cancellation_requested = True
+    runner.test("Cancellation: Flag can be set", app.cancellation_requested == True)
+    
+    # Test archive_processor has tracker reference
+    runner.test("Cancellation: ArchiveProcessor has tracker", 
+                app.archive_processor.process_tracker is app)
+    
+    # Test video_processor has tracker reference
+    runner.test("Cancellation: VideoProcessor has tracker", 
+                app.video_processor.process_tracker is app)
+
+
 def main():
     """Run all safety tests."""
     print(f"\n{Fore.CYAN}{'='*70}")
@@ -198,6 +254,8 @@ def main():
     test_operation_timer(runner)
     test_stuck_detector(runner)
     test_safety_limits_config(runner)
+    test_process_tracker(runner)
+    test_cancellation_flag(runner)
     
     success = runner.summary()
     return 0 if success else 1

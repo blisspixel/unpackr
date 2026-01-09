@@ -158,7 +158,8 @@ class SubprocessSafety:
     @staticmethod
     def run_with_timeout(cmd: list, timeout: int, cwd: Optional[Path] = None,
                         operation: str = "Subprocess", expected_codes: list = None,
-                        use_temp_files: bool = False) -> tuple:
+                        use_temp_files: bool = False,
+                        process_tracker: object = None) -> tuple:
         """
         Run subprocess with guaranteed timeout and buffer overflow protection.
 
@@ -169,6 +170,7 @@ class SubprocessSafety:
             operation: Operation description for logging
             expected_codes: List of expected exit codes (suppresses warnings for these codes)
             use_temp_files: Use temp files for stdout/stderr instead of PIPE (prevents buffer overflow on large outputs)
+            process_tracker: Object with 'active_process' attribute to track subprocess for cancellation
 
         Returns:
             Tuple of (success: bool, stdout: str, stderr: str, returncode: int)
@@ -198,6 +200,10 @@ class SubprocessSafety:
                             errors='replace'
                         )
 
+                        # Track process for cancellation
+                        if process_tracker:
+                            process_tracker.active_process = process
+
                         try:
                             process.wait(timeout=timeout)
                             success = process.returncode == 0
@@ -213,7 +219,7 @@ class SubprocessSafety:
                             return success, stdout, stderr, process.returncode
 
                         except subprocess.TimeoutExpired:
-                            logging.error(f"[SAFETY] {operation} TIMEOUT - killing process")
+                            logging.warning(f"[SAFETY] {operation} TIMEOUT - killing process")
                             process.kill()
                             try:
                                 process.wait(timeout=5)
@@ -227,6 +233,11 @@ class SubprocessSafety:
                             except:
                                 stdout, stderr = "", "Process killed after timeout"
                             return False, stdout, stderr, -1
+
+                        finally:
+                            # Clear process tracker
+                            if process_tracker:
+                                process_tracker.active_process = None
 
                     finally:
                         # Cleanup temp files
@@ -248,6 +259,10 @@ class SubprocessSafety:
                     errors='replace'
                 )
 
+                # Track process for cancellation
+                if process_tracker:
+                    process_tracker.active_process = process
+
                 try:
                     stdout, stderr = process.communicate(timeout=timeout)
                     success = process.returncode == 0
@@ -259,13 +274,18 @@ class SubprocessSafety:
                     return success, stdout, stderr, process.returncode
 
                 except subprocess.TimeoutExpired:
-                    logging.error(f"[SAFETY] {operation} TIMEOUT - killing process")
+                    logging.warning(f"[SAFETY] {operation} TIMEOUT - killing process")
                     process.kill()
                     try:
                         stdout, stderr = process.communicate(timeout=5)
                     except:
                         stdout, stderr = "", "Process killed after timeout"
                     return False, stdout, stderr, -1
+
+                finally:
+                    # Clear process tracker
+                    if process_tracker:
+                        process_tracker.active_process = None
 
         except Exception as e:
             logging.error(f"[SAFETY] {operation} exception: {e}")

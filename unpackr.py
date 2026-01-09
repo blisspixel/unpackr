@@ -12,6 +12,7 @@ import argparse
 import logging
 import re
 import os
+import signal
 import threading
 import json
 import random
@@ -246,12 +247,13 @@ class UnpackrApp:
         self.stats = ThreadSafeStats()  # Thread-safe statistics tracking
         # Initialize handlers with stats tracking
         self.file_handler = FileHandler(config, self.stats)
-        self.archive_processor = ArchiveProcessor(config)
-        self.video_processor = VideoProcessor(config)
+        self.archive_processor = ArchiveProcessor(config, process_tracker=self)
+        self.video_processor = VideoProcessor(config, process_tracker=self)
         self.dry_run = False  # Set to True for dry-run mode
         self.dry_run_plan = None  # DryRunPlan for collecting operations in dry-run mode
         self.start_time = None
         self.work_plan = None
+        self.destination_dir = None  # Store for display_summary tip
         # MEMORY FIX: Use bounded deque to prevent unbounded memory growth in 24+ hour runs
         # Keeps last 1000 failed deletions (oldest are dropped automatically)
         self.failed_deletions = deque(maxlen=1000)  # Track folders that couldn't be deleted
@@ -268,6 +270,10 @@ class UnpackrApp:
         self.spinner_thread = None  # Background spinner thread
         self.spinner_running = False  # Control flag for spinner thread
         self.spinner_lock = threading.Lock()  # Thread safety for spinner updates
+
+        # Cancellation support
+        self.cancellation_requested = False
+        self.active_process = None  # Track current subprocess for termination
 
         # Load snarky comments for easter eggs
         self.comments = self._load_comments()
@@ -877,11 +883,11 @@ class UnpackrApp:
                 eta = str(timedelta(seconds=int(remaining))).split('.')[0]
                 throughput = (current / elapsed) * 60
             else:
-                eta = "..."
-                throughput = 0.0
+                eta = "calculating..."
+                throughput = None  # Signal to display "---" instead of 0.0
         else:
-            eta = "..."
-            throughput = 0.0
+            eta = "calculating..."
+            throughput = None
 
         # Progress bar - modern block characters
         bar_length = 40
@@ -962,7 +968,9 @@ class UnpackrApp:
         else:
             time_saved_str = f"{time_saved_hours:.1f} hrs"
 
-        sys.stdout.write(f"  {Style.DIM}speed:{Style.RESET_ALL} {Fore.CYAN}{throughput:>5.1f}{Style.RESET_ALL} {Style.DIM}folders/min  time left:{Style.RESET_ALL} {Fore.CYAN}{eta}{Style.RESET_ALL}  {Style.DIM}saved:{Style.RESET_ALL} {Fore.MAGENTA}{time_saved_str}{Style.RESET_ALL}\033[K\n")
+        # Format throughput - show "---" while calculating, number once we have data
+        throughput_str = f"{throughput:>5.1f}" if throughput is not None else "  ---"
+        sys.stdout.write(f"  {Style.DIM}speed:{Style.RESET_ALL} {Fore.CYAN}{throughput_str}{Style.RESET_ALL} {Style.DIM}folders/min  time left:{Style.RESET_ALL} {Fore.CYAN}{eta}{Style.RESET_ALL}  {Style.DIM}saved:{Style.RESET_ALL} {Fore.MAGENTA}{time_saved_str}{Style.RESET_ALL}\033[K\n")
         sys.stdout.write("\n")
 
         # Extract the operation verb and the file/folder from action
@@ -1160,6 +1168,9 @@ class UnpackrApp:
             source_dir: Source directory to process
             destination_dir: Destination for video files
         """
+        # Store destination for display_summary tip
+        self.destination_dir = destination_dir
+
         # Get video folders from work plan
         if not self.work_plan:
             print(Fore.RED + "No work plan available. Run scan_and_plan() first." + Style.RESET_ALL)
@@ -1204,6 +1215,11 @@ class UnpackrApp:
                 if i == 1:
                     logging.info(f"Processing first folder (i=1): {folder.name}")
 
+                # CANCELLATION CHECKPOINT: Check before each folder
+                if self.cancellation_requested:
+                    logging.info(f"Cancellation requested - stopping after {i-1} folders")
+                    break
+
                 # Safety checks
                 if not loop_guard.tick():
                     logging.error("[SAFETY] Folder processing loop exceeded safety limit")
@@ -1226,9 +1242,11 @@ class UnpackrApp:
                 # Mark progress for stuck detection
                 self.stuck_detector.mark_progress()
 
-            # Process loose videos
-            if self.work_plan.loose_videos:
+            # Process loose videos (skip if cancelled)
+            if self.work_plan.loose_videos and not self.cancellation_requested:
                 for video in self.work_plan.loose_videos:
+                    if self.cancellation_requested:
+                        break
                     try:
                         if self.dry_run:
                             logging.info(f"[DRY-RUN] Would validate and move loose video: {video.name}")
@@ -1251,10 +1269,12 @@ class UnpackrApp:
                     except Exception as e:
                         logging.error(f"Error processing loose video {video}: {e}")
 
-            # Delete junk folders identified in pre-scan
-            if self.work_plan.junk_folders:
+            # Delete junk folders identified in pre-scan (skip if cancelled)
+            if self.work_plan.junk_folders and not self.cancellation_requested:
                 logging.info(f"Deleting {len(self.work_plan.junk_folders)} junk folders identified in pre-scan")
                 for junk_folder in self.work_plan.junk_folders:
+                    if self.cancellation_requested:
+                        break
                     try:
                         if self.dry_run:
                             logging.info(f"[DRY-RUN] Would delete junk folder: {junk_folder}")
@@ -1407,12 +1427,15 @@ class UnpackrApp:
 
         total_cleaned = self.stats['folders_deleted'] + self.stats['empty_folders_deleted']
 
+        # Show cancelled or complete status
+        status = f"{Fore.YELLOW}cancelled{Style.RESET_ALL}" if self.cancellation_requested else f"{Fore.GREEN}complete{Style.RESET_ALL}"
+
         print(f"""
   {Style.DIM}_   _ _ __  _ __   __ _  ___| | ___ __
  | | | | '_ \\| '_ \\ / _` |/ __| |/ / '__|
  | |_| | | | | |_) | (_| | (__|   <| |
   \\__,_|_| |_| .__/ \\__,_|\\___|_|\\_\\_|
-             |_|{Style.RESET_ALL}  {Fore.GREEN}complete{Style.RESET_ALL} {Style.DIM}- runtime:{Style.RESET_ALL} {Fore.CYAN}{elapsed_str}{Style.RESET_ALL}
+             |_|{Style.RESET_ALL}  {status} {Style.DIM}- runtime:{Style.RESET_ALL} {Fore.CYAN}{elapsed_str}{Style.RESET_ALL}
 
   {Style.DIM}FOLDERS{Style.RESET_ALL}  processed: {Fore.WHITE}{self.stats['folders_processed']:>4}{Style.RESET_ALL}  |  deleted: {Fore.GREEN}{self.stats['folders_deleted']:>4}{Style.RESET_ALL}  |  empty: {Fore.CYAN}{self.stats['empty_folders_deleted']:>4}{Style.RESET_ALL}  |  preserved: {Fore.MAGENTA}{self.stats['folders_preserved']:>4}{Style.RESET_ALL}  |  {Fore.GREEN}total cleaned: {total_cleaned}{Style.RESET_ALL}
   {Style.DIM}VIDEOS{Style.RESET_ALL}   found: {Fore.WHITE}{self.stats['videos_found']:>4}{Style.RESET_ALL}  |  processed: {Fore.GREEN}{self.stats['videos_moved']:>4}{Style.RESET_ALL}  |  samples: {Fore.YELLOW}{self.stats['videos_sample']:>4}{Style.RESET_ALL}  |  corrupt: {Fore.RED}{self.stats['videos_corrupt']:>4}{Style.RESET_ALL}  |  failed: {Fore.RED}{self.stats['videos_failed']:>4}{Style.RESET_ALL}
@@ -1431,9 +1454,9 @@ class UnpackrApp:
         if warnings:
             print(f"\n  {' | '.join(warnings)}")
 
-        # Suggest vhealth for additional validation if videos were processed
-        if self.stats['videos_moved'] > 0:
-            print(f"\n  {Style.DIM}Tip: Run 'vhealth <destination>' to validate videos{Style.RESET_ALL}")
+        # Suggest vhealth for collection maintenance if videos were processed
+        if self.stats['videos_moved'] > 0 and self.destination_dir:
+            print(f"\n  {Style.DIM}Tip: Run 'vhealth \"{self.destination_dir}\"' to check for duplicates, samples, and corruption{Style.RESET_ALL}")
 
 
 def clean_path(path_str: str) -> str:
@@ -1668,6 +1691,26 @@ def main():
             print(Fore.RED + f"Error initializing application: {e}" + Style.RESET_ALL)
             logging.error(f"App init failed: {e}", exc_info=True)
             sys.exit(1)
+
+        # Set up graceful cancellation handler
+        def handle_cancel(signum, frame):
+            if app.cancellation_requested:
+                # Second Ctrl+C = force exit
+                print(f"\n{Fore.RED}Force exit...{Style.RESET_ALL}")
+                app._stop_spinner_thread()
+                sys.exit(1)
+            app.cancellation_requested = True
+            print(f"\n{Fore.YELLOW}Cancellation requested - finishing current operation...{Style.RESET_ALL}")
+            logging.info("User requested cancellation (Ctrl+C)")
+            # Terminate active subprocess if any
+            if app.active_process:
+                try:
+                    app.active_process.terminate()
+                    logging.info("Terminated active subprocess")
+                except:
+                    pass
+
+        signal.signal(signal.SIGINT, handle_cancel)
         
         # Scan and plan
         try:
@@ -1721,17 +1764,23 @@ def main():
         try:
             app.run(source_dir, destination_dir)
 
-            # Multi-pass cleanup for locked folders
-            app.retry_failed_deletions()
+            # Skip cleanup if cancelled
+            if not app.cancellation_requested:
+                # Multi-pass cleanup for locked folders
+                app.retry_failed_deletions()
 
-            # Final cleanup of empty folders
-            app.cleanup_empty_folders(source_dir)
+                # Final cleanup of empty folders
+                app.cleanup_empty_folders(source_dir)
 
             app.display_summary()
-            logging.info("Unpackr completed successfully")
+            
+            if app.cancellation_requested:
+                logging.info("Unpackr cancelled by user")
+            else:
+                logging.info("Unpackr completed successfully")
 
-            # Run vhealth on destination if requested
-            if args.vhealth and dest_dir:
+            # Run vhealth on destination if requested (skip if cancelled)
+            if args.vhealth and destination_dir and not app.cancellation_requested:
                 print(f"\n{Fore.CYAN}Running video health check on destination...{Style.RESET_ALL}\n")
                 try:
                     from vhealth import VideoHealthChecker

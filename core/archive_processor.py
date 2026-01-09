@@ -21,10 +21,17 @@ from core.safety_invariants import InvariantEnforcer
 class ArchiveProcessor:
     """Handles archive extraction and repair operations."""
 
-    def __init__(self, config=None, destination_root=None):
-        """Initialize the archive processor."""
+    def __init__(self, config=None, destination_root=None, process_tracker=None):
+        """Initialize the archive processor.
+        
+        Args:
+            config: Configuration object
+            destination_root: Root destination for safety invariants
+            process_tracker: Object with 'active_process' attribute for cancellation support
+        """
         self.config = config or {}
         self.system_check = SystemCheck(config)
+        self.process_tracker = process_tracker
         self.enforcer = None
         if destination_root:
             self.enforcer = InvariantEnforcer(destination_root, config)
@@ -141,7 +148,8 @@ class ArchiveProcessor:
                         sevenzip_cmd + ['x', str(archive_file), f'-o{folder}', '-aoa'],
                         timeout=extraction_timeout,
                         cwd=folder,
-                        operation=f"Archive extraction: {archive_file.name}"
+                        operation=f"Archive extraction: {archive_file.name}",
+                        process_tracker=self.process_tracker
                     )
 
                     elapsed = time.time() - start_time
@@ -254,7 +262,8 @@ class ArchiveProcessor:
                 timeout=par2_timeout,
                 cwd=folder,
                 operation=f"PAR2 repair: {par2_file.name}",
-                use_temp_files=True  # PAR2 can output large amounts of data, use temp files
+                use_temp_files=True,  # PAR2 can output large amounts of data, use temp files
+                process_tracker=self.process_tracker
             )
             elapsed = time.time() - start_time
 
