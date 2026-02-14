@@ -3,7 +3,6 @@ Defensive programming utilities for Unpackr.
 Input validation, state verification, and error recovery.
 """
 
-import os
 import logging
 from pathlib import Path
 from typing import Optional, Union, List, Any
@@ -379,7 +378,6 @@ class ErrorRecovery:
 
         import shutil
         import time
-        import tempfile
 
         # Get source file size before move
         try:

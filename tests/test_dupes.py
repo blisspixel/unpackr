@@ -1,29 +1,45 @@
-"""Quick test of duplicate detection."""
+"""Regression tests for robust video discovery in vhealth."""
+
 from pathlib import Path
-from vhealth import VideoHealthChecker
+import sys
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from core import Config
+from vhealth import VideoHealthChecker
 
-config = Config()
-checker = VideoHealthChecker(config)
 
-# Get video files
-path = Path("G:/out4")
-video_files = checker._find_videos(path)
+def test_find_videos_handles_unreadable_paths(monkeypatch, tmp_path):
+    """Discovery should continue when one extension scan hits OSError."""
+    config = Config()
+    config.set('video_extensions', ['.mkv', '.mp4'])
+    checker = VideoHealthChecker(config)
 
-print(f"Found {len(video_files)} videos")
-print("Detecting duplicates...")
+    readable_video = tmp_path / "ok.mp4"
+    readable_video.write_bytes(b"video")
 
-# Run just the duplicate detection
-checker._detect_duplicates(video_files)
+    def fake_rglob(self, pattern):
+        if pattern == "*.mkv":
+            raise OSError("locked volume")
+        if pattern == "*.mp4":
+            return iter([readable_video])
+        return iter([])
 
-print(f"\nConfirmed duplicates: {len(checker.duplicate_videos)}")
-for video, original, reason in checker.duplicate_videos:
-    print(f"  {video.name}")
-    print(f"    -> {original.name}")
-    print(f"    {reason}")
+    monkeypatch.setattr(Path, "rglob", fake_rglob)
+    videos = checker._find_videos(tmp_path)
+    assert videos == [readable_video]
 
-print(f"\nPotential duplicates: {len(checker.potential_duplicates)}")
-for video1, video2, similarity in checker.potential_duplicates[:5]:  # Show first 5
-    print(f"  {video1.name}")
-    print(f"  {video2.name}")
-    print(f"    Similarity: {similarity:.0%}")
+
+def test_find_videos_sorts_by_size_desc(tmp_path):
+    """Discovery returns largest files first."""
+    config = Config()
+    config.set('video_extensions', ['.mp4'])
+    checker = VideoHealthChecker(config)
+
+    large = tmp_path / "large.mp4"
+    small = tmp_path / "small.mp4"
+    large.write_bytes(b"a" * 32)
+    small.write_bytes(b"a" * 8)
+
+    videos = checker._find_videos(tmp_path)
+    assert videos == [large, small]

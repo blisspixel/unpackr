@@ -3,13 +3,12 @@ File handling operations for Unpackr.
 Manages file operations, folder cleanup, and content classification.
 """
 
-import os
 import shutil
 import logging
 import time
 import psutil
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -213,10 +212,19 @@ class FileHandler:
         Returns:
             True if non-video files exist, False otherwise
         """
-        all_files = [f for f in folder.rglob('*') if f.is_file()]
         video_extensions = self.config.video_extensions
-        non_video_files = [f for f in all_files if f.suffix.lower() not in video_extensions]
-        return len(non_video_files) > 0
+        try:
+            for file in folder.rglob('*'):
+                try:
+                    if file.is_file() and file.suffix.lower() not in video_extensions:
+                        return True
+                except (OSError, PermissionError):
+                    logging.warning(f"Skipping unreadable file while scanning {folder}: {file}")
+            return False
+        except (OSError, PermissionError) as e:
+            # Fail-safe: unreadable tree should be treated as non-video content present
+            logging.warning(f"Could not fully scan {folder} for non-video files: {e}")
+            return True
     
     def contains_unwanted_files(self, folder: Path) -> bool:
         """
@@ -230,14 +238,22 @@ class FileHandler:
         """
         video_extensions = self.config.video_extensions
         
-        for file in folder.rglob('*'):
-            if file.is_file() and not (
-                file.suffix.lower() in video_extensions or
-                file.suffix.lower() == '.par2' or
-                file.suffix.lower() == '.rar'
-            ):
-                return True
-        return False
+        try:
+            for file in folder.rglob('*'):
+                try:
+                    if file.is_file() and not (
+                        file.suffix.lower() in video_extensions or
+                        file.suffix.lower() == '.par2' or
+                        file.suffix.lower() == '.rar'
+                    ):
+                        return True
+                except (OSError, PermissionError):
+                    logging.warning(f"Skipping unreadable file while scanning {folder}: {file}")
+            return False
+        except (OSError, PermissionError) as e:
+            # Fail-safe: unreadable tree should be treated as containing unwanted files
+            logging.warning(f"Could not fully scan {folder} for unwanted files: {e}")
+            return True
     
     def is_folder_empty_or_removable(self, folder: Path, par2_error: bool = False,
                                      archive_error: bool = False) -> bool:
@@ -256,11 +272,21 @@ class FileHandler:
         image_count = 0
         image_total_bytes = 0
         image_extensions = self.config.image_extensions
-        music_extensions = self.config.music_extensions
-        document_extensions = self.config.document_extensions
 
-        for file in folder.iterdir():
-            if file.is_dir():
+        try:
+            entries = list(folder.iterdir())
+        except (OSError, PermissionError) as e:
+            logging.warning(f"Folder '{folder}' not deleted: cannot enumerate contents ({e})")
+            return False
+
+        for file in entries:
+            try:
+                is_dir = file.is_dir()
+            except (OSError, PermissionError) as e:
+                logging.warning(f"Folder '{folder}' not deleted: cannot inspect '{file}' ({e})")
+                return False
+
+            if is_dir:
                 # Recursively check if subdirectory is also removable
                 if not self.is_folder_empty_or_removable(file, par2_error, archive_error):
                     logging.info(f"Folder '{folder}' not deleted: contains non-removable subdirectory '{file.name}'")
@@ -368,7 +394,7 @@ class FileHandler:
             # SECURITY FIX: Use array form to prevent command injection
             # Pass folder path as parameter, not via string interpolation
             # PowerShell's -LiteralPath handles special chars without injection risk
-            result = subprocess.run(
+            subprocess.run(
                 ['powershell', '-Command',
                  'Remove-Item', '-LiteralPath', str(folder), '-Recurse', '-Force', '-ErrorAction', 'SilentlyContinue'],
                 capture_output=True,
@@ -567,7 +593,7 @@ class FileHandler:
                 video_file.unlink(missing_ok=True)
                 logging.info(f"Successfully deleted video file: {video_file}")
                 return True
-            except PermissionError as e:
+            except PermissionError:
                 logging.warning(f"Attempt {attempt + 1}/{max_attempts} - File locked: {video_file}")
                 # Continue retry loop with backoff
             except Exception as e:

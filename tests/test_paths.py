@@ -44,7 +44,9 @@ def test_clean_path():
     else:
         print("Some tests failed!")
     
-    return all_passed
+    if __name__ == '__main__':
+        return all_passed
+    assert all_passed
 
 if __name__ == '__main__':
     success = test_clean_path()

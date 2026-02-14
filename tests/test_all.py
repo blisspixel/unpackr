@@ -98,7 +98,9 @@ def test_imports():
         tests_total += 1
         print_test("Import utils.ProgressTracker", False, str(e))
     
-    return tests_passed, tests_total
+    if __name__ == '__main__':
+        return tests_passed, tests_total
+    assert tests_passed == tests_total
 
 def test_path_cleaning():
     """Test path cleaning functionality."""
@@ -130,7 +132,9 @@ def test_path_cleaning():
         print_test(f"clean_path({input_path!r}) == {expected!r}", passed, 
                   f"Got: {result!r}")
     
-    return tests_passed, tests_total
+    if __name__ == '__main__':
+        return tests_passed, tests_total
+    assert tests_passed == tests_total
 
 def test_config():
     """Test configuration loading."""
@@ -150,7 +154,9 @@ def test_config():
     except Exception as e:
         tests_total += 1
         print_test("Create default Config", False, str(e))
-        return tests_passed, tests_total
+        if __name__ == '__main__':
+            return tests_passed, tests_total
+        assert False, f"Create default Config failed: {e}"
     
     # Test video extensions
     tests_total += 1
@@ -174,7 +180,9 @@ def test_config():
     if has_nfo:
         tests_passed += 1
     
-    return tests_passed, tests_total
+    if __name__ == '__main__':
+        return tests_passed, tests_total
+    assert tests_passed == tests_total
 
 def test_system_check():
     """Test system tool checking."""
@@ -203,7 +211,9 @@ def test_system_check():
         tests_total += 1
         print_test("SystemCheck.check_all_tools()", False, str(e))
     
-    return tests_passed, tests_total
+    if __name__ == '__main__':
+        return tests_passed, tests_total
+    assert tests_passed == tests_total
 
 def test_file_handler():
     """Test file handler functionality."""
@@ -224,11 +234,19 @@ def test_file_handler():
     except Exception as e:
         tests_total += 1
         print_test("Create FileHandler", False, str(e))
-        return tests_passed, tests_total
+        if __name__ == '__main__':
+            return tests_passed, tests_total
+        assert False, f"Create FileHandler failed: {e}"
     
     # Test find_video_files with test directory
     test_path = Path("G:/test")
-    if test_path.exists():
+    try:
+        path_exists = test_path.exists()
+    except OSError as e:
+        path_exists = False
+        print_test(f"Check test path {test_path}", True, f"Skipping inaccessible path: {e}")
+
+    if path_exists:
         try:
             videos = handler.find_video_files(test_path)
             tests_total += 1
@@ -241,7 +259,9 @@ def test_file_handler():
             tests_total += 1
             print_test(f"Find videos in {test_path}", False, str(e))
     
-    return tests_passed, tests_total
+    if __name__ == '__main__':
+        return tests_passed, tests_total
+    assert tests_passed == tests_total
 
 def test_archive_processor():
     """Test archive processor."""
@@ -262,7 +282,9 @@ def test_archive_processor():
         tests_total += 1
         print_test("Create ArchiveProcessor", False, str(e))
     
-    return tests_passed, tests_total
+    if __name__ == '__main__':
+        return tests_passed, tests_total
+    assert tests_passed == tests_total
 
 def test_video_processor():
     """Test video processor."""
@@ -283,7 +305,9 @@ def test_video_processor():
         tests_total += 1
         print_test("Create VideoProcessor", False, str(e))
     
-    return tests_passed, tests_total
+    if __name__ == '__main__':
+        return tests_passed, tests_total
+    assert tests_passed == tests_total
 
 def main():
     """Run all tests."""

@@ -20,7 +20,7 @@ from utils.system_check import SystemCheck
 from unpackr import WorkPlan, clean_path, UnpackrApp
 
 
-class TestRunner:
+class ComprehensiveRunner:
     """Test runner with detailed reporting."""
     
     def __init__(self):
@@ -62,7 +62,7 @@ class TestRunner:
         return self.failed == 0
 
 
-def test_path_cleaning(runner: TestRunner):
+def test_path_cleaning(runner: ComprehensiveRunner):
     """Test path cleaning edge cases."""
     print(f"\n{Fore.YELLOW}[Path Cleaning Tests]{Style.RESET_ALL}")
     
@@ -89,7 +89,7 @@ def test_path_cleaning(runner: TestRunner):
                 clean_path('"C:\\Program Files\\test"') == "C:\\Program Files\\test")
 
 
-def test_work_plan(runner: TestRunner):
+def test_work_plan(runner: ComprehensiveRunner):
     """Test WorkPlan functionality."""
     print(f"\n{Fore.YELLOW}[Work Plan Tests]{Style.RESET_ALL}")
     
@@ -131,7 +131,7 @@ def test_work_plan(runner: TestRunner):
                 f"Expected {expected}, got {estimate}")
 
 
-def test_config_edge_cases(runner: TestRunner):
+def test_config_edge_cases(runner: ComprehensiveRunner):
     """Test configuration loading and defaults."""
     print(f"\n{Fore.YELLOW}[Configuration Tests]{Style.RESET_ALL}")
     
@@ -154,7 +154,7 @@ def test_config_edge_cases(runner: TestRunner):
                 '.mkv' in extensions)
 
 
-def test_file_handler_boundary_cases(runner: TestRunner):
+def test_file_handler_boundary_cases(runner: ComprehensiveRunner):
     """Test FileHandler with boundary cases."""
     print(f"\n{Fore.YELLOW}[File Handler Tests]{Style.RESET_ALL}")
     
@@ -175,7 +175,7 @@ def test_file_handler_boundary_cases(runner: TestRunner):
                 '.txt' in config.removable_extensions)
 
 
-def test_video_processor_edge_cases(runner: TestRunner):
+def test_video_processor_edge_cases(runner: ComprehensiveRunner):
     """Test VideoProcessor with edge cases."""
     print(f"\n{Fore.YELLOW}[Video Processor Tests]{Style.RESET_ALL}")
     
@@ -204,7 +204,7 @@ def test_video_processor_edge_cases(runner: TestRunner):
                     not processor.is_sample_file(regular))
 
 
-def test_system_check_robustness(runner: TestRunner):
+def test_system_check_robustness(runner: ComprehensiveRunner):
     """Test system check functionality."""
     print(f"\n{Fore.YELLOW}[System Check Tests]{Style.RESET_ALL}")
 
@@ -224,7 +224,7 @@ def test_system_check_robustness(runner: TestRunner):
                 all(isinstance(v, bool) for v in results.values()))
 
 
-def test_statistics_accuracy(runner: TestRunner):
+def test_statistics_accuracy(runner: ComprehensiveRunner):
     """Test that statistics are accurately tracked."""
     print(f"\n{Fore.YELLOW}[Statistics Tracking Tests]{Style.RESET_ALL}")
     
@@ -246,7 +246,7 @@ def test_statistics_accuracy(runner: TestRunner):
                 app.stats['videos_failed'] == 0)
 
 
-def test_glob_pattern_correctness(runner: TestRunner):
+def test_glob_pattern_correctness(runner: ComprehensiveRunner):
     """Test that glob patterns match expected files."""
     print(f"\n{Fore.YELLOW}[Glob Pattern Tests]{Style.RESET_ALL}")
     
@@ -280,7 +280,7 @@ def test_glob_pattern_correctness(runner: TestRunner):
                     len(par2s) == 1)
 
 
-def test_error_handling(runner: TestRunner):
+def test_error_handling(runner: ComprehensiveRunner):
     """Test error handling and edge cases."""
     print(f"\n{Fore.YELLOW}[Error Handling Tests]{Style.RESET_ALL}")
     
@@ -301,7 +301,7 @@ def test_error_handling(runner: TestRunner):
                     len(plan.video_folders) == 0)
 
 
-def test_folder_classification(runner: TestRunner):
+def test_folder_classification(runner: ComprehensiveRunner):
     """Test that folders are correctly classified as video or content."""
     print(f"\n{Fore.YELLOW}[Folder Classification Tests]{Style.RESET_ALL}")
     
@@ -339,7 +339,7 @@ def test_folder_classification(runner: TestRunner):
                     len([f for f in plan.content_folders if f.name == 'music_collection']) == 1)
 
 
-def test_time_estimate_bounds(runner: TestRunner):
+def test_time_estimate_bounds(runner: ComprehensiveRunner):
     """Test time estimation boundary conditions."""
     print(f"\n{Fore.YELLOW}[Time Estimation Tests]{Style.RESET_ALL}")
     
@@ -369,7 +369,7 @@ def test_time_estimate_bounds(runner: TestRunner):
                 f"Expected {expected3}, got {estimate3}")
 
 
-def test_path_edge_cases(runner: TestRunner):
+def test_path_edge_cases(runner: ComprehensiveRunner):
     """Test path handling edge cases."""
     print(f"\n{Fore.YELLOW}[Path Edge Cases]{Style.RESET_ALL}")
     
@@ -394,7 +394,7 @@ def main():
     print("COMPREHENSIVE TEST SUITE")
     print(f"{'='*70}{Style.RESET_ALL}\n")
     
-    runner = TestRunner()
+    runner = ComprehensiveRunner()
     
     # Run all test suites
     test_path_cleaning(runner)

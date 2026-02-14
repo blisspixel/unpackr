@@ -4,7 +4,6 @@ Loads and validates configuration settings.
 """
 
 import json
-import logging
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
 
@@ -54,7 +53,7 @@ class Config:
                 # Validate loaded config before applying
                 is_valid, errors = self._validate_config(user_config)
                 if not is_valid:
-                    print(f"\nConfiguration validation failed:")
+                    print("\nConfiguration validation failed:")
                     print(f"  Config file: {config_path.absolute()}")
                     print()
                     for error in errors:
@@ -65,7 +64,7 @@ class Config:
 
                 self.config.update(user_config)
         except json.JSONDecodeError as e:
-            print(f"\nERROR: Invalid JSON in config file")
+            print("\nERROR: Invalid JSON in config file")
             print(f"  Config file: {config_path.absolute()}")
             print(f"  Problem: {e}")
             print(f"  Line: {e.lineno}, Column: {e.colno}")
@@ -73,7 +72,7 @@ class Config:
             print("Fix the JSON syntax and try again.")
             print("Using default configuration.")
         except Exception as e:
-            print(f"\nERROR: Could not load config file")
+            print("\nERROR: Could not load config file")
             print(f"  Config file: {config_path.absolute()}")
             print(f"  Problem: {e}")
             print()

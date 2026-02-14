@@ -29,11 +29,11 @@ class UnpackrDoctor:
         """Check Python version."""
         print(f"{Fore.YELLOW}[1/10]{Style.RESET_ALL} Checking Python version...", end=" ")
         version = sys.version_info
-        if version.major == 3 and version.minor >= 7:
+        if version.major == 3 and version.minor >= 11:
             print(f"{Fore.GREEN}✓ Python {version.major}.{version.minor}.{version.micro}{Style.RESET_ALL}")
             self.passed.append("Python version")
         else:
-            print(f"{Fore.RED}✗ Python {version.major}.{version.minor} (need 3.7+){Style.RESET_ALL}")
+            print(f"{Fore.RED}✗ Python {version.major}.{version.minor} (need 3.11+){Style.RESET_ALL}")
             self.issues.append("Python version too old")
 
     def check_dependencies(self):
@@ -92,7 +92,7 @@ class UnpackrDoctor:
                 # Handle both string paths and command names
                 if Path(cmd).exists():
                     # It's a file path
-                    result = subprocess.run(
+                    subprocess.run(
                         [cmd],
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
@@ -102,7 +102,7 @@ class UnpackrDoctor:
                 else:
                     # It's a command name
                     test_cmd = [cmd] if tool_name != 'ffmpeg' else [cmd, '-version']
-                    result = subprocess.run(
+                    subprocess.run(
                         test_cmd,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
@@ -124,7 +124,7 @@ class UnpackrDoctor:
             with open(config_path, 'r') as f:
                 config = json.load(f)
             tool_paths = config.get('tool_paths', {})
-        except:
+        except (OSError, json.JSONDecodeError):
             tool_paths = {}
 
         # Check 7-Zip
@@ -205,7 +205,7 @@ class UnpackrDoctor:
             else:
                 print(f"{Fore.RED}✗ {free_gb}GB available (very low!){Style.RESET_ALL}")
                 self.issues.append(f"Only {free_gb}GB free - may not be enough")
-        except Exception as e:
+        except Exception:
             print(f"{Fore.YELLOW}⚠ Could not check{Style.RESET_ALL}")
 
     def check_comments_file(self):

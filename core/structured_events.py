@@ -20,7 +20,7 @@ References:
 import json
 import logging
 from pathlib import Path
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from enum import Enum, auto
@@ -546,7 +546,7 @@ class EventBuilder:
         """Emit session started event."""
         return self.emitter.emit(
             EventType.SESSION_STARTED,
-            f"Processing session started",
+            "Processing session started",
             severity=EventSeverity.INFO,
             context={
                 'source': str(source_path),

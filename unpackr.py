@@ -18,8 +18,8 @@ import json
 import random
 from collections import deque
 from pathlib import Path
-from datetime import datetime, timedelta
-from colorama import init, Fore, Back, Style
+from datetime import timedelta
+from colorama import init, Fore, Style
 
 # Set UTF-8 encoding for Windows console to handle special characters in easter eggs
 if sys.platform == 'win32':
@@ -43,8 +43,8 @@ from core.file_handler import FileHandler
 from core.archive_processor import ArchiveProcessor
 from core.video_processor import VideoProcessor
 from utils.system_check import SystemCheck
-from utils.safety import (GLOBAL_RUNTIME_LIMIT, LoopSafety, RecursionSafety,
-                          SafetyLimits, StuckDetector)
+from utils.safety import (LoopSafety, RecursionSafety,
+                          StuckDetector)
 from utils.defensive import InputValidator, StateValidator, ValidationError
 from utils.dry_run_summary import DryRunPlan
 
@@ -348,7 +348,6 @@ class UnpackrApp:
             image_extensions = set(self.config.image_extensions)
             document_extensions = set(self.config.document_extensions)
             rar_pattern = re.compile(r'\.r\d{2}$')
-            sevenz_pattern = re.compile(r'\.7z(\.\d+)?$')
 
             videos = []
             rars = []
@@ -543,7 +542,6 @@ class UnpackrApp:
                 else:
                     if self.dry_run_plan:
                         try:
-                            size = sample_video.stat().st_size
                             self.dry_run_plan.add_video_delete(sample_video, "sample/preview file")
                         except:
                             self.dry_run_plan.add_video_delete(sample_video, "sample/preview file")
@@ -602,7 +600,6 @@ class UnpackrApp:
         # Skip extraction if PAR2 repair failed (archives already deleted as corrupted)
         if not par2_error:
             rar_pattern = re.compile(r'\.r\d{2}$')
-            sevenz_pattern = re.compile(r'\.7z(\.\d+)?$')
             archive_files = []
 
             for file in folder.iterdir():
@@ -1022,7 +1019,7 @@ class UnpackrApp:
         if comment_result:
             # Unpack rarity info
             if isinstance(comment_result, tuple) and len(comment_result) >= 3:
-                comment, rarity, color = comment_result[0], comment_result[1], comment_result[2]
+                comment, color = comment_result[0], comment_result[2]
                 effect = comment_result[3] if len(comment_result) > 3 else ''
 
                 # Apply visual effects based on rarity
@@ -1086,7 +1083,6 @@ class UnpackrApp:
             # Process archives AFTER PAR2 in this subfolder (only if PAR2 didn't delete them)
             if not par2_error:
                 rar_pattern = re.compile(r'\.r\d{2}$')
-                sevenz_pattern = re.compile(r'\.7z(\.\d+)?$')
                 archive_files = []
 
                 for file in subfolder.iterdir():
@@ -1495,7 +1491,7 @@ def get_user_input(prompt: str) -> Path:
         if path.is_dir():
             return path
         else:
-            print(Fore.RED + f"Invalid path. Please enter a valid directory path." + Style.RESET_ALL)
+            print(Fore.RED + "Invalid path. Please enter a valid directory path." + Style.RESET_ALL)
             if user_input != cleaned:
                 print(Fore.YELLOW + f"Tip: Path was cleaned to: {cleaned}" + Style.RESET_ALL)
 
@@ -1541,17 +1537,23 @@ def quick_preflight(config, source_dir, destination_dir) -> bool:
         for w in warnings:
             print(f"  {Fore.YELLOW}⚠{Style.RESET_ALL} {w}")
 
-        print(f"\n{Style.DIM}Continue anyway? (Enter to proceed, Ctrl+C to abort){Style.RESET_ALL}")
+        print(f"\n{Fore.YELLOW}Continue anyway?{Style.RESET_ALL} {Style.DIM}[y/N]{Style.RESET_ALL}: ", end="")
         try:
-            input()
+            response = input().strip().lower()
+            if response not in ("y", "yes"):
+                print(Fore.RED + "Aborted by user." + Style.RESET_ALL)
+                return False
         except KeyboardInterrupt:
             print(Fore.RED + "\nAborted by user." + Style.RESET_ALL)
+            return False
+        except EOFError:
+            print(Fore.RED + "\nAborted (no interactive input available)." + Style.RESET_ALL)
             return False
 
     return True
 
 
-def countdown_prompt(seconds: int = 10) -> bool:
+def countdown_prompt(seconds: int = 10, operation_label: str = "processing") -> bool:
     """
     Display countdown before starting.
 
@@ -1563,8 +1565,10 @@ def countdown_prompt(seconds: int = 10) -> bool:
     """
     try:
         for i in range(seconds, 0, -1):
-            sys.stdout.write(f"\r{Fore.GREEN}Starting in {i} seconds... "
-                           f"(Press Ctrl+C to cancel) {Style.RESET_ALL}")
+            sys.stdout.write(
+                f"\r{Fore.GREEN}Starting {operation_label} in {i} seconds... "
+                f"(Press Ctrl+C to cancel) {Style.RESET_ALL}"
+            )
             sys.stdout.flush()
             time.sleep(1)
         sys.stdout.write("\r" + " " * 60 + "\r")
@@ -1664,11 +1668,11 @@ def main():
             sys.exit(1)
         
         if not StateValidator.check_disk_space(destination_dir, required_mb=1000):
-            print(Fore.YELLOW + f"Warning: Low disk space in destination directory" + Style.RESET_ALL)
+            print(Fore.YELLOW + "Warning: Low disk space in destination directory" + Style.RESET_ALL)
             logging.warning("Low disk space warning")
     
         # Check system requirements
-        print(f"Checking requirements...", end=" ")
+        print("Checking requirements...", end=" ")
         system_check = SystemCheck(config)
         tools_status = system_check.check_all_tools()
         if not system_check.display_tool_status(tools_status):
@@ -1733,15 +1737,25 @@ def main():
         work_plan.display()
 
         # Display confirmation (compact)
-        print(f"Source: {Fore.CYAN}{source_dir}{Style.RESET_ALL} -> Dest: {Fore.CYAN}{destination_dir}{Style.RESET_ALL}")
-        print(f"{Fore.RED}Processed folders will be DELETED{Style.RESET_ALL} | Log: {log_file.name}")
+        mode = f"{Fore.YELLOW}DRY-RUN{Style.RESET_ALL}" if args.dry_run else f"{Fore.GREEN}LIVE-RUN{Style.RESET_ALL}"
+        vhealth_mode = f"{Fore.GREEN}enabled{Style.RESET_ALL}" if args.vhealth else f"{Style.DIM}disabled{Style.RESET_ALL}"
+        print(f"\n{Fore.CYAN}Run Overview{Style.RESET_ALL}")
+        print(f"  Mode:        {mode}")
+        print(f"  Source:      {Fore.CYAN}{source_dir}{Style.RESET_ALL}")
+        print(f"  Destination: {Fore.CYAN}{destination_dir}{Style.RESET_ALL}")
+        print(f"  Log:         {log_file.name}")
+        print(f"  Post-check:  vhealth {vhealth_mode}")
+        if args.dry_run:
+            print(f"  {Fore.YELLOW}No files will be modified in dry-run mode.{Style.RESET_ALL}")
+        else:
+            print(f"  {Fore.RED}Processed folders will be deleted after successful moves.{Style.RESET_ALL}")
 
         # Quick pre-flight check before countdown
         if not quick_preflight(config, source_dir, destination_dir):
             logging.error("Pre-flight check failed")
             sys.exit(1)
 
-        if not countdown_prompt(10):
+        if not countdown_prompt(10, operation_label="processing"):
             logging.info("User cancelled operation")
             sys.exit(0)
 
@@ -1786,7 +1800,7 @@ def main():
                     from vhealth import VideoHealthChecker
                     checker = VideoHealthChecker(config)
                     checker.check_path(
-                        dest_dir,
+                        destination_dir,
                         min_resolution=None,
                         skip_samples=False,
                         skip_health=False  # Full health check

@@ -2,7 +2,7 @@
 
 Automated cleanup for Usenet downloads. Repairs archives, extracts videos, validates playback, removes junk.
 
-**Windows only.** Requires Python 3.7+, [7-Zip](https://www.7-zip.org/). Optional: [par2cmdline](https://github.com/Parchive/par2cmdline), [ffmpeg](https://ffmpeg.org/).
+**Windows only.** Requires Python 3.11+, [7-Zip](https://www.7-zip.org/). Optional: [par2cmdline](https://github.com/Parchive/par2cmdline), [ffmpeg](https://ffmpeg.org/).
 
 ## What It Does
 

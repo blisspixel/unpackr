@@ -4,8 +4,6 @@ Handles video file health checks and validation.
 """
 
 import logging
-import subprocess
-import tempfile
 from pathlib import Path
 import sys
 

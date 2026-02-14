@@ -4,17 +4,15 @@ Handles RAR extraction and PAR2 repair operations.
 """
 
 import logging
-import subprocess
 import time
 from pathlib import Path
-from typing import Tuple
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.safety import SubprocessSafety, SafetyLimits, LoopSafety
 from utils.defensive import StateValidator
 from utils.system_check import SystemCheck
-from utils.error_messages import log_error, format_disk_space_error, format_extraction_error, format_timeout_error
+from utils.error_messages import log_error
 from core.safety_invariants import InvariantEnforcer
 
 
@@ -375,7 +373,7 @@ class ArchiveProcessor:
                     file.unlink()
                     logging.info(f"Deleted file: {file}")
                     break  # Success
-                except PermissionError as e:
+                except PermissionError:
                     if attempt < 2:
                         # File is locked, wait and retry
                         logging.warning(f"File locked (attempt {attempt + 1}/3): {file}")

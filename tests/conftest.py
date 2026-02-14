@@ -14,8 +14,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 def runner():
     """Provide TestRunner fixture for tests that use it."""
     # Import here to avoid circular imports
-    from tests.test_comprehensive import TestRunner
-    return TestRunner()
+    from tests.test_comprehensive import ComprehensiveRunner
+    return ComprehensiveRunner()
 
 
 @pytest.fixture

@@ -381,6 +381,24 @@ class TestEdgeCases:
         # Should return empty list, not crash
         assert videos == []
 
+    def test_contains_non_video_files_with_scan_error(self, handler):
+        """Unreadable trees should fail-safe as non-video content present."""
+        mock_path = Mock(spec=Path)
+        mock_path.rglob.side_effect = OSError("Access denied")
+        assert handler.contains_non_video_files(mock_path)
+
+    def test_contains_unwanted_files_with_scan_error(self, handler):
+        """Unreadable trees should fail-safe as unwanted content present."""
+        mock_path = Mock(spec=Path)
+        mock_path.rglob.side_effect = OSError("Access denied")
+        assert handler.contains_unwanted_files(mock_path)
+
+    def test_is_folder_empty_or_removable_with_scan_error(self, handler):
+        """Unreadable folders should never be treated as removable."""
+        mock_path = Mock(spec=Path)
+        mock_path.iterdir.side_effect = OSError("Access denied")
+        assert not handler.is_folder_empty_or_removable(mock_path)
+
 
 class TestStatsTracking:
     """Tests for optional stats tracking."""

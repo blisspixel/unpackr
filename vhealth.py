@@ -120,7 +120,7 @@ class VideoHealthChecker:
                         delete_bad_now = True
                         print(f"{Style.DIM}Deleting and continuing health check...{Style.RESET_ALL}\n")
                     else:
-                        print(f"Delete these and continue health check? [Y/n]: ", end='')
+                        print("Delete these and continue health check? [Y/n]: ", end='')
                         choice = input().strip().lower()
 
                         if choice in ('', 'y', 'yes'):
@@ -249,7 +249,7 @@ class VideoHealthChecker:
                 if bad_count > 0:
                     print(f"  |  {Fore.RED}{bad_count} corrupt{Style.RESET_ALL}\n")
                 else:
-                    print(f"\n")
+                    print("\n")
 
                 # Delete corrupt files if requested
                 if delete_bad_now and problems:
@@ -272,7 +272,6 @@ class VideoHealthChecker:
         When duplicates found, keeps files starting with 'fav' prefix.
         """
         import hashlib
-        from difflib import SequenceMatcher
 
         def is_favorite(path: Path) -> bool:
             """Check if file is marked as favorite (starts with 'fav')."""
@@ -466,12 +465,26 @@ class VideoHealthChecker:
         """Find all video files in directory and subdirectories."""
         video_extensions = self.config.video_extensions
         videos = []
+        seen = set()
 
         for ext in video_extensions:
-            videos.extend(directory.rglob(f"*{ext}"))
+            try:
+                for video_path in directory.rglob(f"*{ext}"):
+                    if video_path in seen:
+                        continue
+                    seen.add(video_path)
+                    videos.append(video_path)
+            except OSError as e:
+                logging.warning(f"Skipping unreadable path while scanning {directory}: {e}")
 
         # Sort by size (largest first) for better UX
-        return sorted(videos, key=lambda p: p.stat().st_size, reverse=True)
+        def safe_size(path: Path) -> int:
+            try:
+                return path.stat().st_size
+            except OSError:
+                return -1
+
+        return sorted(videos, key=safe_size, reverse=True)
 
     def _prescan_videos(self, video_files: List[Path], min_resolution: str = None, skip_samples: bool = False) -> None:
         """
@@ -747,7 +760,7 @@ class VideoHealthChecker:
         total_size_mb = sum(v.stat().st_size for v in videos) / (1024 * 1024)
 
         print(f"Delete {len(videos)} videos? {Style.DIM}({total_size_mb:.1f}MB){Style.RESET_ALL}")
-        response = input(f"[y/N]: ").strip().lower()
+        response = input("[y/N]: ").strip().lower()
 
         if response in ('y', 'yes'):
             self._delete_videos(videos)
@@ -782,7 +795,7 @@ class VideoHealthChecker:
                 if failed_count > 0:
                     status_line += f"  {Fore.RED}{failed_count} failed{Style.RESET_ALL}"
                 print(f"\r{status_line}", end='', flush=True)
-            except Exception as e:
+            except Exception:
                 failed_count += 1
                 # Show failure and keep it visible
                 print(f"\r{' ' * 120}\r", end='', flush=True)
@@ -835,23 +848,34 @@ def main():
 
     # Load config
     if args.config:
-        config = Config(config_file=args.config)
+        config = Config(Path(args.config))
     else:
         config = Config()
 
     # Validate path
     path = Path(args.path)
-    if not path.exists():
+    try:
+        path_exists = path.exists()
+    except OSError as e:
+        print(f"\n{Fore.RED}Error: Cannot access path: {path} ({e}){Style.RESET_ALL}")
+        sys.exit(1)
+
+    if not path_exists:
         print(f"\n{Fore.RED}Error: Path does not exist: {path}{Style.RESET_ALL}")
         sys.exit(1)
 
-    # Show warning with countdown
-    print(f"{Fore.YELLOW}WARNING:{Style.RESET_ALL} vhealth will automatically delete:")
-    print(f"  {Fore.RED}•{Style.RESET_ALL} Sample videos (files < 50MB)")
-    print(f"  {Fore.RED}•{Style.RESET_ALL} Duplicate videos (exact copies)")
-    print(f"  {Fore.RED}•{Style.RESET_ALL} Corrupt videos (failed health checks)")
-    if args.min_resolution:
-        print(f"  {Fore.RED}•{Style.RESET_ALL} Low-resolution videos (below {args.min_resolution})")
+    auto_delete = args.clean or args.delete_bad
+
+    # Show mode and countdown
+    if auto_delete:
+        print(f"{Fore.YELLOW}WARNING:{Style.RESET_ALL} vhealth will automatically delete:")
+        print(f"  {Fore.RED}•{Style.RESET_ALL} Sample videos (files < 50MB)")
+        print(f"  {Fore.RED}•{Style.RESET_ALL} Duplicate videos (exact copies)")
+        print(f"  {Fore.RED}•{Style.RESET_ALL} Corrupt videos (failed health checks)")
+        if args.min_resolution:
+            print(f"  {Fore.RED}•{Style.RESET_ALL} Low-resolution videos (below {args.min_resolution})")
+    else:
+        print(f"{Fore.CYAN}Read-only scan mode:{Style.RESET_ALL} no files will be deleted unless you confirm prompts.")
     print(f"\n{Style.DIM}Scanning: {path}{Style.RESET_ALL}")
     print(f"{Style.DIM}Press Ctrl+C to cancel{Style.RESET_ALL}\n")
 
@@ -871,9 +895,9 @@ def main():
             min_resolution=args.min_resolution,
             skip_samples=args.skip_samples,
             skip_health=args.clean,  # --clean flag enables skip_health for auto-delete
-            delete_bad=True  # Always delete bad files immediately by default
+            delete_bad=auto_delete
         )
-        checker.print_summary(auto_delete=True)
+        checker.print_summary(auto_delete=auto_delete)
     except KeyboardInterrupt:
         print(f"\n{Fore.YELLOW}Cancelled by user{Style.RESET_ALL}")
         sys.exit(1)
