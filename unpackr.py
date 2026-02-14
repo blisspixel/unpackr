@@ -8,7 +8,6 @@ Extracts archives, repairs files, validates videos, and removes garbage.
 
 import sys
 import time
-import argparse
 import logging
 import re
 import os
@@ -19,24 +18,11 @@ import random
 from collections import deque
 from pathlib import Path
 from datetime import timedelta
+from typing import Any, Deque, Dict, List, Optional, Tuple
 from colorama import init, Fore, Style
 
 # Set UTF-8 encoding for Windows console to handle special characters in easter eggs
-if sys.platform == 'win32':
-    try:
-        # For Python 3.7+
-        if hasattr(sys.stdout, 'reconfigure'):
-            sys.stdout.reconfigure(encoding='utf-8')
-            sys.stderr.reconfigure(encoding='utf-8')
-        # For older Python versions
-        else:
-            import codecs
-            sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
-            sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
-        # Also set console code page to UTF-8
-        os.system('chcp 65001 >nul 2>&1')
-    except:
-        pass  # Fallback to default encoding if UTF-8 setup fails
+from utils.cli_runtime import configure_windows_console_utf8, build_unpackr_arg_parser
 
 from core import Config, setup_logging
 from core.file_handler import FileHandler
@@ -48,6 +34,8 @@ from utils.safety import (LoopSafety, RecursionSafety,
 from utils.defensive import InputValidator, StateValidator, ValidationError
 from utils.dry_run_summary import DryRunPlan
 
+configure_windows_console_utf8()
+
 
 class ThreadSafeStats:
     """Thread-safe statistics tracking with atomic operations."""
@@ -55,7 +43,7 @@ class ThreadSafeStats:
     def __init__(self):
         """Initialize statistics with thread safety."""
         self._lock = threading.Lock()
-        self._stats = {
+        self._stats: Dict[str, int] = {
             'folders_processed': 0,
             'folders_deleted': 0,
             'folders_preserved': 0,
@@ -96,7 +84,7 @@ class ThreadSafeStats:
         with self._lock:
             self._stats[key] = value
 
-    def get_snapshot(self) -> dict:
+    def get_snapshot(self) -> Dict[str, int]:
         """Get a thread-safe snapshot of all statistics."""
         with self._lock:
             return self._stats.copy()
@@ -250,24 +238,24 @@ class UnpackrApp:
         self.archive_processor = ArchiveProcessor(config, process_tracker=self)
         self.video_processor = VideoProcessor(config, process_tracker=self)
         self.dry_run = False  # Set to True for dry-run mode
-        self.dry_run_plan = None  # DryRunPlan for collecting operations in dry-run mode
-        self.start_time = None
-        self.work_plan = None
-        self.destination_dir = None  # Store for display_summary tip
+        self.dry_run_plan: Optional[DryRunPlan] = None  # DryRunPlan for collecting operations in dry-run mode
+        self.start_time: Optional[float] = None
+        self.work_plan: Optional[WorkPlan] = None
+        self.destination_dir: Optional[Path] = None  # Store for display_summary tip
         # MEMORY FIX: Use bounded deque to prevent unbounded memory growth in 24+ hour runs
         # Keeps last 1000 failed deletions (oldest are dropped automatically)
-        self.failed_deletions = deque(maxlen=1000)  # Track folders that couldn't be deleted
+        self.failed_deletions: Deque[Tuple[Path, bool, bool]] = deque(maxlen=1000)  # Track folders that couldn't be deleted
         self.recursion_guard = RecursionSafety(config.max_subfolder_depth, "Subfolder processing")
         self.stuck_detector = StuckDetector(timeout=config.stuck_timeout_hours * 3600, check_interval=60)
-        self.runtime_limit = None  # Will be initialized when processing starts
+        self.runtime_limit: Optional[Any] = None  # Will be initialized when processing starts
         self.spinner_frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']  # Modern spinner
         self.spinner_index = 0
         self.first_progress_update = True  # Track if this is the first render
         self.current_action = ""  # Current action text
         self.progress_current = 0  # Current progress
         self.progress_total = 0  # Total progress
-        self.current_comment_display = None  # Store current comment to persist across updates
-        self.spinner_thread = None  # Background spinner thread
+        self.current_comment_display: Optional[Tuple[str, Optional[str], str, str]] = None  # Store current comment to persist across updates
+        self.spinner_thread: Optional[threading.Thread] = None  # Background spinner thread
         self.spinner_running = False  # Control flag for spinner thread
         self.spinner_lock = threading.Lock()  # Thread safety for spinner updates
 
@@ -443,7 +431,7 @@ class UnpackrApp:
         self.work_plan = plan
         return plan
 
-    def _remove_sample_videos(self, video_files: list) -> list:
+    def _remove_sample_videos(self, video_files: List[Path]) -> List[Path]:
         """
         Remove sample/preview videos if full version exists.
 
@@ -463,7 +451,7 @@ class UnpackrApp:
         to_delete = []
 
         # Group videos by folder for efficient comparison
-        by_folder = {}
+        by_folder: Dict[Path, List[Path]] = {}
         for video in video_files:
             folder = video.parent
             if folder not in by_folder:
@@ -543,7 +531,8 @@ class UnpackrApp:
                     if self.dry_run_plan:
                         try:
                             self.dry_run_plan.add_video_delete(sample_video, "sample/preview file")
-                        except:
+                        except Exception as e:
+                            logging.debug(f"Dry-run plan sample delete entry failed for {sample_video}: {e}")
                             self.dry_run_plan.add_video_delete(sample_video, "sample/preview file")
                     logging.info(f"[DRY-RUN] Would delete sample video: {sample_video.name}")
             except Exception as e:
@@ -618,7 +607,7 @@ class UnpackrApp:
                             try:
                                 size = archive.stat().st_size
                                 self.dry_run_plan.add_archive_extract(archive, size)
-                            except:
+                            except OSError:
                                 self.dry_run_plan.add_archive_extract(archive, 0)
                     logging.info(f"[DRY-RUN] Would extract {len(archive_files)} archives in {folder}")
                     success = True
@@ -663,7 +652,7 @@ class UnpackrApp:
                     try:
                         size = video_file.stat().st_size
                         self.dry_run_plan.add_video_move(video_file, size, "unknown")
-                    except:
+                    except OSError:
                         self.dry_run_plan.add_video_move(video_file, 0, "unknown")
                 logging.info(f"[DRY-RUN] Would validate video: {video_file}")
                 # In dry-run, simulate success
@@ -674,7 +663,7 @@ class UnpackrApp:
                 # Get file size BEFORE moving (after move, file no longer at original path)
                 try:
                     file_size_mb = video_file.stat().st_size / (1024 * 1024)
-                except:
+                except OSError:
                     file_size_mb = 0
 
                 if self.video_processor.check_video_health(video_file):
@@ -760,7 +749,7 @@ class UnpackrApp:
             logging.debug(f"Could not load comments: {e}")
         return []
 
-    def _get_random_comment(self, current_folder: int):
+    def _get_random_comment(self, current_folder: int) -> Optional[Tuple[str, Optional[str], str, str]]:
         """
         Randomly return a snarky comment with rarity-based drop rates.
         Comments persist for the entire folder - only change when moving to new eligible folder.
@@ -796,7 +785,7 @@ class UnpackrApp:
 
         # Support old format (flat list)
         if isinstance(self.comments, list):
-            comment_result = (random.choice(self.comments), None, Fore.YELLOW)
+            comment_result: Tuple[str, Optional[str], str, str] = (random.choice(self.comments), None, Fore.YELLOW, "normal")
             self.current_comment_display = comment_result
             return comment_result
 
@@ -1121,7 +1110,7 @@ class UnpackrApp:
                     # Get file size BEFORE moving (after move, file no longer at original path)
                     try:
                         file_size_mb = video_file.stat().st_size / (1024 * 1024)
-                    except:
+                    except OSError:
                         file_size_mb = 0
 
                     if self.video_processor.check_video_health(video_file):
@@ -1201,6 +1190,7 @@ class UnpackrApp:
         from utils.safety import OperationTimer
         max_runtime_seconds = self.config.max_runtime_hours * 3600
         self.runtime_limit = OperationTimer(max_runtime_seconds, "Total Unpackr Runtime")
+        assert self.runtime_limit is not None
 
         # Safety: loop guard for folder processing
         loop_guard = LoopSafety(self.config.max_videos_per_folder * 2, "Folder processing loop")
@@ -1328,7 +1318,7 @@ class UnpackrApp:
             print(f"Cleanup pass {pass_num}/{max_passes}: {len(self.failed_deletions)} folders remaining")
 
             # Try to delete each failed folder
-            remaining = deque(maxlen=1000)
+            remaining: Deque[Tuple[Path, bool, bool]] = deque(maxlen=1000)
             for folder, par2_error, archive_error in self.failed_deletions:
                 # Check if folder still exists and is still removable
                 if not folder.exists():
@@ -1520,7 +1510,7 @@ def quick_preflight(config, source_dir, destination_dir) -> bool:
             warnings.append(f"Very low disk space: {free_gb}GB available (may run out)")
         elif free_gb < 10:
             warnings.append(f"Low disk space: {free_gb}GB available")
-    except:
+    except OSError:
         pass
 
     # Check 2: Source has content to process
@@ -1580,35 +1570,13 @@ def countdown_prompt(seconds: int = 10, operation_label: str = "processing") -> 
 
 def main():
     """Main entry point with defensive error handling."""
-    # Configure UTF-8 encoding for Windows console
-    if sys.platform == 'win32':
-        try:
-            sys.stdout.reconfigure(encoding='utf-8')
-            sys.stderr.reconfigure(encoding='utf-8')
-        except Exception:
-            pass  # Fallback for older Python versions
-
     init()  # Initialize colorama
 
     print(Fore.YELLOW + ASCII_ART + Style.RESET_ALL)
     
     try:
         # Parse arguments
-        parser = argparse.ArgumentParser(
-            description="Automated video file processing and cleanup tool.",
-            epilog="Examples:\n"
-                   "  unpackr --source C:\\Downloads --destination D:\\Videos\n"
-                   "  unpackr C:\\Downloads D:\\Videos\n"
-                   "  unpackr  (interactive mode)",
-            formatter_class=argparse.RawDescriptionHelpFormatter)
-        parser.add_argument('source_pos', nargs='?', help='Source downloads directory (positional)')
-        parser.add_argument('dest_pos', nargs='?', help='Destination directory (positional)')
-        parser.add_argument('--source', '-s', help='Path to source downloads directory')
-        parser.add_argument('--destination', '-d', help='Path to destination directory')
-        parser.add_argument('--config', '-c', help='Path to config.json file')
-        parser.add_argument('--dry-run', action='store_true', help='Show what would be done without making changes')
-        parser.add_argument('--show-plan', action='store_true', help='Show detailed pre-flight plan and exit (no processing)')
-        parser.add_argument('--vhealth', action='store_true', help='Run video health check on destination after processing')
+        parser = build_unpackr_arg_parser()
         args = parser.parse_args()
 
         # Handle positional vs named arguments
@@ -1711,7 +1679,7 @@ def main():
                 try:
                     app.active_process.terminate()
                     logging.info("Terminated active subprocess")
-                except:
+                except Exception:
                     pass
 
         signal.signal(signal.SIGINT, handle_cancel)

@@ -95,7 +95,7 @@ class TestConfigValidation:
         with open(temp_config_file, 'w') as f:
             json.dump(invalid_config, f)
 
-        config = Config(temp_config_file)
+        _ = Config(temp_config_file)
 
         # Check error message
         captured = capsys.readouterr()
@@ -114,7 +114,7 @@ class TestConfigValidation:
         with open(temp_config_file, 'w') as f:
             json.dump(invalid_config, f)
 
-        config = Config(temp_config_file)
+        _ = Config(temp_config_file)
 
         # Check error message
         captured = capsys.readouterr()
@@ -129,7 +129,7 @@ class TestConfigValidation:
         with open(temp_config_file, 'w') as f:
             f.write('{\n  "min_sample_size_mb": 50,\n  "broken": \n}')
 
-        config = Config(temp_config_file)
+        _ = Config(temp_config_file)
 
         # Check error message
         captured = capsys.readouterr()
@@ -148,7 +148,7 @@ class TestConfigValidation:
         with open(temp_config_file, 'w') as f:
             json.dump(invalid_config, f)
 
-        config = Config(temp_config_file)
+        _ = Config(temp_config_file)
 
         # Check that absolute path is shown
         captured = capsys.readouterr()

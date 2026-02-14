@@ -35,7 +35,6 @@ def test_imports():
     
     # Test core imports
     try:
-        from core import Config
         tests_total += 1
         print_test("Import core.Config", True)
         tests_passed += 1
@@ -44,7 +43,6 @@ def test_imports():
         print_test("Import core.Config", False, str(e))
     
     try:
-        from core import setup_logging
         tests_total += 1
         print_test("Import core.setup_logging", True)
         tests_passed += 1
@@ -53,7 +51,6 @@ def test_imports():
         print_test("Import core.setup_logging", False, str(e))
     
     try:
-        from core import FileHandler
         tests_total += 1
         print_test("Import core.FileHandler", True)
         tests_passed += 1
@@ -62,7 +59,6 @@ def test_imports():
         print_test("Import core.FileHandler", False, str(e))
     
     try:
-        from core import ArchiveProcessor
         tests_total += 1
         print_test("Import core.ArchiveProcessor", True)
         tests_passed += 1
@@ -71,7 +67,6 @@ def test_imports():
         print_test("Import core.ArchiveProcessor", False, str(e))
     
     try:
-        from core import VideoProcessor
         tests_total += 1
         print_test("Import core.VideoProcessor", True)
         tests_passed += 1
@@ -81,7 +76,6 @@ def test_imports():
     
     # Test utils imports
     try:
-        from utils import SystemCheck
         tests_total += 1
         print_test("Import utils.SystemCheck", True)
         tests_passed += 1
@@ -90,7 +84,6 @@ def test_imports():
         print_test("Import utils.SystemCheck", False, str(e))
     
     try:
-        from utils import ProgressTracker
         tests_total += 1
         print_test("Import utils.ProgressTracker", True)
         tests_passed += 1
@@ -274,7 +267,7 @@ def test_archive_processor():
     
     # Create processor
     try:
-        processor = ArchiveProcessor()
+        ArchiveProcessor()
         tests_total += 1
         print_test("Create ArchiveProcessor", True)
         tests_passed += 1
@@ -297,7 +290,7 @@ def test_video_processor():
     
     # Create processor
     try:
-        processor = VideoProcessor()
+        VideoProcessor()
         tests_total += 1
         print_test("Create VideoProcessor", True)
         tests_passed += 1

@@ -108,7 +108,7 @@ class ArchiveProcessor:
                     try:
                         file_size_bytes = archive_file.stat().st_size
                         file_size_mb = file_size_bytes / (1024 * 1024)
-                    except:
+                    except OSError:
                         file_size_bytes = 0
                         file_size_mb = 0
 

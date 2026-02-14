@@ -8,6 +8,7 @@ import json
 import argparse
 import io
 import subprocess
+from typing import Optional
 from contextlib import redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
@@ -392,7 +393,7 @@ class UnpackrDoctor:
         # Return exit code
         return 0 if not self.issues else 1
 
-    def to_dict(self, exit_code: int = None):
+    def to_dict(self, exit_code: Optional[int] = None):
         """Return diagnostic results as structured data."""
         if exit_code is None:
             exit_code = 0 if not self.issues else 1

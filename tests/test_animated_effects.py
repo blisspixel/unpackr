@@ -15,10 +15,10 @@ if sys.platform == 'win32':
             import codecs
             sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
         os.system('chcp 65001 >nul 2>&1')
-    except:
+    except Exception:
         pass
 
-from colorama import init, Fore, Back, Style
+from colorama import init, Fore, Style
 
 # Initialize colorama for Windows color support
 init()

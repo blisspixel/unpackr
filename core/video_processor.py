@@ -6,6 +6,7 @@ Handles video file health checks and validation.
 import logging
 from pathlib import Path
 import sys
+from typing import Optional, Tuple, Union
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.safety import SubprocessSafety, SafetyLimits
@@ -29,7 +30,9 @@ class VideoProcessor:
         self.system_check = SystemCheck(config)
         self.process_tracker = process_tracker
     
-    def check_video_health(self, video_file: Path, check_quality: bool = False) -> tuple:
+    def check_video_health(
+        self, video_file: Path, check_quality: bool = False
+    ) -> Union[bool, Tuple[bool, bool, Optional[str], Optional[Tuple[int, int]]]]:
         """
         Check if a video file is healthy and fully playable (not corrupted or partial).
 
@@ -94,14 +97,14 @@ class VideoProcessor:
                             duration_str = line.split('Duration:')[1].split(',')[0].strip()
                             h, m, s = duration_str.split(':')
                             duration_seconds = int(h) * 3600 + int(m) * 60 + float(s)
-                        except:
+                        except (ValueError, IndexError):
                             pass
                     if 'bitrate:' in line:
                         # Extract bitrate: "bitrate: 2500 kb/s"
                         try:
                             bitrate_str = line.split('bitrate:')[1].strip()
                             bitrate_kbps = float(bitrate_str.split()[0])
-                        except:
+                        except (ValueError, IndexError):
                             pass
                     if 'Stream' in line and 'Video:' in line:
                         # Extract resolution: "Stream #0:0: Video: ..., 1920x1080"
@@ -210,7 +213,7 @@ class VideoProcessor:
             # Video is healthy - now check quality if requested
             if check_quality:
                 is_low_quality = False
-                quality_reason = None
+                quality_reason: Optional[str] = None
 
                 # Check for low resolution (480p or less)
                 if resolution:
@@ -236,7 +239,11 @@ class VideoProcessor:
                         is_low_quality = True
                         quality_reason = f"Low bitrate for 720p ({bitrate_kbps:.0f} kb/s)"
 
-                logging.info(f"Video health check PASSED: {video_file.name} ({file_size_mb:.1f}MB, {duration_seconds:.1f}s){' - ' + quality_reason if is_low_quality else ''}")
+                quality_suffix = f" - {quality_reason}" if quality_reason else ""
+                logging.info(
+                    f"Video health check PASSED: {video_file.name} ({file_size_mb:.1f}MB, "
+                    f"{duration_seconds:.1f}s){quality_suffix}"
+                )
 
                 # Register validated video with ValidationCache to prevent accidental deletion
                 decision = ValidationDecision.FAIL_LOW_QUALITY if is_low_quality else ValidationDecision.PASS

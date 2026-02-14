@@ -14,7 +14,6 @@ This verifies that all components work together correctly.
 import pytest
 import tempfile
 import shutil
-import subprocess
 import logging
 from pathlib import Path
 import sys
@@ -64,8 +63,8 @@ class TestEndToEndIntegration:
         source, dest = temp_dirs
 
         # Initialize processors
-        archive_processor = ArchiveProcessor(config, destination_root=dest)
-        video_processor = VideoProcessor(config)
+        _ = ArchiveProcessor(config, destination_root=dest)
+        _ = VideoProcessor(config)
         file_handler = FileHandler(config, destination_root=dest)
 
         # Create a test video file (empty file for testing structure)
@@ -109,9 +108,8 @@ class TestEndToEndIntegration:
         # Note: RAR file is not in removable_extensions by default, so folder won't be removable
         # In real usage, archive files are deleted after extraction
         # For this test, just verify the method works without error
-        is_removable = file_handler.is_folder_empty_or_removable(source)
-        # is_removable will be False because RAR isn't actually removed yet
-        # This is expected - cleanup happens in the main pipeline after extraction
+        assert not file_handler.is_folder_empty_or_removable(source)
+        # This is expected because the archive file is still present in this mocked flow.
 
     def test_pipeline_with_junk_files(self, temp_dirs, config):
         """

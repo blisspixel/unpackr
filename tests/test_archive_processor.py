@@ -14,7 +14,7 @@ import pytest
 import tempfile
 import shutil
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -153,7 +153,7 @@ class TestExtractionProcess:
         mock_disk_space.return_value = False  # Not enough space
 
         with patch('core.archive_processor.logging.error') as mock_error:
-            result = processor.process_rar_files(temp_dir)
+            processor.process_rar_files(temp_dir)
             # Should log error about disk space (new multi-line format)
             assert mock_error.called
             error_message = str(mock_error.call_args_list).lower()

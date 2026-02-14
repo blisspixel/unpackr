@@ -8,7 +8,6 @@ import os
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pathlib import Path
 from unpackr import UnpackrApp
 from core import Config
 
@@ -30,12 +29,12 @@ def test_comment_display():
         print(f"Rarities: {list(unpackr.comments.get('rarities', {}).keys())}")
         print(f"Comment categories: {list(unpackr.comments.get('comments', {}).keys())}")
 
-    print(f"\nInitial state:")
+    print("\nInitial state:")
     print(f"  last_comment_folder: {unpackr.last_comment_folder}")
     print(f"  current_comment_display: {unpackr.current_comment_display}")
 
     # Simulate processing folders 1-50
-    print(f"\nSimulating folder processing:")
+    print("\nSimulating folder processing:")
     print("-" * 60)
 
     for folder_num in [1, 2, 11, 21, 31, 41, 45]:

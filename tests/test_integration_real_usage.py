@@ -99,7 +99,7 @@ def test_prescan_no_terminal_spam(runner: IntegrationTestRunner):
 
             # Verify output doesn't contain excessive repetition
             lines = result.stdout.split('\n')
-            prescan_update_lines = [l for l in lines if '[PRE-SCAN] Progress:' in l]
+            prescan_update_lines = [line for line in lines if '[PRE-SCAN] Progress:' in line]
             runner.test(
                 "Pre-scan: Uses periodic updates, not per-folder spam",
                 len(prescan_update_lines) <= 3,
@@ -162,7 +162,7 @@ def test_countdown_shows_visual_feedback(runner: IntegrationTestRunner):
             )
 
             # Verify countdown doesn't just show static "Starting in X seconds"
-            countdown_lines = [l for l in stdout.split('\n') if '...' in l and any(str(i) in l for i in range(1, 11))]
+            countdown_lines = [line for line in stdout.split('\n') if '...' in line and any(str(i) in line for i in range(1, 11))]
             runner.test(
                 "Countdown: Multiple countdown numbers visible",
                 len(countdown_lines) >= 2,
@@ -188,8 +188,8 @@ def test_windows_console_encoding(runner: IntegrationTestRunner):
     from unpackr import UnpackrApp
     from core import Config
 
-    config = Config()
-    app = UnpackrApp(config)
+    _ = Config()
+    _ = UnpackrApp(Config())
 
     # Test progress tracker with Unicode elements
     try:
@@ -308,7 +308,7 @@ def test_dry_run_makes_no_changes(runner: IntegrationTestRunner):
 
         # Run with --dry-run
         try:
-            result = subprocess.run(
+            _ = subprocess.run(
                 [sys.executable, 'unpackr.py',
                  '--source', str(tmp_source),
                  '--destination', str(tmp_dest),

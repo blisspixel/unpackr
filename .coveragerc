@@ -1,0 +1,16 @@
+[run]
+branch = True
+source =
+  core
+  utils
+  unpackr
+  vhealth
+  doctor
+omit =
+  tests/*
+  setup.py
+
+[report]
+show_missing = True
+skip_covered = True
+

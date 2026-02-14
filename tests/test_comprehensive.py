@@ -5,7 +5,6 @@ Tests edge cases, error conditions, and integration scenarios.
 
 import sys
 import tempfile
-import shutil
 from pathlib import Path
 from colorama import init, Fore, Style
 
@@ -14,7 +13,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core import Config
 from core.file_handler import FileHandler
-from core.archive_processor import ArchiveProcessor
 from core.video_processor import VideoProcessor
 from utils.system_check import SystemCheck
 from unpackr import WorkPlan, clean_path, UnpackrApp

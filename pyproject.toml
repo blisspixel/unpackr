@@ -1,0 +1,26 @@
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+files = [
+  "utils/cli_runtime.py",
+  "core/config.py",
+  "core/archive_processor.py",
+  "core/file_handler.py",
+  "core/video_processor.py",
+  "doctor.py",
+  "unpackr.py",
+  "vhealth.py",
+]
+follow_imports = "skip"
+warn_return_any = true
+warn_unused_configs = true
+show_error_codes = true
+ignore_missing_imports = true
+check_untyped_defs = true

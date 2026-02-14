@@ -4,7 +4,6 @@ Run this to see examples of each rarity tier with proper colors.
 """
 
 import json
-import sys
 from pathlib import Path
 from colorama import init, Fore, Style
 

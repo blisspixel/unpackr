@@ -8,7 +8,7 @@ import logging
 import time
 import psutil
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -342,7 +342,7 @@ class FileHandler:
 
         return True
     
-    def safe_delete_folder(self, folder: Path, max_attempts: int = None,
+    def safe_delete_folder(self, folder: Path, max_attempts: Optional[int] = None,
                           par2_error: bool = False, archive_error: bool = False) -> bool:
         """
         Safely delete a folder with retry logic and fallback methods.
@@ -550,8 +550,10 @@ class FileHandler:
             )
             return False
     
-    def delete_video_file_with_retry(self, video_file: Path, max_attempts: int = None,
-                                    retry_delay: int = None) -> bool:
+    def delete_video_file_with_retry(
+        self, video_file: Path, max_attempts: Optional[int] = None,
+        retry_delay: Optional[int] = None
+    ) -> bool:
         """
         Delete a video file with retry logic and exponential backoff.
 
@@ -607,8 +609,10 @@ class FileHandler:
         )
         return False
     
-    def wait_for_file_release(self, file_path: str, max_attempts: int = None,
-                             delay: int = None) -> bool:
+    def wait_for_file_release(
+        self, file_path: str, max_attempts: Optional[int] = None,
+        delay: Optional[int] = None
+    ) -> bool:
         """
         Wait for a file to be released by other processes.
 
@@ -642,8 +646,10 @@ class FileHandler:
         
         return False
     
-    def _terminate_related_processes(self, file_name: str, 
-                                    allowed_processes: List[str] = None):
+    def _terminate_related_processes(
+        self, file_name: str,
+        allowed_processes: Optional[List[str]] = None
+    ):
         """
         Terminate processes that might be using the file.
         

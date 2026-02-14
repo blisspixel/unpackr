@@ -72,16 +72,16 @@ def analyze_test_folder():
     print(f"  Videos in root: {Fore.GREEN}{len([f for f in files if f.suffix.lower() in ['.mp4', '.mov']])}{Style.RESET_ALL}")
     
     print(f"\n{Fore.YELLOW}Expected actions:{Style.RESET_ALL}")
-    print(f"  1. Extract RAR archives (if any)")
-    print(f"  2. Repair videos with PAR2")
-    print(f"  3. Validate video health")
-    print(f"  4. Move healthy videos to destination")
-    print(f"  5. Delete video folders")
+    print("  1. Extract RAR archives (if any)")
+    print("  2. Repair videos with PAR2")
+    print("  3. Validate video health")
+    print("  4. Move healthy videos to destination")
+    print("  5. Delete video folders")
     print(f"  6. Keep content folders: {', '.join(content_folders)}")
     
     print(f"\n{Fore.GREEN}Ready to proceed with test run!{Style.RESET_ALL}")
-    print(f"\nCommand to run:")
-    print(f'  python unpackr.py --source "G:\\test" --destination "G:\\test_output"')
+    print("\nCommand to run:")
+    print('  python unpackr.py --source "G:\\test" --destination "G:\\test_output"')
 
 if __name__ == '__main__':
     analyze_test_folder()

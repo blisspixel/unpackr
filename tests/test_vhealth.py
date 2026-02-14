@@ -14,7 +14,7 @@ import pytest
 import tempfile
 import shutil
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -79,6 +79,33 @@ class TestVideoHealthChecker:
 
         assert small_file.stat().st_size < 50 * 1024 * 1024
         assert large_file.stat().st_size > 50 * 1024 * 1024
+
+    def test_sample_threshold_respects_config(self, temp_dir):
+        """Sample detection threshold should come from config, not hardcoded values."""
+        config = Config()
+        config.set("min_sample_size_mb", 1)
+        checker = VideoHealthChecker(config)
+
+        tiny = temp_dir / "tiny.mp4"
+        large = temp_dir / "large.mp4"
+        tiny.write_bytes(b"x" * (200 * 1024))           # 0.2MB -> sample at 1MB threshold
+        large.write_bytes(b"x" * (2 * 1024 * 1024))     # 2MB -> not sample at 1MB threshold
+
+        with patch("builtins.input", return_value="n"):
+            checker.check_path(temp_dir, skip_health=True)
+
+        assert tiny in checker.sample_videos
+        assert large not in checker.sample_videos
+
+    def test_empty_confirm_input_does_not_delete(self, checker, temp_dir):
+        """Interactive delete prompt should default to safe 'no' on empty input."""
+        sample = temp_dir / "sample.mp4"
+        sample.write_bytes(b"small sample")
+
+        with patch("builtins.input", return_value=""):
+            checker.check_path(temp_dir, skip_health=True, delete_bad=False)
+
+        assert sample.exists()
 
     def test_duplicate_detection_same_size(self, checker, temp_dir):
         """Test duplicate detection for files with identical size and hash."""

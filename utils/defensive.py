@@ -405,7 +405,7 @@ class ErrorRecovery:
                             # Rollback: restore source if possible
                             try:
                                 temp_dst.unlink()
-                            except:
+                            except OSError:
                                 pass
                             return False
 
@@ -428,7 +428,7 @@ class ErrorRecovery:
                                 # Cleanup incomplete move
                                 try:
                                     dst.unlink()
-                                except:
+                                except OSError:
                                     pass
                                 return False
                         except Exception as e:
@@ -445,7 +445,7 @@ class ErrorRecovery:
                 if temp_dst and temp_dst.exists():
                     try:
                         temp_dst.unlink()
-                    except:
+                    except OSError:
                         pass
 
                 if attempt < max_attempts - 1:

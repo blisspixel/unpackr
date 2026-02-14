@@ -223,14 +223,14 @@ class SubprocessSafety:
                             process.kill()
                             try:
                                 process.wait(timeout=5)
-                            except:
+                            except (subprocess.TimeoutExpired, OSError):
                                 pass
 
                             # Read partial output
                             try:
                                 stdout = stdout_path.read_text(encoding='utf-8', errors='replace')
                                 stderr = stderr_path.read_text(encoding='utf-8', errors='replace')
-                            except:
+                            except OSError:
                                 stdout, stderr = "", "Process killed after timeout"
                             return False, stdout, stderr, -1
 
@@ -244,7 +244,7 @@ class SubprocessSafety:
                         try:
                             stdout_path.unlink(missing_ok=True)
                             stderr_path.unlink(missing_ok=True)
-                        except:
+                        except OSError:
                             pass
 
             else:
@@ -278,7 +278,7 @@ class SubprocessSafety:
                     process.kill()
                     try:
                         stdout, stderr = process.communicate(timeout=5)
-                    except:
+                    except (subprocess.TimeoutExpired, OSError):
                         stdout, stderr = "", "Process killed after timeout"
                     return False, stdout, stderr, -1
 

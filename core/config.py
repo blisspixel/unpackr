@@ -5,7 +5,7 @@ Loads and validates configuration settings.
 
 import json
 from pathlib import Path
-from typing import List, Dict, Any, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 
 class Config:
@@ -32,14 +32,14 @@ class Config:
         'log_folder': 'logs'
     }
     
-    def __init__(self, config_path: Path = None):
+    def __init__(self, config_path: Optional[Path] = None):
         """
         Initialize configuration.
         
         Args:
             config_path: Path to config.json file. If None, uses defaults.
         """
-        self.config = self.DEFAULT_CONFIG.copy()
+        self.config: Dict[str, Any] = self.DEFAULT_CONFIG.copy()
         
         if config_path and config_path.exists():
             self.load_config(config_path)
@@ -49,9 +49,14 @@ class Config:
         try:
             with open(config_path, 'r') as f:
                 user_config = json.load(f)
+                if not isinstance(user_config, dict):
+                    print("\nERROR: Config file must contain a JSON object at top level")
+                    print(f"  Config file: {config_path.absolute()}")
+                    print("Using default configuration.")
+                    return
 
                 # Validate loaded config before applying
-                is_valid, errors = self._validate_config(user_config)
+                is_valid, errors = self._validate_config(cast(Dict[str, Any], user_config))
                 if not is_valid:
                     print("\nConfiguration validation failed:")
                     print(f"  Config file: {config_path.absolute()}")
@@ -203,6 +208,8 @@ class Config:
         """
         errors = []
         tool_paths = self.config.get('tool_paths', {})
+        if not isinstance(tool_paths, dict):
+            return False, ["tool_paths must be a dictionary"]
 
         for tool_name, paths in tool_paths.items():
             if not isinstance(paths, list):
@@ -227,69 +234,83 @@ class Config:
     @property
     def video_extensions(self) -> List[str]:
         """Get list of video file extensions."""
-        return self.config['video_extensions']
+        return self._get_str_list('video_extensions', cast(List[str], self.DEFAULT_CONFIG['video_extensions']))
 
     @property
     def image_extensions(self) -> List[str]:
         """Get list of image file extensions."""
-        return self.config['image_extensions']
+        return self._get_str_list('image_extensions', cast(List[str], self.DEFAULT_CONFIG['image_extensions']))
 
     @property
     def removable_extensions(self) -> List[str]:
         """Get list of removable file extensions."""
-        return self.config['removable_extensions']
+        return self._get_str_list('removable_extensions', cast(List[str], self.DEFAULT_CONFIG['removable_extensions']))
 
     @property
     def music_extensions(self) -> List[str]:
         """Get list of music file extensions."""
-        return self.config['music_extensions']
+        return self._get_str_list('music_extensions', cast(List[str], self.DEFAULT_CONFIG['music_extensions']))
 
     @property
     def document_extensions(self) -> List[str]:
         """Get list of document file extensions."""
-        return self.config['document_extensions']
+        return self._get_str_list('document_extensions', cast(List[str], self.DEFAULT_CONFIG['document_extensions']))
 
     @property
     def min_music_files(self) -> int:
         """Get minimum number of music files to preserve folder."""
-        return self.config['min_music_files']
+        return self._get_int('min_music_files', 10)
 
     @property
     def min_image_files(self) -> int:
         """Get minimum number of image files to preserve folder."""
-        return self.config['min_image_files']
+        return self._get_int('min_image_files', 10)
 
     @property
     def min_documents(self) -> int:
         """Get minimum number of documents to preserve folder."""
-        return self.config['min_documents']
+        return self._get_int('min_documents', 10)
 
     @property
     def max_log_files(self) -> int:
         """Get maximum number of log files to keep."""
-        return self.config['max_log_files']
+        return self._get_int('max_log_files', 5)
 
     @property
     def log_folder(self) -> str:
         """Get log folder path."""
-        return self.config['log_folder']
+        return self._get_str('log_folder', 'logs')
 
     @property
     def max_runtime_hours(self) -> int:
         """Get maximum runtime in hours."""
-        return self.config.get('max_runtime_hours', 12)
+        return self._get_int('max_runtime_hours', 12)
 
     @property
     def max_videos_per_folder(self) -> int:
         """Get maximum videos per folder safety limit."""
-        return self.config.get('max_videos_per_folder', 200)
+        return self._get_int('max_videos_per_folder', 200)
 
     @property
     def max_subfolder_depth(self) -> int:
         """Get maximum subfolder recursion depth."""
-        return self.config.get('max_subfolder_depth', 15)
+        return self._get_int('max_subfolder_depth', 15)
 
     @property
     def stuck_timeout_hours(self) -> int:
         """Get stuck detection timeout in hours."""
-        return self.config.get('stuck_timeout_hours', 3)
+        return self._get_int('stuck_timeout_hours', 3)
+
+    def _get_str_list(self, key: str, default: List[str]) -> List[str]:
+        value = self.config.get(key, default)
+        if isinstance(value, list) and all(isinstance(item, str) for item in value):
+            return value
+        return default
+
+    def _get_int(self, key: str, default: int) -> int:
+        value = self.config.get(key, default)
+        return value if isinstance(value, int) else default
+
+    def _get_str(self, key: str, default: str) -> str:
+        value = self.config.get(key, default)
+        return value if isinstance(value, str) else default

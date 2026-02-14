@@ -223,12 +223,12 @@ def test_cancellation_flag(runner: SafetyTestRunner):
     app = UnpackrApp(config)
     
     # Test initial state
-    runner.test("Cancellation: Initial flag is False", app.cancellation_requested == False)
+    runner.test("Cancellation: Initial flag is False", not app.cancellation_requested)
     runner.test("Cancellation: Initial active_process is None", app.active_process is None)
     
     # Test flag can be set
     app.cancellation_requested = True
-    runner.test("Cancellation: Flag can be set", app.cancellation_requested == True)
+    runner.test("Cancellation: Flag can be set", app.cancellation_requested)
     
     # Test archive_processor has tracker reference
     runner.test("Cancellation: ArchiveProcessor has tracker", 

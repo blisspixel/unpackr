@@ -10,9 +10,7 @@ Tests cover:
 import pytest
 import tempfile
 import shutil
-import time
 from pathlib import Path
-from unittest.mock import Mock, patch
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -370,7 +368,8 @@ class TestAdaptiveTimeoutCalculator:
 
         # FPS should have adjusted
         new_fps = calculator.profile.video_decode_fps
-        # May increase or decrease depending on original value
+        assert new_fps > 0
+        assert new_fps != original_fps
 
 
 class TestEnvironmentProfile:
