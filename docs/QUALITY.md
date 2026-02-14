@@ -7,7 +7,7 @@ Use these checks before merging changes.
 ```bash
 ruff check .
 mypy
-pytest -q --cov --cov-fail-under=47
+pytest -q --cov --cov-fail-under=60
 ```
 
 ## Policy
@@ -15,7 +15,7 @@ pytest -q --cov --cov-fail-under=47
 - `ruff`: blocks syntax, correctness, and common bug patterns (`E`, `F`).
 - `mypy`: enforces type-checking on bootstrap/runtime helper layer configured in `pyproject.toml`.
 - `pytest`: full regression suite must pass.
-- Coverage: CI enforces minimum `47%` on application modules via `.coveragerc`.
+- Coverage: CI enforces minimum `60%` on application modules via `.coveragerc`.
 
 ## Notes
 

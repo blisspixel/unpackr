@@ -1,6 +1,5 @@
 """Tests for runtime helper behavior in unpackr and CLI bootstrap."""
 
-from pathlib import Path
 import io
 import shutil
 
@@ -107,3 +106,24 @@ def test_configure_windows_console_utf8_swallow_errors(monkeypatch):
     # Should not raise
     cli_runtime.configure_windows_console_utf8()
 
+
+def test_configure_windows_console_utf8_non_windows_noop(monkeypatch):
+    monkeypatch.setattr(cli_runtime.sys, "platform", "linux")
+    cli_runtime.configure_windows_console_utf8()
+
+
+def test_configure_windows_console_utf8_codecs_writer_fallback(monkeypatch):
+    class StreamNoReconfigure:
+        def __init__(self):
+            self.buffer = io.BytesIO()
+
+    calls = {"cmd": None}
+    monkeypatch.setattr(cli_runtime.sys, "platform", "win32")
+    monkeypatch.setattr(cli_runtime.sys, "stdout", StreamNoReconfigure())
+    monkeypatch.setattr(cli_runtime.sys, "stderr", StreamNoReconfigure())
+    monkeypatch.setattr(cli_runtime.os, "system", lambda cmd: calls.__setitem__("cmd", cmd) or 0)
+
+    cli_runtime.configure_windows_console_utf8()
+
+    assert calls["cmd"] is not None
+    assert hasattr(cli_runtime.sys.stdout, "write")
