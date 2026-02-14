@@ -292,26 +292,66 @@ class UnpackrApp:
         # This ensures videos in the source root are handled before diving into subfolders
         folders = []
 
+        # Enumerate root entries once; unreadable paths should not crash planning.
+        try:
+            root_entries = list(source_dir.iterdir())
+        except (PermissionError, OSError) as e:
+            logging.warning(f"Cannot read source directory during pre-scan: {source_dir} ({e})")
+            root_entries = []
+
         # Add source directory itself as first item if it has any files
-        has_files_in_root = any(f.is_file() for f in source_dir.iterdir())
+        has_files_in_root = False
+        for entry in root_entries:
+            try:
+                if entry.is_file():
+                    has_files_in_root = True
+                    break
+            except (PermissionError, OSError):
+                continue
         if has_files_in_root:
             folders.append(source_dir)
 
         # Then add subdirectories, sorted by modification time (oldest first)
         # Oldest first = completed downloads processed before ongoing ones
-        subfolders = sorted([f for f in source_dir.iterdir() if f.is_dir()],
-                           key=lambda f: f.stat().st_mtime)
+        subfolders = []
+        for entry in root_entries:
+            try:
+                if entry.is_dir():
+                    subfolders.append(entry)
+            except (PermissionError, OSError):
+                continue
+        def _safe_mtime(path_obj: Path) -> float:
+            try:
+                return path_obj.stat().st_mtime
+            except (PermissionError, OSError):
+                # Push unreadable folders to the end without failing pre-scan.
+                return float("inf")
+
+        subfolders.sort(key=_safe_mtime)
         folders.extend(subfolders)
 
         # Show progress during scan
         for i, folder in enumerate(folders, 1):
-            sys.stdout.write(f"\r[PRE-SCAN] Analyzing {i}/{len(folders)} folders...")
-            sys.stdout.flush()
+            # Emit progress at stable checkpoints to avoid log spam in captured output.
+            if i == 1 or i == len(folders) or i % 50 == 0:
+                sys.stdout.write(f"\r[PRE-SCAN] Analyzing {i}/{len(folders)} folders...")
+                sys.stdout.flush()
 
             # First pass: Fix misnamed video files (.mp4.1, .wmv.1, etc.)
             # This must happen BEFORE counting, so renamed files are detected as videos
-            for file in folder.iterdir():
-                if file.is_file():
+            try:
+                folder_entries = list(folder.iterdir())
+            except (PermissionError, OSError) as e:
+                logging.warning(f"Skipping unreadable folder during pre-scan: {folder} ({e})")
+                continue
+
+            for file in folder_entries:
+                try:
+                    is_regular_file = file.is_file()
+                except (PermissionError, OSError):
+                    continue
+
+                if is_regular_file:
                     filename_lower = file.name.lower()
                     # Check if filename contains a video extension followed by another extension
                     video_exts = ['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg']
@@ -421,8 +461,12 @@ class UnpackrApp:
         
         # Check for loose video files (optimized single-pass)
         video_extensions = {'.mp4', '.avi', '.mkv', '.mov'}
-        for item in source_dir.iterdir():
-            if item.is_file() and item.suffix.lower() in video_extensions:
+        for item in root_entries:
+            try:
+                is_regular_file = item.is_file()
+            except (PermissionError, OSError):
+                continue
+            if is_regular_file and item.suffix.lower() in video_extensions:
                 plan.add_loose_video(item)
         
         sys.stdout.write("\r" + " "*80 + "\r")

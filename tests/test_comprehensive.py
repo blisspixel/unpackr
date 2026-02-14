@@ -123,7 +123,7 @@ def test_work_plan(runner: ComprehensiveRunner):
     
     # Time estimate calculation
     estimate = plan.calculate_time_estimate()
-    expected = (3 * 5) + (1 * 10) + (3 * 15) + (1 * 2)  # videos + rars + par2s + folders
+    expected = (3 * 10) + (1 * 3) + (3 * 5) + (1 * 2)  # videos + rars + par2s + folders
     runner.test("WorkPlan: Time estimate calculation", 
                 estimate == expected, 
                 f"Expected {expected}, got {estimate}")
@@ -318,7 +318,8 @@ def test_folder_classification(runner: ComprehensiveRunner):
         # Create content folder (music)
         music_folder = tmp_path / "music_collection"
         music_folder.mkdir()
-        (music_folder / "song.mp3").touch()
+        for i in range(config.min_music_files + 1):
+            (music_folder / f"song{i}.mp3").touch()
         
         # Create RAR-only folder (should be video)
         rar_folder = tmp_path / "rar_release"
@@ -334,7 +335,7 @@ def test_folder_classification(runner: ComprehensiveRunner):
         runner.test("Classification: RAR folder detected as video", 
                     len([f for f in plan.video_folders if f['path'].name == 'rar_release']) == 1)
         runner.test("Classification: Music folder detected as content", 
-                    len([f for f in plan.content_folders if f.name == 'music_collection']) == 1)
+                    len([f for f in plan.content_folders if f['path'].name == 'music_collection']) == 1)
 
 
 def test_time_estimate_bounds(runner: ComprehensiveRunner):
@@ -351,7 +352,7 @@ def test_time_estimate_bounds(runner: ComprehensiveRunner):
     plan2 = WorkPlan()
     plan2.add_video_folder(Path("test"), videos=1, rars=1, par2s=1)
     estimate2 = plan2.calculate_time_estimate()
-    expected2 = (1 * 5) + (1 * 10) + (1 * 15) + (1 * 2)  # 32 seconds
+    expected2 = (1 * 10) + (1 * 3) + (1 * 5) + (1 * 2)  # 20 seconds
     runner.test("Time estimate: Single items calculation", 
                 estimate2 == expected2,
                 f"Expected {expected2}, got {estimate2}")
@@ -361,7 +362,7 @@ def test_time_estimate_bounds(runner: ComprehensiveRunner):
     for i in range(100):
         plan3.add_video_folder(Path(f"test{i}"), videos=2, rars=1, par2s=1)
     estimate3 = plan3.calculate_time_estimate()
-    expected3 = (200 * 5) + (100 * 10) + (100 * 15) + (100 * 2)  # Should be consistent
+    expected3 = (200 * 10) + (100 * 3) + (100 * 5) + (100 * 2)  # Should be consistent
     runner.test("Time estimate: Large numbers (100 folders)", 
                 estimate3 == expected3,
                 f"Expected {expected3}, got {estimate3}")

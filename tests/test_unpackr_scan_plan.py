@@ -88,3 +88,86 @@ def test_spinner_start_stop_and_comment_rarity_paths(monkeypatch):
     result = unpackr.UnpackrApp._get_random_comment(app, 10)
     assert result is not None
     assert result[0] == "hello"
+
+
+def test_scan_and_plan_skips_unreadable_subfolder(monkeypatch, tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "root.mp4").write_bytes(b"x")
+    good = source / "good"
+    good.mkdir()
+    (good / "movie.mp4").write_bytes(b"x")
+    blocked = source / "blocked"
+    blocked.mkdir()
+
+    original_iterdir = unpackr.Path.iterdir
+
+    def patched_iterdir(path_obj):
+        if path_obj == blocked:
+            raise PermissionError("denied")
+        return original_iterdir(path_obj)
+
+    monkeypatch.setattr(unpackr.Path, "iterdir", patched_iterdir)
+    dummy = types.SimpleNamespace(config=DummyConfig(), work_plan=None)
+    plan = unpackr.UnpackrApp.scan_and_plan(dummy, source)
+    assert any("good" in str(v["path"]) for v in plan.video_folders)
+
+
+def test_scan_and_plan_handles_unreadable_source(monkeypatch, tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+
+    original_iterdir = unpackr.Path.iterdir
+
+    def patched_iterdir(path_obj):
+        if path_obj == source:
+            raise PermissionError("denied")
+        return original_iterdir(path_obj)
+
+    monkeypatch.setattr(unpackr.Path, "iterdir", patched_iterdir)
+    dummy = types.SimpleNamespace(config=DummyConfig(), work_plan=None)
+    plan = unpackr.UnpackrApp.scan_and_plan(dummy, source)
+    assert plan.total_videos == 0
+    assert len(plan.video_folders) == 0
+
+
+def test_scan_and_plan_handles_unreadable_stat_in_sort(monkeypatch, tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    good = source / "good"
+    good.mkdir()
+    blocked = source / "blocked"
+    blocked.mkdir()
+    (good / "movie.mp4").write_bytes(b"x")
+
+    original_stat = unpackr.Path.stat
+
+    def patched_stat(path_obj):
+        if path_obj == blocked:
+            raise PermissionError("denied")
+        return original_stat(path_obj)
+
+    monkeypatch.setattr(unpackr.Path, "stat", patched_stat)
+    dummy = types.SimpleNamespace(config=DummyConfig(), work_plan=None)
+    plan = unpackr.UnpackrApp.scan_and_plan(dummy, source)
+    assert any("good" in str(v["path"]) for v in plan.video_folders)
+
+
+def test_scan_and_plan_handles_unreadable_file_check(monkeypatch, tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    inaccessible = source / "weird.bin"
+    inaccessible.write_bytes(b"x")
+    (source / "movie.mp4").write_bytes(b"x")
+
+    original_is_file = unpackr.Path.is_file
+
+    def patched_is_file(path_obj):
+        if path_obj == inaccessible:
+            raise PermissionError("denied")
+        return original_is_file(path_obj)
+
+    monkeypatch.setattr(unpackr.Path, "is_file", patched_is_file)
+    dummy = types.SimpleNamespace(config=DummyConfig(), work_plan=None)
+    plan = unpackr.UnpackrApp.scan_and_plan(dummy, source)
+    assert any(v.name == "movie.mp4" for v in plan.loose_videos)

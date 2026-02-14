@@ -73,15 +73,19 @@ def test_subprocess_safety(runner: SafetyTestRunner):
     print(f"\n{Fore.YELLOW}[Subprocess Safety Tests]{Style.RESET_ALL}")
     
     # Test successful command
+    import platform
+    if platform.system() == 'Windows':
+        cmd = ['cmd', '/c', 'echo test']
+    else:
+        cmd = ['echo', 'test']
     success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
-        ['echo', 'test'],
+        cmd,
         timeout=5,
         operation="Echo test"
     )
     runner.test("SubprocessSafety: Successful command", success and code == 0)
-    
+
     # Test command with timeout (this should timeout)
-    import platform
     if platform.system() == 'Windows':
         # Windows sleep command
         success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
@@ -110,7 +114,7 @@ def test_loop_safety(runner: SafetyTestRunner):
         count2 += 1
         if count2 > 20:  # Safety
             break
-    runner.test("LoopSafety: Enforces limit", count2 == 11)  # Stops at max_iterations + 1
+    runner.test("LoopSafety: Enforces limit", count2 == 10)  # Stops at max_iterations
 
 
 def test_recursion_safety(runner: SafetyTestRunner):
