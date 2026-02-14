@@ -513,7 +513,11 @@ class SafetyInvariants:
         # Full provenance tracking to be implemented in Phase 2
 
         try:
-            if not target_path.is_relative_to(self.destination_root):
+            # Normalize/canonicalize target before containment checks so Windows
+            # short aliases (e.g. RUNNER~1) match resolved destination paths.
+            target_resolved = target_path.resolve()
+
+            if not target_resolved.is_relative_to(self.destination_root):
                 logger.error(
                     f"INVARIANT VIOLATION I10: File outside destination\n"
                     f"  File: {target_path}\n"

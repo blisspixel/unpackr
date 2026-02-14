@@ -174,6 +174,10 @@ class FileHandler:
         Returns:
             List of paths to video files (empty list if error)
         """
+        # Preserve caller path representation (e.g., Windows short path aliases)
+        # so returned paths are comparable with caller-provided Path objects.
+        original_folder = folder if isinstance(folder, (str, Path)) else None
+
         # Defensive: validate inputs
         try:
             folder = InputValidator.validate_path(folder, must_exist=True, must_be_dir=True)
@@ -194,9 +198,22 @@ class FileHandler:
                 logging.warning(f"Folder not accessible: {folder}")
                 return []
 
+            # For relative inputs, keep resolved absolute folder for returned paths.
+            if isinstance(original_folder, Path):
+                result_base = original_folder if original_folder.is_absolute() else folder
+            elif isinstance(original_folder, str):
+                original_as_path = Path(original_folder)
+                result_base = original_as_path if original_as_path.is_absolute() else folder
+            else:
+                result_base = folder
+
             # Only look for videos directly in this folder (not recursive)
             # Subfolders are processed separately via _process_subfolder
-            return [f for f in folder.iterdir() if f.is_file() and f.suffix.lower() in video_extensions]
+            return [
+                result_base / f.name
+                for f in folder.iterdir()
+                if f.is_file() and f.suffix.lower() in video_extensions
+            ]
             
         except Exception as e:
             logging.error(f"Error finding video files in {folder}: {e}")
