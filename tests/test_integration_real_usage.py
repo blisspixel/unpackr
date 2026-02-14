@@ -113,6 +113,8 @@ def test_prescan_no_terminal_spam(runner: IntegrationTestRunner):
                 "Pre-scan timed out (possible hang)"
             )
 
+    assert runner.failed == 0
+
 
 def test_countdown_shows_visual_feedback(runner: IntegrationTestRunner):
     """
@@ -146,13 +148,13 @@ def test_countdown_shows_visual_feedback(runner: IntegrationTestRunner):
             )
 
             # Wait for output, then kill
-            time.sleep(3)  # Let countdown start
+            time.sleep(6)  # Allow slower CI runners time to reach countdown output
             proc.terminate()
             stdout, stderr = proc.communicate(timeout=5)
 
             # Check if countdown shows actual numbers
             has_countdown_numbers = any(
-                f"{i}..." in stdout for i in range(1, 11)
+                f"{i} seconds..." in stdout for i in range(1, 11)
             )
 
             runner.test(
@@ -162,7 +164,10 @@ def test_countdown_shows_visual_feedback(runner: IntegrationTestRunner):
             )
 
             # Verify countdown doesn't just show static "Starting in X seconds"
-            countdown_lines = [line for line in stdout.split('\n') if '...' in line and any(str(i) in line for i in range(1, 11))]
+            countdown_lines = [
+                line for line in stdout.split('\n')
+                if 'seconds...' in line and any(f"{i} " in line for i in range(1, 11))
+            ]
             runner.test(
                 "Countdown: Multiple countdown numbers visible",
                 len(countdown_lines) >= 2,
@@ -175,6 +180,8 @@ def test_countdown_shows_visual_feedback(runner: IntegrationTestRunner):
                 False,
                 f"Test failed with error: {e}"
             )
+
+    assert runner.failed == 0
 
 
 def test_windows_console_encoding(runner: IntegrationTestRunner):
@@ -238,6 +245,8 @@ def test_windows_console_encoding(runner: IntegrationTestRunner):
             f"UnicodeEncodeError: {e}"
         )
 
+    assert runner.failed == 0
+
 
 def test_help_command_works(runner: IntegrationTestRunner):
     """Test that --help flag works correctly."""
@@ -284,6 +293,8 @@ def test_help_command_works(runner: IntegrationTestRunner):
             False,
             "--help timed out after 10 seconds"
         )
+
+    assert runner.failed == 0
 
 
 def test_dry_run_makes_no_changes(runner: IntegrationTestRunner):
@@ -352,6 +363,8 @@ def test_dry_run_makes_no_changes(runner: IntegrationTestRunner):
                 "Dry-run timed out"
             )
 
+    assert runner.failed == 0
+
 
 def test_empty_source_directory(runner: IntegrationTestRunner):
     """Test that app handles empty source directory gracefully."""
@@ -399,6 +412,8 @@ def test_empty_source_directory(runner: IntegrationTestRunner):
                 "Processing empty directory timed out"
             )
 
+    assert runner.failed == 0
+
 
 def test_invalid_source_path(runner: IntegrationTestRunner):
     """Test that app handles invalid source path gracefully."""
@@ -408,7 +423,7 @@ def test_invalid_source_path(runner: IntegrationTestRunner):
         tmp_dest = Path(tmpdir) / "dest"
         tmp_dest.mkdir()
 
-        invalid_source = Path("/nonexistent/path/that/does/not/exist")
+        invalid_source = Path(tmpdir) / "definitely_missing_source_dir"
 
         try:
             result = subprocess.run(
@@ -441,6 +456,8 @@ def test_invalid_source_path(runner: IntegrationTestRunner):
                 False,
                 "Should fail fast on invalid path"
             )
+
+    assert runner.failed == 0
 
 
 def main():

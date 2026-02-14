@@ -7,6 +7,9 @@ on:
 jobs:
   checks:
     runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
     strategy:
       fail-fast: false
       matrix:
@@ -28,10 +31,10 @@ jobs:
           pip install ruff mypy pytest pytest-cov
 
       - name: Ruff
-        run: ruff check .
+        run: python -m ruff check .
 
       - name: MyPy
-        run: mypy
+        run: python -m mypy
 
       - name: Pytest
-        run: pytest -q --cov --cov-fail-under=80 --cov-report=term-missing
+        run: python -m pytest -q --cov --cov-fail-under=80 --cov-report=term-missing
