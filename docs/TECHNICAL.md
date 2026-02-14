@@ -18,6 +18,7 @@ unpackr/
 │   ├── structured_events.py
 │   └── video_processor.py
 ├── utils/
+│   ├── cli_render.py
 │   ├── cli_runtime.py
 │   ├── defensive.py
 │   ├── dry_run_summary.py
@@ -75,6 +76,6 @@ Why:
 
 ```bash
 ruff check .
-mypy
+python -m mypy
 pytest -q --cov --cov-fail-under=80
 ```

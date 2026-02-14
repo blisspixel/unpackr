@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Raised CI coverage gate to `80%` and aligned docs/quality commands.
-- Expanded regression suite substantially (370+ tests total, 80%+ coverage baseline).
+- Expanded regression suite substantially (`390` tests total, 80%+ coverage baseline).
 - Enforced external tool version policy:
   - `7z >= 22.0` (blocking)
   - `par2 >= 0.8.1` (warning)
