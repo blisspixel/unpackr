@@ -15,6 +15,20 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 init()
 
 
+def _terminate_and_collect(proc: subprocess.Popen, stdout_path: Path, stderr_path: Path) -> tuple[str, str]:
+    """Terminate a subprocess and collect captured output from temp files."""
+    proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=5)
+
+    stdout = stdout_path.read_text(encoding='utf-8', errors='replace')
+    stderr = stderr_path.read_text(encoding='utf-8', errors='replace')
+    return stdout, stderr
+
+
 class IntegrationTestRunner:
     """Test runner for integration tests."""
 
@@ -135,22 +149,43 @@ def test_countdown_shows_visual_feedback(runner: IntegrationTestRunner):
 
         # Run unpackr with short timeout to capture countdown output
         # Kill it after countdown starts but before processing
-        try:
-            proc = subprocess.Popen(
-                [sys.executable, 'unpackr.py', '--source', str(tmp_source),
-                 '--destination', str(tmp_dest)],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding='utf-8',
-                errors='replace',
-                cwd=Path(__file__).parent.parent
-            )
+        stdout_file = tempfile.NamedTemporaryFile(mode='w+', delete=False, encoding='utf-8')
+        stderr_file = tempfile.NamedTemporaryFile(mode='w+', delete=False, encoding='utf-8')
+        stdout_path = Path(stdout_file.name)
+        stderr_path = Path(stderr_file.name)
+        stdout_file.close()
+        stderr_file.close()
 
-            # Wait for output, then kill
-            time.sleep(6)  # Allow slower CI runners time to reach countdown output
-            proc.terminate()
-            stdout, stderr = proc.communicate(timeout=5)
+        try:
+            with stdout_path.open('w', encoding='utf-8') as out_fh, stderr_path.open('w', encoding='utf-8') as err_fh:
+                proc = subprocess.Popen(
+                    [sys.executable, 'unpackr.py', '--source', str(tmp_source),
+                     '--destination', str(tmp_dest)],
+                    stdout=out_fh,
+                    stderr=err_fh,
+                    text=True,
+                    encoding='utf-8',
+                    errors='replace',
+                    cwd=Path(__file__).parent.parent
+                )
+
+            # Poll output until countdown appears (bounded wait for slow CI).
+            started_countdown = False
+            deadline = time.time() + 15
+            while time.time() < deadline:
+                current_out = stdout_path.read_text(encoding='utf-8', errors='replace')
+                if "Starting processing in" in current_out:
+                    started_countdown = True
+                    break
+                if proc.poll() is not None:
+                    break
+                time.sleep(0.25)
+
+            # Let a second countdown line appear when possible.
+            if started_countdown:
+                time.sleep(1.2)
+
+            stdout, stderr = _terminate_and_collect(proc, stdout_path, stderr_path)
 
             # Check if countdown shows actual numbers
             has_countdown_numbers = any(
@@ -180,6 +215,12 @@ def test_countdown_shows_visual_feedback(runner: IntegrationTestRunner):
                 False,
                 f"Test failed with error: {e}"
             )
+        finally:
+            try:
+                stdout_path.unlink(missing_ok=True)
+                stderr_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     assert runner.failed == 0
 
