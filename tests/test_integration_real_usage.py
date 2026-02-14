@@ -80,6 +80,8 @@ def test_prescan_no_terminal_spam(runner: IntegrationTestRunner):
                  '--destination', str(tmp_dest)],
                 capture_output=True,
                 text=True,
+                encoding='utf-8',
+                errors='replace',
                 timeout=30,
                 cwd=Path(__file__).parent.parent
             )
@@ -138,6 +140,8 @@ def test_countdown_shows_visual_feedback(runner: IntegrationTestRunner):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                encoding='utf-8',
+                errors='replace',
                 cwd=Path(__file__).parent.parent
             )
 
@@ -244,6 +248,8 @@ def test_help_command_works(runner: IntegrationTestRunner):
             [sys.executable, 'unpackr.py', '--help'],
             capture_output=True,
             text=True,
+            encoding='utf-8',
+            errors='replace',
             timeout=10,
             cwd=Path(__file__).parent.parent
         )
@@ -309,6 +315,8 @@ def test_dry_run_makes_no_changes(runner: IntegrationTestRunner):
                  '--dry-run'],
                 capture_output=True,
                 text=True,
+                encoding='utf-8',
+                errors='replace',
                 timeout=30,
                 cwd=Path(__file__).parent.parent
             )
@@ -362,6 +370,8 @@ def test_empty_source_directory(runner: IntegrationTestRunner):
                  '--destination', str(tmp_dest)],
                 capture_output=True,
                 text=True,
+                encoding='utf-8',
+                errors='replace',
                 timeout=20,
                 cwd=Path(__file__).parent.parent
             )
@@ -407,6 +417,8 @@ def test_invalid_source_path(runner: IntegrationTestRunner):
                  '--destination', str(tmp_dest)],
                 capture_output=True,
                 text=True,
+                encoding='utf-8',
+                errors='replace',
                 timeout=10,
                 cwd=Path(__file__).parent.parent
             )

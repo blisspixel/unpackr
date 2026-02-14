@@ -880,11 +880,14 @@ def main():
     print(f"{Style.DIM}Press Ctrl+C to cancel{Style.RESET_ALL}\n")
 
     # Countdown
-    import time
-    for i in range(5, 0, -1):
-        print(f"\r{Style.DIM}Starting in {i}...{Style.RESET_ALL}", end='', flush=True)
-        time.sleep(1)
-    print(f"\r{' ' * 30}\r", end='', flush=True)  # Clear countdown line
+    if auto_delete:
+        import time
+        for i in range(5, 0, -1):
+            print(f"\r{Style.DIM}Starting delete-enabled scan in {i}...{Style.RESET_ALL}", end='', flush=True)
+            time.sleep(1)
+        print(f"\r{' ' * 45}\r", end='', flush=True)  # Clear countdown line
+    else:
+        print(f"{Style.DIM}Starting read-only scan...{Style.RESET_ALL}")
 
     # Run health check
     checker = VideoHealthChecker(config)

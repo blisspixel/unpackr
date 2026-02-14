@@ -5,7 +5,11 @@ Run this to verify everything is set up correctly before processing.
 
 import sys
 import json
+import argparse
+import io
 import subprocess
+from contextlib import redirect_stdout
+from datetime import datetime, timezone
 from pathlib import Path
 from colorama import init, Fore, Style
 
@@ -23,7 +27,35 @@ class UnpackrDoctor:
         """Print diagnostic header."""
         print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
         print(f"{Fore.CYAN}Unpackr Doctor - System Diagnostic{Style.RESET_ALL}")
+        print(f"{Style.DIM}Checks runtime, tools, config, and safety prerequisites{Style.RESET_ALL}")
         print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}\n")
+
+    def _build_recommended_actions(self):
+        """Generate actionable remediation steps from current findings."""
+        actions = []
+        issue_text = " ".join(self.issues).lower()
+        warning_text = " ".join(self.warnings).lower()
+
+        if "python version too old" in issue_text:
+            actions.append("Install Python 3.11+ and run doctor again.")
+        if "7-zip not found" in issue_text:
+            actions.append("Install 7-Zip and ensure `7z` is on PATH (or set tool path in config).")
+        if "par2cmdline not found" in issue_text:
+            actions.append("Install par2cmdline and ensure `par2` is on PATH (or set tool path in config).")
+        if "missing packages:" in issue_text:
+            actions.append("Install required Python packages with `pip install -e .`.")
+        if "config" in issue_text and "json" in issue_text:
+            actions.append("Fix JSON syntax in `config_files/config.json`.")
+        if "write permissions" in issue_text:
+            actions.append("Run from a writable directory or adjust folder permissions.")
+        if "disk space" in issue_text or "gb free" in issue_text:
+            actions.append("Free disk space before processing large archives.")
+        if "ffmpeg not found" in warning_text:
+            actions.append("Install ffmpeg if you want full video health validation.")
+
+        # Always include a deterministic final step
+        actions.append("Re-run `unpackr-doctor` and confirm zero issues before live run.")
+        return actions
 
     def check_python_version(self):
         """Check Python version."""
@@ -314,6 +346,8 @@ class UnpackrDoctor:
         print(f"{Fore.GREEN}✓ Passed:{Style.RESET_ALL} {len(self.passed)}")
         print(f"{Fore.YELLOW}⚠ Warnings:{Style.RESET_ALL} {len(self.warnings)}")
         print(f"{Fore.RED}✗ Issues:{Style.RESET_ALL} {len(self.issues)}")
+        status = f"{Fore.GREEN}READY{Style.RESET_ALL}" if not self.issues else f"{Fore.RED}BLOCKED{Style.RESET_ALL}"
+        print(f"Status: {status}")
 
         if self.warnings:
             print(f"\n{Fore.YELLOW}Warnings:{Style.RESET_ALL}")
@@ -324,11 +358,17 @@ class UnpackrDoctor:
             print(f"\n{Fore.RED}Critical Issues:{Style.RESET_ALL}")
             for i in self.issues:
                 print(f"  • {i}")
-            print(f"\n{Fore.RED}Fix these issues before running Unpackr!{Style.RESET_ALL}")
+            print(f"\n{Fore.RED}Fix blocking issues before running Unpackr.{Style.RESET_ALL}")
         else:
             print(f"\n{Fore.GREEN}{'='*60}{Style.RESET_ALL}")
             print(f"{Fore.GREEN}All checks passed! Ready to run Unpackr.{Style.RESET_ALL}")
             print(f"{Fore.GREEN}{'='*60}{Style.RESET_ALL}")
+
+        actions = self._build_recommended_actions()
+        if actions:
+            print(f"\n{Fore.CYAN}Recommended Next Steps:{Style.RESET_ALL}")
+            for idx, action in enumerate(actions, 1):
+                print(f"  {idx}. {action}")
 
         print()
 
@@ -352,10 +392,43 @@ class UnpackrDoctor:
         # Return exit code
         return 0 if not self.issues else 1
 
+    def to_dict(self, exit_code: int = None):
+        """Return diagnostic results as structured data."""
+        if exit_code is None:
+            exit_code = 0 if not self.issues else 1
+
+        return {
+            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+            "exit_code": exit_code,
+            "status": "ready" if not self.issues else "blocked",
+            "counts": {
+                "passed": len(self.passed),
+                "warnings": len(self.warnings),
+                "issues": len(self.issues),
+            },
+            "passed": self.passed,
+            "warnings": self.warnings,
+            "issues": self.issues,
+            "recommended_actions": self._build_recommended_actions(),
+        }
+
 
 def main():
     """Main entry point for unpackr-doctor command."""
+    parser = argparse.ArgumentParser(
+        description="Diagnose unpackr runtime requirements and setup.",
+    )
+    parser.add_argument("--json", action="store_true", help="Output machine-readable JSON results")
+    args = parser.parse_args()
+
     doctor = UnpackrDoctor()
+    if args.json:
+        # Suppress human-readable output in JSON mode.
+        with redirect_stdout(io.StringIO()):
+            exit_code = doctor.run()
+        print(json.dumps(doctor.to_dict(exit_code), indent=2))
+        sys.exit(exit_code)
+
     exit_code = doctor.run()
     sys.exit(exit_code)
 

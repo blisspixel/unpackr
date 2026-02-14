@@ -1,70 +1,97 @@
 # Unpackr
 
-Automated cleanup for Usenet downloads. Repairs archives, extracts videos, validates playback, removes junk.
+Reliable cleanup pipeline for Usenet-style download folders.
 
-**Windows only.** Requires Python 3.11+, [7-Zip](https://www.7-zip.org/). Optional: [par2cmdline](https://github.com/Parchive/par2cmdline), [ffmpeg](https://ffmpeg.org/).
+Unpackr repairs archives, extracts video payloads, validates playback health, moves good outputs, and removes junk with explicit safety checks.
 
-## What It Does
+## Platform And Requirements
 
-```
-Downloads/                         
-├── MyVideo/                       
-│   ├── MyVideo.part01.rar        
-│   ├── MyVideo.part02.rar         →  Destination/MyVideo.mkv (validated)
-│   ├── MyVideo.par2              
-│   └── sample.mkv                
-├── OtherShow/                     
-│   └── episode.mkv                →  Destination/episode.mkv (validated)
-└── MusicLibrary/                  
-    └── (10+ songs)                →  (preserved in place)
-```
+- Windows only
+- Python 3.11+
+- Required: [7-Zip](https://www.7-zip.org/)
+- Strongly recommended: [par2cmdline](https://github.com/Parchive/par2cmdline), [ffmpeg](https://ffmpeg.org/)
 
-- Repairs corrupted archives with PAR2
-- Extracts multi-part RAR/7z
-- Validates videos (rejects truncated/corrupt)
-- Moves working videos to destination
-- Deletes junk (NFO, SFV, samples, empty folders)
-- Preserves folders with 10+ music/image/document files
+Without ffmpeg, deep video health checks are limited.
 
-## Usage
+## Install
 
 ```bash
 pip install -e .
-unpackr-doctor                    # verify setup
-unpackr "G:\Downloads" "G:\Videos" --dry-run   # preview
-unpackr "G:\Downloads" "G:\Videos"             # run
+unpackr-doctor
 ```
 
-## Safety
+Run `unpackr-doctor` first. Proceed only when blocking issues are zero.
 
-**This tool deletes files.** Back up first. Test with `--dry-run`. Check logs after.
+## Quick Start
 
-Designed to fail safely: rejects uncertain files rather than risking bad moves. Corrupt videos are deleted, not repaired - re-download from source is the proper fix. But no deletion tool is risk-free.
+```bash
+# Preview only (no file changes)
+unpackr "G:\Downloads" "G:\Videos" --dry-run
+
+# Show full pre-flight plan and exit
+unpackr "G:\Downloads" "G:\Videos" --show-plan
+
+# Live processing
+unpackr "G:\Downloads" "G:\Videos"
+
+# Optional post-run destination audit
+unpackr "G:\Downloads" "G:\Videos" --vhealth
+```
+
+Equivalent named arguments are supported:
+
+```bash
+unpackr --source "G:\Downloads" --destination "G:\Videos"
+```
+
+## Operational Model
+
+Given a source tree, Unpackr will:
+
+1. Detect candidate processing folders.
+2. Verify and optionally repair archives (PAR2 when available).
+3. Extract archives (7z).
+4. Validate video files (ffmpeg when available).
+5. Move healthy videos to destination.
+6. Remove junk and empty processed folders according to policy.
+7. Preserve non-target content folders (music/images/documents) by threshold rules.
+
+## Safety Contract
+
+Unpackr is destructive by design. Use `--dry-run` first.
+
+- It can delete junk, samples, corrupt videos, and empty/processed folders.
+- It does not modify destination files outside normal move targets.
+- It prefers fail-closed behavior: uncertain states are rejected instead of forced through.
+- Cancellation (`Ctrl+C`) is handled gracefully.
+
+Detailed policy and caveats: [docs/SAFETY.md](docs/SAFETY.md)
+
+## Exit Behavior
+
+- `unpackr-doctor` returns `0` when ready, `1` when blocked.
+- `unpackr` returns non-zero on validation/setup/processing failures.
+- `vhealth` returns non-zero on invalid input or runtime errors.
+
+Machine-readable diagnostics: [docs/DOCTOR_JSON.md](docs/DOCTOR_JSON.md)
 
 ## Configuration
 
-Edit `config_files/config.json` for thresholds and tool paths. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
+Runtime behavior is controlled by `config_files/config.json`.
 
-## Troubleshooting
+Reference and examples: [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
 
-| Problem | Solution |
-|---------|----------|
-| "7-Zip not found" | Install 7-Zip or add path to config.json |
-| "ffmpeg not found" | Optional. Without it, videos assumed good |
-| Videos not moving | Check `logs/`. Corrupt videos are deleted |
-| Slow/hanging | Large archives take time. Check logs |
-| Need to stop | Ctrl+C exits cleanly within seconds |
+## Tools
 
-More: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
+- `unpackr`: end-to-end processing pipeline
+- `unpackr-doctor`: environment and dependency diagnostics
+- `vhealth`: deep health checks, duplicate detection, optional delete workflows
 
-## Other Tools
+## Documentation
 
-- `vhealth "G:\Videos"` - Deep validation, duplicate detection (keeps files prefixed with "fav")
-- `unpackr-doctor` - Diagnose setup issues
-
-## Docs
-
-[Configuration](docs/CONFIGURATION.md) ·
-[Safety](docs/SAFETY.md) ·
-[Technical](docs/TECHNICAL.md) ·
-[Changelog](docs/CHANGELOG.md)
+- [Roadmap](ROADMAP.md)
+- [Configuration](docs/CONFIGURATION.md)
+- [Safety](docs/SAFETY.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+- [Technical Notes](docs/TECHNICAL.md)
+- [Changelog](docs/CHANGELOG.md)

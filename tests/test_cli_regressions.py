@@ -192,7 +192,7 @@ def test_unpackr_main_vhealth_uses_destination_dir(monkeypatch, tmp_path):
     monkeypatch.setattr(unpackr, "SystemCheck", DummySystemCheck)
     monkeypatch.setattr(unpackr, "UnpackrApp", DummyApp)
     monkeypatch.setattr(unpackr, "quick_preflight", lambda *_: True)
-    monkeypatch.setattr(unpackr, "countdown_prompt", lambda *_: True)
+    monkeypatch.setattr(unpackr, "countdown_prompt", lambda *_, **__: True)
     monkeypatch.setattr(unpackr.signal, "signal", lambda *_: None)
     monkeypatch.setattr(unpackr.sys, "argv", ["unpackr", str(source), str(dest), "--vhealth"])
     monkeypatch.setitem(sys.modules, "vhealth", types.SimpleNamespace(VideoHealthChecker=DummyChecker))
