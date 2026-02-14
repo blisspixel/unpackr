@@ -6,27 +6,27 @@ Implementation-oriented details for maintainers.
 
 ```text
 unpackr/
-├── unpackr.py               # Main CLI orchestration
-├── doctor.py                # Environment and dependency diagnostics
-├── vhealth.py               # Destination video audit tool
-├── core/
-│   ├── archive_processor.py
-│   ├── config.py
-│   ├── file_handler.py
-│   ├── logger.py
-│   ├── safety_invariants.py
-│   ├── structured_events.py
-│   └── video_processor.py
-├── utils/
-│   ├── cli_render.py
-│   ├── cli_runtime.py
-│   ├── defensive.py
-│   ├── dry_run_summary.py
-│   ├── error_messages.py
-│   ├── progress.py
-│   ├── safety.py
-│   └── system_check.py
-└── tests/
+|-- unpackr.py               # Main CLI orchestration
+|-- doctor.py                # Environment and dependency diagnostics
+|-- vhealth.py               # Destination video audit tool
+|-- core/
+|   |-- archive_processor.py
+|   |-- config.py
+|   |-- file_handler.py
+|   |-- logger.py
+|   |-- safety_invariants.py
+|   |-- structured_events.py
+|   `-- video_processor.py
+|-- utils/
+|   |-- cli_render.py
+|   |-- cli_runtime.py
+|   |-- defensive.py
+|   |-- dry_run_summary.py
+|   |-- error_messages.py
+|   |-- progress.py
+|   |-- safety.py
+|   `-- system_check.py
+`-- tests/
 ```
 
 ## External Tool Boundary
@@ -68,7 +68,7 @@ Why:
 
 - CI quality gates:
   - `ruff check .`
-  - `mypy`
+  - `python -m mypy`
   - `pytest --cov --cov-fail-under=80`
 - Tests are branch-focused on destructive-path safety and recovery behavior.
 
