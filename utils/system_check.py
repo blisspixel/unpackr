@@ -6,12 +6,19 @@ Checks availability of required external tools.
 import subprocess
 import os
 import sys
+import re
 from typing import Dict, List, Tuple
 from colorama import Fore, Style
 
 
 class SystemCheck:
     """Validates system requirements and external tools."""
+
+    MIN_TOOL_VERSIONS = {
+        "7z": (22, 0),
+        "par2": (0, 8, 1),
+        "ffmpeg": (4, 4),
+    }
     
     REQUIRED_TOOLS = {
         '7z': {
@@ -23,8 +30,8 @@ class SystemCheck:
         'par2': {
             'name': 'par2cmdline',
             'command': ['par2'],
-            'critical': True,
-            'purpose': 'PAR2 repair (required for Usenet downloads)'
+            'critical': False,
+            'purpose': 'PAR2 repair (recommended for reliability)'
         },
         'ffmpeg': {
             'name': 'FFmpeg',
@@ -37,6 +44,7 @@ class SystemCheck:
     def __init__(self, config=None):
         """Initialize SystemCheck with optional config containing tool paths."""
         self.config = config or {}
+        self._version_status: Dict[str, Tuple[bool, str]] = {}
     
     def check_tool(self, tool_key: str) -> bool:
         """
@@ -94,6 +102,74 @@ class SystemCheck:
                 continue
         
         return False
+
+    @staticmethod
+    def _extract_version_tuple(text: str):
+        """Extract first semantic-like version tuple from command output."""
+        match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", text)
+        if not match:
+            return None
+        major = int(match.group(1))
+        minor = int(match.group(2))
+        patch = int(match.group(3)) if match.group(3) is not None else 0
+        return (major, minor, patch)
+
+    @staticmethod
+    def _is_version_at_least(found: tuple, minimum: tuple) -> bool:
+        """Compare versions with zero-padding semantics."""
+        max_len = max(len(found), len(minimum))
+        found_norm = found + (0,) * (max_len - len(found))
+        min_norm = minimum + (0,) * (max_len - len(minimum))
+        return found_norm >= min_norm
+
+    @staticmethod
+    def _format_version(version: tuple) -> str:
+        """Format version tuple for status output."""
+        if len(version) >= 3 and version[2] == 0:
+            return f"{version[0]}.{version[1]}"
+        return ".".join(str(v) for v in version)
+
+    def _get_tool_version(self, tool_key: str):
+        """Best-effort version detection for an available tool."""
+        command = self.get_tool_command(tool_key)
+        if not command:
+            return None
+
+        if tool_key == "ffmpeg":
+            command = [command[0], "-version"]
+
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            combined = f"{result.stdout}\n{result.stderr}"
+            return self._extract_version_tuple(combined)
+        except (OSError, subprocess.TimeoutExpired, FileNotFoundError):
+            return None
+
+    def _evaluate_tool_version(self, tool_key: str) -> Tuple[bool, str]:
+        """
+        Evaluate tool version policy.
+
+        Returns:
+            tuple(is_supported, message)
+        """
+        minimum = self.MIN_TOOL_VERSIONS.get(tool_key)
+        if minimum is None:
+            return True, "version policy not configured"
+
+        found = self._get_tool_version(tool_key)
+        if found is None:
+            return True, "version unknown"
+
+        found_text = self._format_version(found)
+        min_text = self._format_version(minimum)
+        if self._is_version_at_least(found, minimum):
+            return True, f"{found_text}"
+        return False, f"{found_text} (need {min_text}+)"
     
     def check_all_tools(self) -> Dict[str, bool]:
         """
@@ -103,8 +179,18 @@ class SystemCheck:
             Dictionary mapping tool keys to availability status
         """
         results = {}
+        self._version_status = {}
         for tool_key in self.REQUIRED_TOOLS:
-            results[tool_key] = self.check_tool(tool_key)
+            is_available = self.check_tool(tool_key)
+            results[tool_key] = is_available
+
+            # Evaluate version policy only for discovered tools.
+            if is_available:
+                version_ok, version_msg = self._evaluate_tool_version(tool_key)
+                self._version_status[tool_key] = (version_ok, version_msg)
+                # Critical tools with unsupported versions are blocking.
+                if not version_ok and self.REQUIRED_TOOLS[tool_key]["critical"]:
+                    results[tool_key] = False
         return results
     
     def display_tool_status(self, tools_status: Dict[str, bool]) -> bool:
@@ -122,9 +208,22 @@ class SystemCheck:
         
         for tool_key, is_available in tools_status.items():
             tool_info = self.REQUIRED_TOOLS[tool_key]
+            version_status = self._version_status.get(tool_key)
             
             if is_available:
-                status_parts.append(f"{Fore.GREEN}{tool_info['name']}: OK{Style.RESET_ALL}")
+                if version_status is not None and not version_status[0]:
+                    # Unsupported version: block only when tool is marked critical.
+                    if tool_info["critical"]:
+                        status_parts.append(
+                            f"{Fore.RED}{tool_info['name']}: OLD ({version_status[1]}){Style.RESET_ALL}"
+                        )
+                        can_proceed = False
+                    else:
+                        status_parts.append(
+                            f"{Fore.YELLOW}{tool_info['name']}: OLD ({version_status[1]}){Style.RESET_ALL}"
+                        )
+                else:
+                    status_parts.append(f"{Fore.GREEN}{tool_info['name']}: OK{Style.RESET_ALL}")
             else:
                 if tool_info['critical']:
                     status_parts.append(f"{Fore.RED}{tool_info['name']}: MISSING{Style.RESET_ALL}")

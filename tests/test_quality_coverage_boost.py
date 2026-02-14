@@ -76,9 +76,9 @@ def test_system_check_tool_command_and_display(capsys):
 
     can_continue = checker.display_tool_status({"7z": True, "par2": False, "ffmpeg": False})
     out = capsys.readouterr().out
-    assert can_continue is False
-    assert "MISSING" in out
-    assert "Critical tools missing" in out
+    assert can_continue is True
+    assert "SKIP" in out
+    assert "Critical tools missing" not in out
 
 
 def test_system_check_process_conflicts_linux(monkeypatch):

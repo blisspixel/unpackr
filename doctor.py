@@ -8,6 +8,7 @@ import json
 import argparse
 import io
 import subprocess
+import re
 from typing import Optional
 from contextlib import redirect_stdout
 from datetime import datetime, timezone
@@ -18,6 +19,12 @@ init(autoreset=True)
 
 class UnpackrDoctor:
     """Diagnostic tool for Unpackr setup."""
+
+    MIN_TOOL_VERSIONS = {
+        "7z": (22, 0),
+        "par2": (0, 8, 1),
+        "ffmpeg": (4, 4),
+    }
 
     def __init__(self):
         self.issues = []
@@ -41,8 +48,14 @@ class UnpackrDoctor:
             actions.append("Install Python 3.11+ and run doctor again.")
         if "7-zip not found" in issue_text:
             actions.append("Install 7-Zip and ensure `7z` is on PATH (or set tool path in config).")
+        if "7-zip version too old" in issue_text:
+            actions.append("Upgrade 7-Zip to a supported version (22.0+).")
         if "par2cmdline not found" in issue_text:
             actions.append("Install par2cmdline and ensure `par2` is on PATH (or set tool path in config).")
+        if "par2cmdline not found" in warning_text:
+            actions.append("Install par2cmdline for repair capability on damaged archive sets.")
+        if "par2cmdline version too old" in warning_text:
+            actions.append("Upgrade par2cmdline to 0.8.1+ for stable repair behavior.")
         if "missing packages:" in issue_text:
             actions.append("Install required Python packages with `pip install -e .`.")
         if "config" in issue_text and "json" in issue_text:
@@ -53,6 +66,8 @@ class UnpackrDoctor:
             actions.append("Free disk space before processing large archives.")
         if "ffmpeg not found" in warning_text:
             actions.append("Install ffmpeg if you want full video health validation.")
+        if "ffmpeg version too old" in warning_text:
+            actions.append("Upgrade ffmpeg to 4.4+ for expected validation support.")
 
         # Always include a deterministic final step
         actions.append("Re-run `unpackr-doctor` and confirm zero issues before live run.")
@@ -147,6 +162,72 @@ class UnpackrDoctor:
 
         return False, None
 
+    @staticmethod
+    def _extract_version_tuple(text: str) -> Optional[tuple]:
+        """Extract numeric version tuple from arbitrary tool output."""
+        match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", text)
+        if not match:
+            return None
+        major = int(match.group(1))
+        minor = int(match.group(2))
+        patch = int(match.group(3)) if match.group(3) is not None else 0
+        return (major, minor, patch)
+
+    @staticmethod
+    def _is_version_at_least(found: tuple, minimum: tuple) -> bool:
+        """Compare versions using zero-padded tuple semantics."""
+        max_len = max(len(found), len(minimum))
+        found_norm = found + (0,) * (max_len - len(found))
+        min_norm = minimum + (0,) * (max_len - len(minimum))
+        return found_norm >= min_norm
+
+    @staticmethod
+    def _format_version(version: tuple) -> str:
+        """Format version tuple for display."""
+        if len(version) >= 3 and version[2] == 0:
+            return f"{version[0]}.{version[1]}"
+        return ".".join(str(v) for v in version)
+
+    def _get_tool_version(self, tool_name: str, tool_path: str) -> Optional[tuple]:
+        """Best-effort runtime version check for external tools."""
+        command = [tool_path]
+        if tool_name == "ffmpeg":
+            command.append("-version")
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            return None
+
+        combined = f"{result.stdout}\n{result.stderr}"
+        return self._extract_version_tuple(combined)
+
+    def _check_tool_min_version(self, tool_name: str, display_name: str, tool_path: str, critical: bool) -> None:
+        """Enforce minimum supported version policy for a detected tool."""
+        minimum = self.MIN_TOOL_VERSIONS.get(tool_name)
+        if minimum is None:
+            return
+
+        found = self._get_tool_version(tool_name, tool_path)
+        if found is None:
+            self.warnings.append(f"{display_name} version could not be detected")
+            return
+
+        if self._is_version_at_least(found, minimum):
+            self.passed.append(f"{display_name} version {self._format_version(found)}")
+            return
+
+        found_text = self._format_version(found)
+        min_text = self._format_version(minimum)
+        if critical:
+            self.issues.append(f"{display_name} version too old: {found_text} (need {min_text}+)")
+        else:
+            self.warnings.append(f"{display_name} version too old: {found_text} (need {min_text}+)")
+
     def check_external_tools(self):
         """Check external tools (7z, par2, ffmpeg)."""
         print(f"{Fore.YELLOW}[4/10]{Style.RESET_ALL} Checking external tools...")
@@ -171,6 +252,7 @@ class UnpackrDoctor:
         if found:
             print(f"{Fore.GREEN}✓ Found at: {path}{Style.RESET_ALL}")
             self.passed.append("7-Zip")
+            self._check_tool_min_version("7z", "7-Zip", path, critical=True)
         else:
             print(f"{Fore.RED}✗ Not found (CRITICAL){Style.RESET_ALL}")
             self.issues.append("7-Zip not found - required for RAR extraction")
@@ -187,10 +269,11 @@ class UnpackrDoctor:
         if found:
             print(f"{Fore.GREEN}✓ Found at: {path}{Style.RESET_ALL}")
             self.passed.append("par2cmdline")
+            self._check_tool_min_version("par2", "par2cmdline", path, critical=False)
         else:
-            print(f"{Fore.RED}✗ Not found (CRITICAL){Style.RESET_ALL}")
-            self.issues.append("par2cmdline not found - required for PAR2 repair")
-            print(f"    {Style.DIM}Included in bin/ or download from GitHub{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}⚠ Not found (recommended - repair capability reduced){Style.RESET_ALL}")
+            self.warnings.append("par2cmdline not found - PAR2 repair disabled")
+            print(f"    {Style.DIM}Install for better recovery on damaged downloads{Style.RESET_ALL}")
 
         # Check ffmpeg
         print(f"  {Style.DIM}ffmpeg:{Style.RESET_ALL} ", end="")
@@ -203,6 +286,7 @@ class UnpackrDoctor:
         if found:
             print(f"{Fore.GREEN}✓ Found at: {path}{Style.RESET_ALL}")
             self.passed.append("ffmpeg")
+            self._check_tool_min_version("ffmpeg", "ffmpeg", path, critical=False)
         else:
             print(f"{Fore.YELLOW}⚠ Not found (optional - video validation disabled){Style.RESET_ALL}")
             self.warnings.append("ffmpeg not found - video validation will be skipped")

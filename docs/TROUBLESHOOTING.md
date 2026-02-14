@@ -4,7 +4,7 @@
 
 ### "7-Zip not found"
 
-Install 7-Zip from https://www.7-zip.org/ or add the path to config.json:
+Install 7-Zip from https://www.7-zip.org/ or add the path in `config_files/config.json`:
 
 ```json
 {
@@ -16,7 +16,7 @@ Install 7-Zip from https://www.7-zip.org/ or add the path to config.json:
 
 ### "par2cmdline not found"
 
-Optional but recommended. Install from https://github.com/Parchive/par2cmdline or add path to config.json.
+Optional but recommended. Install from https://github.com/Parchive/par2cmdline or add the path in `config_files/config.json`.
 
 Without par2, corrupted archives cannot be repaired.
 
@@ -24,18 +24,18 @@ Without par2, corrupted archives cannot be repaired.
 
 Optional. Install from https://ffmpeg.org/ for video validation.
 
-Without ffmpeg, videos are assumed good and moved without health checks.
+Without ffmpeg, health-check reliability is reduced. Install ffmpeg for expected video validation behavior.
 
 ### Videos not moving to destination
 
 1. Check destination path exists and is writable
 2. Check logs for errors: `logs/unpackr-YYYYMMDD-HHMMSS.log`
 3. Run with `--dry-run` to see what would happen
-4. Search logs for "Video health check FAILED" - corrupt videos are deleted, not moved
+4. Search logs for `Video health check FAILED` (corrupt videos are deleted, not moved)
 
 ### Slow or hanging
 
-- Large archives take time (50GB archive = up to 2 hours)
+- Large archives take time (for example, a `50GB` archive can take up to ~2 hours)
 - Network drives are slower than local
 - Check logs for timeout messages
 - Timeouts are dynamic based on file size
@@ -48,11 +48,11 @@ Without ffmpeg, videos are assumed good and moved without health checks.
 
 ### Command not found
 
-From project directory: ensure `unpackr.bat` exists
+From the project directory: ensure installation completed (`pip install -e .`) or wrapper `.bat` files are present.
 
-From other directories: ensure Python Scripts directory is in PATH:
+From other directories: ensure your Python `Scripts` directory is in `PATH` (example):
 ```
-C:\Users\<you>\AppData\Roaming\Python\Python310\Scripts\
+C:\Users\<you>\AppData\Roaming\Python\Python311\Scripts\
 ```
 
 ## Diagnostics
@@ -65,7 +65,7 @@ unpackr-doctor
 
 This checks:
 - Python version
-- Required packages
+- Required runtime dependencies
 - External tools (7z, par2, ffmpeg)
 - Config file validity
 - Write permissions

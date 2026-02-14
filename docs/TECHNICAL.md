@@ -1,138 +1,80 @@
-# Technical Details
+# Technical Notes
 
-Internal architecture and implementation details for developers.
+Implementation-oriented details for maintainers.
 
 ## Architecture
 
-```
+```text
 unpackr/
-├── unpackr.py              # Main entry point, UI, orchestration
+├── unpackr.py               # Main CLI orchestration
+├── doctor.py                # Environment and dependency diagnostics
+├── vhealth.py               # Destination video audit tool
 ├── core/
-│   ├── config.py           # Configuration loading and validation
-│   ├── archive_processor.py # PAR2 repair, RAR/7z extraction
-│   ├── file_handler.py     # File operations (move, delete, sanitize)
-│   └── video_processor.py  # Video health validation
+│   ├── archive_processor.py
+│   ├── config.py
+│   ├── file_handler.py
+│   ├── logger.py
+│   ├── safety_invariants.py
+│   ├── structured_events.py
+│   └── video_processor.py
 ├── utils/
-│   ├── safety.py           # Timeouts, loop guards, resource limits
-│   ├── defensive.py        # Input validation, error recovery
-│   └── system_check.py     # Tool detection
-└── tests/                  # 240+ tests
+│   ├── cli_runtime.py
+│   ├── defensive.py
+│   ├── dry_run_summary.py
+│   ├── error_messages.py
+│   ├── progress.py
+│   ├── safety.py
+│   └── system_check.py
+└── tests/
 ```
 
-## Processing Pipeline
+## External Tool Boundary
 
-### Phase 1: Pre-Scan
+Unpackr intentionally delegates archive/parity/media engine work to mature external tools.
 
-Classifies all folders in source directory:
-- **Junk folders** - Empty or only junk files, deleted immediately
-- **Content folders** - 10+ music/image/document files, preserved
-- **Video folders** - Everything else, queued for processing
+- Required runtime tool: `7z` (`22.0+`, blocking if missing/too old)
+- Recommended runtime tools:
+  - `par2` (`0.8.1+`, warning if missing/too old)
+  - `ffmpeg` (`4.4+`, warning if missing/too old)
 
-Folders sorted by modification time (oldest first) so ongoing downloads aren't touched.
+Why:
+- Lower defect surface for complex binary formats
+- Better compatibility/performance than custom re-implementation
+- Reliability work stays focused on orchestration and policy
 
-### Phase 2: Process Each Folder
+## Processing Flow
 
-For each video folder:
+1. Pre-scan source tree and classify folders.
+2. Process candidate folders:
+   - PAR2 verify/repair
+   - archive extraction
+   - video validation
+   - move healthy outputs
+   - cleanup/removal with safety guards
+3. Retry locked-folder deletions.
+4. Final empty-folder cleanup pass.
+5. Optional `vhealth` destination audit.
 
-1. **PAR2 Repair** (if PAR2 files present)
-   - Verify archive integrity
-   - Repair if needed
-   - Delete corrupted archives if repair fails
+## Safety Model
 
-2. **Archive Extraction**
-   - Validate archive paths (security check)
-   - Check disk space (3x archive size)
-   - Extract only `.part001` files (7-Zip handles the rest)
-   - Dynamic timeout based on file size
+- Fail-closed behavior for uncertain destructive operations
+- Path and input validation before I/O operations
+- Recursion/loop/runtime guards (`utils/safety.py`)
+- Retry + backoff for transient lock/permission failures
+- Dry-run parity: decision logic is shared with live mode
 
-3. **Video Validation**
-   - Size check (reject < 1MB)
-   - Metadata extraction (duration, bitrate)
-   - Truncation detection (reject if < 70% expected size)
-   - Full decode test (verify all frames readable)
-   - Corruption keyword detection
+## Quality Model
 
-4. **Cleanup**
-   - Delete junk files
-   - Move valid videos to destination
-   - Delete corrupt videos
-   - Remove empty folders
+- CI quality gates:
+  - `ruff check .`
+  - `mypy`
+  - `pytest --cov --cov-fail-under=80`
+- Tests are branch-focused on destructive-path safety and recovery behavior.
 
-### Phase 3: Multi-Pass Cleanup
-
-Re-attempt locked folders:
-- 3 passes with exponential backoff
-- PowerShell fallback for stubborn deletions
-- Report still-locked folders at end
-
-## Video Validation
-
-The health check catches partially extracted videos with valid headers but corrupt data:
-
-```python
-1. Size check        - Reject files < 1MB
-2. Metadata          - Extract duration/bitrate via ffprobe
-3. Duration check    - Reject < 10 seconds or no duration
-4. Truncation        - Reject if actual size < 70% of expected
-5. Decode test       - Decode entire video, check for errors
-6. Keywords          - Detect "corrupt", "truncated", "moov atom not found"
-```
-
-## PAR2 Processing
-
-Checks failure keywords BEFORE success keywords:
-- "repair failed"
-- "repair impossible"
-- "cannot repair"
-- "insufficient"
-
-This prevents false positives where corrupted archives were incorrectly marked OK.
-
-## Timeouts
-
-Dynamic based on file size:
-
-| Operation | Calculation | Min | Max |
-|-----------|-------------|-----|-----|
-| RAR extraction | size / 10MB/s + 50% buffer | 5 min | 2 hours |
-| PAR2 repair | size / 5MB/s + 100% buffer | 10 min | 3 hours |
-| Video validation | fixed | 60 sec | 60 sec |
-| Global runtime | fixed | - | 4 hours |
-
-## Thread Safety
-
-- Progress updates use locks
-- Statistics tracking is atomic
-- Spinner runs in background thread
-- All shared state protected
-
-## Cancellation
-
-Ctrl+C triggers graceful shutdown:
-
-1. Signal handler sets `cancellation_requested` flag
-2. Active subprocess (7z/par2/ffmpeg) is terminated
-3. Main loop exits at next checkpoint (between folders)
-4. Summary shows "cancelled" status with partial stats
-5. Second Ctrl+C forces immediate exit
-
-Checkpoints exist before each folder, loose video, and junk folder deletion.
-
-## Testing
+## Developer Commands
 
 ```bash
-# Run all tests
-python -m pytest tests/ -v
-
-# Quick run
-python -m pytest tests/ -q
+ruff check .
+mypy
+pytest -q --cov --cov-fail-under=80
 ```
-
-245 tests covering:
-- Video validation edge cases
-- PAR2 error detection
-- Safety limits and timeouts
-- Input validation and sanitization
-- Path handling
-- Configuration loading
-- File operations

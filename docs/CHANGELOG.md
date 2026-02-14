@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Raised CI coverage gate to `80%` and aligned docs/quality commands.
+- Expanded regression suite substantially (370+ tests total, 80%+ coverage baseline).
+- Enforced external tool version policy:
+  - `7z >= 22.0` (blocking)
+  - `par2 >= 0.8.1` (warning)
+  - `ffmpeg >= 4.4` (warning)
+- Refreshed core docs (`README`, `ROADMAP`, `TECHNICAL`, `BUILD`, `TROUBLESHOOTING`) for current behavior and support matrix.
+- Archived superseded UX doc to `docs/archive/UX_DESIGN.md` and added `docs/archive/README.md`.
+
 ## v1.3.0 (2026-01-07)
 
 - Graceful cancellation: Ctrl+C exits within 5 seconds

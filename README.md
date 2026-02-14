@@ -2,16 +2,38 @@
 
 Reliable cleanup pipeline for Usenet-style download folders.
 
-Unpackr repairs archives, extracts video payloads, validates playback health, moves good outputs, and removes junk with explicit safety checks.
+Unpackr repairs archives, extracts video payloads, validates playback health, moves healthy outputs, and removes junk with explicit safety controls.
 
 ## Platform And Requirements
 
 - Windows only
 - Python 3.11+
 - Required: [7-Zip](https://www.7-zip.org/)
-- Strongly recommended: [par2cmdline](https://github.com/Parchive/par2cmdline), [ffmpeg](https://ffmpeg.org/)
+- Recommended: [par2cmdline](https://github.com/Parchive/par2cmdline), [ffmpeg](https://ffmpeg.org/)
 
 Without ffmpeg, deep video health checks are limited.
+Without par2, damaged archive sets cannot be repaired automatically.
+
+Minimum supported tool versions:
+- `7z`: `22.0+` (blocking if older)
+- `par2`: `0.8.1+` (warning if older)
+- `ffmpeg`: `4.4+` (warning if older)
+
+## Dependency Strategy
+
+Unpackr uses proven external tools instead of re-implementing codec, archive, or parity engines.
+
+- Keep external engines: `7z`, `par2`, `ffmpeg`.
+- Own the orchestration layer: policy, safety, retries, auditability, and tests.
+- Fail clearly: `unpackr-doctor` reports missing tools and exact remediation.
+- Required to run: `7z`.
+- Recommended for reliability and validation depth: `par2`, `ffmpeg`.
+
+## Quality Status
+
+- Test suite: `370+` tests (`372` currently).
+- Coverage gate: `80%` minimum in CI.
+- Static checks: `ruff` + `mypy` enforced in CI.
 
 ## Install
 
@@ -89,10 +111,13 @@ Reference and examples: [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
 
 ## Documentation
 
+- [Docs Index](docs/README.md)
 - [Roadmap](ROADMAP.md)
 - [Configuration](docs/CONFIGURATION.md)
 - [Safety](docs/SAFETY.md)
 - [Quality Gates](docs/QUALITY.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Technical Notes](docs/TECHNICAL.md)
+- [Build / Install Modes](docs/BUILD.md)
 - [Changelog](docs/CHANGELOG.md)
+- [Archive (historical docs)](docs/archive)

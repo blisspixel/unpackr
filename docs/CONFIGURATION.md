@@ -1,6 +1,6 @@
 # Configuration Reference
 
-Edit `config_files/config.json` to customize Unpackr's behavior.
+Edit `config_files/config.json` to control runtime behavior.
 
 ## Full Example
 
@@ -29,7 +29,10 @@ Edit `config_files/config.json` to customize Unpackr's behavior.
 
 ### tool_paths
 
-Paths to external tools. Each is an array - tries in order until one works.
+Paths to external tools. Each value is an array; entries are tried in order until one succeeds.
+
+- `7z` is required.
+- `par2` and `ffmpeg` are recommended for best reliability/validation coverage.
 
 ```json
 "tool_paths": {
@@ -41,29 +44,29 @@ Paths to external tools. Each is an array - tries in order until one works.
 
 ### min_sample_size_mb
 
-Videos smaller than this (in MB) are considered samples and deleted. Default: 50
+Videos smaller than this threshold (MB) are treated as samples and deleted. Default: `50`.
 
-To keep all videos regardless of size, set to a high value like 5000.
+To keep most small files, set a higher threshold such as `5000`.
 
 ### min_music_files, min_image_files, min_documents
 
-Folders with at least this many files of each type are preserved. Default: 10
+Folders meeting these file-count thresholds are preserved. Default: `10`.
 
-Image folders also require 10MB+ total size to distinguish from cover art.
+Image folders also require at least `10MB` total size to avoid preserving cover-art/thumbnail folders.
 
 ### removable_extensions
 
-File types that get deleted during cleanup. Only files in this list are removed.
+File extensions deleted during cleanup. Only files in this list are removed.
 
 To keep .txt files, remove ".txt" from the list.
 
 ### video_extensions
 
-File types recognized as videos. Add any format ffmpeg can validate.
+File extensions recognized as videos. Add formats supported by your ffmpeg build.
 
 ### max_log_files
 
-Number of log files to keep. Oldest are deleted. Default: 3
+Number of log files to retain. Oldest logs are removed first. Default: `3`.
 
 ## Common Customizations
 

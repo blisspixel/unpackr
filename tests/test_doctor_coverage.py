@@ -82,7 +82,7 @@ def test_check_external_tools_paths(monkeypatch, doc, capsys, tmp_path):
     doc.check_external_tools()
     out = capsys.readouterr().out
     assert "7-Zip" in out
-    assert any("par2cmdline not found" in i for i in doc.issues)
+    assert any("par2cmdline not found" in w for w in doc.warnings)
     assert any("ffmpeg not found" in w for w in doc.warnings)
 
 

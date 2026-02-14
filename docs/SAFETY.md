@@ -1,16 +1,16 @@
 # Safety Contract
 
-Unpackr deletes files as part of its cleanup process. This document explains what gets deleted, what's protected, and how safety is enforced.
+Unpackr deletes files during cleanup. This document defines what can be deleted, what is protected, and which safeguards are enforced.
 
-## Warning
+## Operating Guidance
 
-**Use at your own risk.** Always:
+Before live runs:
 - Back up important data before running
 - Test on non-critical folders first
 - Use `--dry-run` to preview changes
 - Review logs after processing
 
-No automated deletion tool can guarantee perfect safety.
+No automated deletion workflow can eliminate all risk.
 
 ## What Gets Deleted
 
@@ -36,14 +36,14 @@ No automated deletion tool can guarantee perfect safety.
 ## Safety Mechanisms
 
 ### Path Containment
-- All extractions happen in source directory
-- Never writes outside destination directory
+- All extractions happen in the source directory
+- Writes are constrained to expected source/destination targets
 - Archive contents validated before extraction (no path traversal)
 
 ### Fail-Closed Validation
 - When uncertain, reject rather than proceed
 - Corrupt archive listing = skip extraction
-- Unclear video state = delete, don't move
+- Video validation requires ffmpeg for full reliability
 
 ### Race Condition Prevention
 - Folder state re-verified immediately before deletion

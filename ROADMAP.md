@@ -8,6 +8,12 @@ Version line: 1.3.x
 
 Primary objective: make destructive operations auditable, deterministic, and hard to misuse.
 
+Current baseline (latest):
+- CI quality gate is `80%` coverage minimum.
+- Dependency/version policy is enforced by `unpackr-doctor` and runtime preflight.
+- Python support floor is `3.11+`.
+- Documentation split is enforced: active docs in `docs/`, superseded docs in `docs/archive/`.
+
 ## Guiding Principles
 
 - Fail closed on uncertainty.
@@ -41,6 +47,9 @@ Acceptance criteria:
 - Regression suite includes path-access and containment failure cases.
 - Dry-run and live-run decisions are policy-equivalent (execution differs, decisions do not).
 
+Status:
+- Mostly complete. Continue hardening edge-case deletion reasoning and audit outputs.
+
 ### M2: Observability And Automation
 
 Goal: make runtime behavior machine-verifiable in CI and local scripts.
@@ -54,6 +63,9 @@ Acceptance criteria:
 - CI can block on doctor output and explicit issue counts.
 - Exit semantics are documented and covered by tests.
 - Structured outputs include timestamps, status, and actionable remediation hints.
+
+Status:
+- In progress. `doctor --json` is documented; next step is structured run-summary output for `unpackr`.
 
 ### M3: Correctness And Recovery Hardening
 
@@ -69,6 +81,9 @@ Acceptance criteria:
 - Archive/video decision paths are reproducibly testable.
 - Preservation heuristics have documented limits and examples.
 
+Status:
+- In progress. Substantial branch coverage exists; continue integration scenarios for interrupted and partial runs.
+
 ### M4: Performance With Evidence
 
 Goal: improve throughput without regressing safety.
@@ -82,6 +97,9 @@ Acceptance criteria:
 - Benchmark results published with hardware profile details.
 - Performance changes must include before/after evidence.
 - No safety invariant regressions in stress tests.
+
+Status:
+- Pending. Defer concurrency work until benchmark harness and safety regression matrix are in place.
 
 ## Risks And Controls
 
