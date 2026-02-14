@@ -18,7 +18,7 @@ import random
 from collections import deque
 from pathlib import Path
 from datetime import timedelta
-from typing import Any, Deque, Dict, List, Optional, Tuple
+from typing import Any, Deque, Dict, List, Optional, Tuple, cast
 from colorama import init, Fore, Style
 
 # Set UTF-8 encoding for Windows console to handle special characters in easter eggs
@@ -33,6 +33,7 @@ from utils.safety import (LoopSafety, RecursionSafety,
                           StuckDetector)
 from utils.defensive import InputValidator, StateValidator, ValidationError
 from utils.dry_run_summary import DryRunPlan
+from utils.cli_render import AnimationMode, create_renderer
 
 configure_windows_console_utf8()
 
@@ -258,6 +259,7 @@ class UnpackrApp:
         self.spinner_thread: Optional[threading.Thread] = None  # Background spinner thread
         self.spinner_running = False  # Control flag for spinner thread
         self.spinner_lock = threading.Lock()  # Thread safety for spinner updates
+        self.renderer = create_renderer()
 
         # Cancellation support
         self.cancellation_requested = False
@@ -751,6 +753,8 @@ class UnpackrApp:
     
     def _start_spinner_thread(self):
         """Start background thread to animate spinner."""
+        if getattr(self, "renderer", None) is not None:
+            return
         if not self.spinner_running:
             self.spinner_running = True
             self.spinner_thread = threading.Thread(target=self._spinner_loop, daemon=True)
@@ -758,6 +762,10 @@ class UnpackrApp:
 
     def _stop_spinner_thread(self):
         """Stop background spinner thread."""
+        renderer = getattr(self, "renderer", None)
+        if renderer is not None:
+            renderer.stop()
+            return
         self.spinner_running = False
         if self.spinner_thread:
             self.spinner_thread.join(timeout=1.0)
@@ -886,6 +894,44 @@ class UnpackrApp:
                     sys.stdout.write(f'\033[13;3H{Fore.GREEN}{spinner}{Style.RESET_ALL}')
                     sys.stdout.flush()
 
+    @staticmethod
+    def _derive_progress_context(action: str) -> Tuple[str, str]:
+        """
+        Convert a progress action string into a normalized verb + target.
+
+        Returns:
+            Tuple of (verb, target)
+        """
+        verb = "working"
+        target = action
+
+        if "Scanning" in action or "Finding" in action or "Checking" in action:
+            verb = "scanning"
+            if ":" in action:
+                target = action.split(":", 1)[1].strip()
+        elif "PAR2" in action or "verify" in action or "repair" in action:
+            verb = "repairing"
+            if ":" in action:
+                target = action.split(":", 1)[1].strip()
+        elif "Extract" in action or "Extracting" in action:
+            verb = "extracting"
+            if "]" in action and ":" in action:
+                folder_part = action.split("]")[0] + "]"
+                filename_part = action.split(":")[-1].strip()
+                target = f"{folder_part} {filename_part}"
+            elif ":" in action:
+                target = action.split(":", 1)[1].strip()
+        elif "Validate" in action:
+            verb = "validating"
+            if "]" in action and ":" in action:
+                folder_part = action.split("]")[0] + "]"
+                filename_part = action.split(":")[-1].strip()
+                target = f"{folder_part} {filename_part}"
+            elif ":" in action:
+                target = action.split(":")[-1].strip()
+
+        return verb, target
+
     def _update_progress(self, current: int, total: int, action: str):
         """
         Update progress display - clear screen and show clean fixed display.
@@ -956,6 +1002,45 @@ class UnpackrApp:
         if self.stats['junk_files_deleted'] > 0:
             stats_line += f"  {Style.DIM}junk:{Style.RESET_ALL} {Fore.YELLOW}{self.stats['junk_files_deleted']}{Style.RESET_ALL}"
 
+        # Conservative estimate for manual processing per folder:
+        # Using 2 min as conservative baseline (user would likely take longer in practice)
+        manual_time_minutes = current * 2
+        time_saved_hours = manual_time_minutes / 60
+        if time_saved_hours < 1:
+            time_saved_str = f"{int(manual_time_minutes)} min"
+        else:
+            time_saved_str = f"{time_saved_hours:.1f} hrs"
+        throughput_str = f"{throughput:>5.1f}" if throughput is not None else "  ---"
+
+        # Rich/plain renderer path for cross-platform terminals.
+        renderer = getattr(self, "renderer", None)
+        if renderer is not None:
+            if self.first_progress_update:
+                self.first_progress_update = False
+                renderer.start(total)
+
+            verb, target = UnpackrApp._derive_progress_context(action)
+
+            comment_result = self._get_random_comment(current)
+            comment_line = ""
+            if comment_result:
+                if isinstance(comment_result, tuple):
+                    comment_line = str(comment_result[0])[:75]
+                else:
+                    comment_line = str(comment_result)[:75]
+
+            renderer.update(
+                current=current,
+                total=total,
+                action=action,
+                verb=verb,
+                target=target,
+                stats_line=re.sub(r"\x1b\[[0-9;]*m", "", stats_line),
+                time_line=f"speed: {throughput_str.strip()} folders/min | eta: {eta} | saved: {time_saved_str}",
+                comment_line=comment_line,
+            )
+            return
+
         # Clear screen and redraw on first update only
         if self.first_progress_update:
             self.first_progress_update = False
@@ -980,69 +1065,12 @@ class UnpackrApp:
         # Stats
         sys.stdout.write(f"{stats_line}\033[K\n")
 
-        # Time metrics with time saved estimate
-        # Conservative estimate for manual processing per folder:
-        # - Open folder, check PAR2: 30s
-        # - Wait for 7z extraction: 1-2 min (depends on size)
-        # - Find video in subfolders: 20s
-        # - Open video to verify quality: 30s
-        # - Move to destination, organize: 30s
-        # - Delete junk, cleanup folder: 30s
-        # Total: ~2 min minimum for simple folders, 3-5 min for complex ones with PAR2/archives
-        # Using 2 min as conservative baseline (user would likely take longer in practice)
-        manual_time_minutes = current * 2  # 2 min per folder conservative estimate
-        time_saved_hours = manual_time_minutes / 60
-
-        if time_saved_hours < 1:
-            time_saved_str = f"{int(manual_time_minutes)} min"
-        else:
-            time_saved_str = f"{time_saved_hours:.1f} hrs"
-
-        # Format throughput - show "---" while calculating, number once we have data
-        throughput_str = f"{throughput:>5.1f}" if throughput is not None else "  ---"
+        # Time metrics
         sys.stdout.write(f"  {Style.DIM}speed:{Style.RESET_ALL} {Fore.CYAN}{throughput_str}{Style.RESET_ALL} {Style.DIM}folders/min  time left:{Style.RESET_ALL} {Fore.CYAN}{eta}{Style.RESET_ALL}  {Style.DIM}saved:{Style.RESET_ALL} {Fore.MAGENTA}{time_saved_str}{Style.RESET_ALL}\033[K\n")
         sys.stdout.write("\n")
 
-        # Extract the operation verb and the file/folder from action
-        # Action format examples:
-        # "Scanning folder: test"
-        # "[test] Validate 4/42: filename.mp4"
-        # "PAR2 verify/repair: foldername"
-        # "Extract 5 archives: foldername"
-
-        # Determine the verb/operation
-        verb = "working"
-        target = action
-
-        if "Scanning" in action or "Finding" in action or "Checking" in action:
-            verb = "scanning"
-            # Extract target after the colon
-            if ":" in action:
-                target = action.split(":", 1)[1].strip()
-        elif "PAR2" in action or "verify" in action or "repair" in action:
-            verb = "repairing"
-            if ":" in action:
-                target = action.split(":", 1)[1].strip()
-        elif "Extract" in action or "Extracting" in action:
-            verb = "extracting"
-            # Keep folder context like "[folder] Extracting: file.rar"
-            if "]" in action and ":" in action:
-                folder_part = action.split("]")[0] + "]"
-                filename_part = action.split(":")[-1].strip()
-                target = f"{folder_part} {filename_part}"
-            elif ":" in action:
-                target = action.split(":", 1)[1].strip()
-        elif "Validate" in action:
-            verb = "validating"
-            # Extract folder and filename: "[folder] Validate 4/42: filename"
-            # Keep folder context and filename
-            if "]" in action and ":" in action:
-                # Extract [folder] and filename parts
-                folder_part = action.split("]")[0] + "]"
-                filename_part = action.split(":")[-1].strip()
-                target = f"{folder_part} {filename_part}"
-            elif ":" in action:
-                target = action.split(":")[-1].strip()
+        # Extract operation and target for display.
+        verb, target = UnpackrApp._derive_progress_context(action)
 
         # Current file/folder (line 11)
         sys.stdout.write(f"  {Style.DIM}>{Style.RESET_ALL} {target[:80]:<80}\033[K\n")
@@ -1612,11 +1640,43 @@ def countdown_prompt(seconds: int = 10, operation_label: str = "processing") -> 
         return False
 
 
+def resolve_cli_presentation(args: Any, config: Config) -> tuple[AnimationMode, bool]:
+    """
+    Resolve CLI presentation settings with precedence:
+    CLI args > environment variables > config > defaults.
+    """
+    def _normalize_mode(value: Any) -> Optional[AnimationMode]:
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"auto", "off", "light", "full"}:
+                return cast(AnimationMode, normalized)
+        return None
+
+    def _is_truthy_env(value: Optional[str]) -> bool:
+        if value is None:
+            return False
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+
+    cfg_get = getattr(config, "get", None)
+    if callable(cfg_get):
+        config_mode = _normalize_mode(cfg_get("animations", "auto")) or "auto"
+    else:
+        config_mode = "auto"
+
+    env_mode = _normalize_mode(os.getenv("UNPACKR_ANIMATIONS"))
+
+    arg_mode = _normalize_mode(getattr(args, "animations", None))
+    mode = arg_mode or env_mode or config_mode
+
+    env_no_color = _is_truthy_env(os.getenv("UNPACKR_NO_COLOR")) or os.getenv("NO_COLOR") is not None
+    config_no_color = bool(cfg_get("no_color", False)) if callable(cfg_get) else False
+    no_color = bool(getattr(args, "no_color", False) or env_no_color or config_no_color)
+    return mode, no_color
+
+
 def main():
     """Main entry point with defensive error handling."""
-    init()  # Initialize colorama
-
-    print(Fore.YELLOW + ASCII_ART + Style.RESET_ALL)
+    init()  # Initialize colorama with default settings; may be refined after args/config.
     
     try:
         # Parse arguments
@@ -1638,6 +1698,13 @@ def main():
             print(Fore.RED + f"Error loading config: {e}" + Style.RESET_ALL)
             logging.error(f"Config load failed: {e}", exc_info=True)
             sys.exit(1)
+
+        # Resolve presentation settings before any major console output.
+        animation_mode, no_color = resolve_cli_presentation(args, config)
+        if no_color:
+            init(strip=True)
+
+        print((ASCII_ART if no_color else Fore.YELLOW + ASCII_ART + Style.RESET_ALL))
         
         # Set up logging
         try:
@@ -1698,6 +1765,7 @@ def main():
         # Create app and scan first
         try:
             app = UnpackrApp(config)
+            app.renderer = create_renderer(mode=animation_mode, no_color=no_color)
             app.dry_run = args.dry_run
             if args.dry_run:
                 app.dry_run_plan = DryRunPlan()  # Initialize plan collector

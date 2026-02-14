@@ -5,6 +5,7 @@
 - `../README.md` - project overview, install, quick start
 - `../ROADMAP.md` - reliability roadmap and milestones
 - `QUALITY.md` - required quality gates
+- `CLI_PRESENTATION.md` - terminal rendering modes, flags, and fallback behavior
 - `SAFETY.md` - destructive-operation safety contract
 - `CONFIGURATION.md` - `config_files/config.json` reference
 - `DOCTOR_JSON.md` - `unpackr-doctor --json` contract

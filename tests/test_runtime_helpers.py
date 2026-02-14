@@ -64,11 +64,83 @@ def test_countdown_prompt_returns_false_on_keyboard_interrupt(monkeypatch):
 
 def test_cli_runtime_parser_handles_named_and_flags():
     parser = cli_runtime.build_unpackr_arg_parser()
-    args = parser.parse_args(["--source", "A", "--destination", "B", "--dry-run", "--vhealth"])
+    args = parser.parse_args(
+        ["--source", "A", "--destination", "B", "--dry-run", "--vhealth", "--animations", "light", "--no-color"]
+    )
     assert args.source == "A"
     assert args.destination == "B"
     assert args.dry_run is True
     assert args.vhealth is True
+    assert args.animations == "light"
+    assert args.no_color is True
+
+
+def test_resolve_cli_presentation_cli_precedence_over_env_and_config(monkeypatch):
+    config = unpackr.Config(None)
+    config.set("animations", "off")
+    config.set("no_color", False)
+    args = type("Args", (), {"animations": "full", "no_color": True})()
+    monkeypatch.setenv("UNPACKR_ANIMATIONS", "light")
+    monkeypatch.setenv("UNPACKR_NO_COLOR", "0")
+
+    mode, no_color = unpackr.resolve_cli_presentation(args, config)
+    assert mode == "full"
+    assert no_color is True
+
+
+def test_resolve_cli_presentation_env_then_config(monkeypatch):
+    config = unpackr.Config(None)
+    config.set("animations", "off")
+    config.set("no_color", False)
+    args = type("Args", (), {"animations": None, "no_color": False})()
+    monkeypatch.setenv("UNPACKR_ANIMATIONS", "light")
+    monkeypatch.setenv("UNPACKR_NO_COLOR", "1")
+
+    mode, no_color = unpackr.resolve_cli_presentation(args, config)
+    assert mode == "light"
+    assert no_color is True
+
+
+def test_resolve_cli_presentation_normalizes_case(monkeypatch):
+    config = unpackr.Config(None)
+    config.set("animations", "FULL")
+    config.set("no_color", False)
+    args = type("Args", (), {"animations": None, "no_color": False})()
+    monkeypatch.setenv("UNPACKR_ANIMATIONS", "LiGhT")
+    monkeypatch.setenv("UNPACKR_NO_COLOR", "TrUe")
+    monkeypatch.delenv("NO_COLOR", raising=False)
+
+    mode, no_color = unpackr.resolve_cli_presentation(args, config)
+    assert mode == "light"
+    assert no_color is True
+
+
+def test_resolve_cli_presentation_config_fallback(monkeypatch):
+    config = unpackr.Config(None)
+    config.set("animations", "full")
+    config.set("no_color", True)
+    args = type("Args", (), {"animations": None, "no_color": False})()
+    monkeypatch.delenv("UNPACKR_ANIMATIONS", raising=False)
+    monkeypatch.delenv("UNPACKR_NO_COLOR", raising=False)
+    monkeypatch.delenv("NO_COLOR", raising=False)
+
+    mode, no_color = unpackr.resolve_cli_presentation(args, config)
+    assert mode == "full"
+    assert no_color is True
+
+
+def test_resolve_cli_presentation_handles_missing_arg_fields(monkeypatch):
+    config = unpackr.Config(None)
+    config.set("animations", "light")
+    config.set("no_color", False)
+    args = object()
+    monkeypatch.delenv("UNPACKR_ANIMATIONS", raising=False)
+    monkeypatch.delenv("UNPACKR_NO_COLOR", raising=False)
+    monkeypatch.delenv("NO_COLOR", raising=False)
+
+    mode, no_color = unpackr.resolve_cli_presentation(args, config)
+    assert mode == "light"
+    assert no_color is False
 
 
 def test_configure_windows_console_utf8_uses_reconfigure_branch(monkeypatch):

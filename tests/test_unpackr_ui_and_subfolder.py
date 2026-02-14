@@ -40,6 +40,41 @@ def test_update_progress_first_and_subsequent_render_paths(monkeypatch):
     unpackr.UnpackrApp._update_progress(app, current=1, total=20, action="Scanning folder: test")
 
 
+def test_update_progress_renderer_path(monkeypatch):
+    calls = {"start": 0, "update": 0}
+
+    class DummyRenderer:
+        def start(self, _total):
+            calls["start"] += 1
+
+        def update(self, **kwargs):
+            calls["update"] += 1
+            assert kwargs["verb"] in {"extracting", "validating"}
+            assert "speed:" in kwargs["time_line"]
+            assert "\x1b[" not in kwargs["stats_line"]
+
+        def stop(self):
+            pass
+
+    app = types.SimpleNamespace(
+        spinner_lock=threading.Lock(),
+        current_action="",
+        spinner_frames=["-", "+"],
+        spinner_index=0,
+        start_time=1.0,
+        stats=_base_stats(),
+        first_progress_update=True,
+        renderer=DummyRenderer(),
+        _get_random_comment=lambda _cur: ("hello", "common", unpackr.Fore.YELLOW, "normal"),
+    )
+    monkeypatch.setattr(unpackr.time, "time", lambda: 40.0)
+    unpackr.UnpackrApp._update_progress(app, current=10, total=20, action="[x] Extracting: arc.rar")
+    app.first_progress_update = False
+    unpackr.UnpackrApp._update_progress(app, current=11, total=20, action="[x] Validate 1/2: file.mp4")
+    assert calls["start"] == 1
+    assert calls["update"] == 2
+
+
 def test_process_subfolder_dry_and_live_paths(tmp_path):
     sub = tmp_path / "sub"
     sub.mkdir()

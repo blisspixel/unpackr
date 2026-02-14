@@ -48,4 +48,15 @@ def build_unpackr_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dry-run", action="store_true", help="Show what would be done without making changes")
     parser.add_argument("--show-plan", action="store_true", help="Show detailed pre-flight plan and exit (no processing)")
     parser.add_argument("--vhealth", action="store_true", help="Run video health check on destination after processing")
+    parser.add_argument(
+        "--animations",
+        choices=["auto", "off", "light", "full"],
+        default=None,
+        help="CLI animation mode (default: auto; can also use UNPACKR_ANIMATIONS).",
+    )
+    parser.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable ANSI colors and styled output (also respects NO_COLOR/UNPACKR_NO_COLOR).",
+    )
     return parser

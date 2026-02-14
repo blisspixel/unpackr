@@ -21,6 +21,9 @@ def runner(request: pytest.FixtureRequest):
     elif module_name.endswith("test_defensive"):
         from tests.test_defensive import DefensiveTestRunner
         test_runner = DefensiveTestRunner()
+    elif module_name.endswith("test_integration_real_usage"):
+        from tests.test_integration_real_usage import IntegrationTestRunner
+        test_runner = IntegrationTestRunner()
     else:
         # Import here to avoid circular imports
         from tests.test_comprehensive import ComprehensiveRunner

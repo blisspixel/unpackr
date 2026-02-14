@@ -9,6 +9,7 @@ ignore = ["E501"]
 [tool.mypy]
 python_version = "3.11"
 files = [
+  "utils/cli_render.py",
   "utils/cli_runtime.py",
   "core/config.py",
   "core/archive_processor.py",

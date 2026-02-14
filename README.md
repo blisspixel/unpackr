@@ -11,6 +11,8 @@ Unpackr repairs archives, extracts video payloads, validates playback health, mo
 - Required: [7-Zip](https://www.7-zip.org/)
 - Recommended: [par2cmdline](https://github.com/Parchive/par2cmdline), [ffmpeg](https://ffmpeg.org/)
 
+CLI presentation (status/progress rendering) is implemented with cross-platform-safe fallbacks and is smoke-tested in CI on Windows, Linux, and macOS. Core processing workflows remain Windows-only.
+
 Without ffmpeg, deep video health checks are limited.
 Without par2, damaged archive sets cannot be repaired automatically.
 
@@ -31,7 +33,7 @@ Unpackr uses proven external tools instead of re-implementing codec, archive, or
 
 ## Quality Status
 
-- Test suite: `370+` tests (`372` currently).
+- Test suite: `380+` tests (`390` currently).
 - Coverage gate: `80%` minimum in CI.
 - Static checks: `ruff` + `mypy` enforced in CI.
 
@@ -103,6 +105,35 @@ Runtime behavior is controlled by `config_files/config.json`.
 
 Reference and examples: [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
 
+## CLI Presentation
+
+`unpackr` supports configurable terminal presentation modes:
+
+```bash
+# Auto mode (default): rich/live rendering on interactive terminals
+unpackr "G:\Downloads" "G:\Videos" --animations auto
+
+# Disable animation rendering
+unpackr "G:\Downloads" "G:\Videos" --animations off
+
+# Full mode: richer visual effects
+unpackr "G:\Downloads" "G:\Videos" --animations full
+
+# Disable ANSI colors/styles
+unpackr "G:\Downloads" "G:\Videos" --no-color
+```
+
+Precedence for presentation settings:
+
+1. CLI flags (`--animations`, `--no-color`)
+2. Environment variables (`UNPACKR_ANIMATIONS`, `UNPACKR_NO_COLOR`, `NO_COLOR`)
+3. Config values (`animations`, `no_color`)
+4. Built-in defaults (`animations=auto`, colors enabled)
+
+Notes:
+- `UNPACKR_ANIMATIONS` accepts: `auto`, `off`, `light`, `full`.
+- In CI/non-interactive terminals, advanced rendering is automatically disabled.
+
 ## Tools
 
 - `unpackr`: end-to-end processing pipeline
@@ -116,6 +147,7 @@ Reference and examples: [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
 - [Configuration](docs/CONFIGURATION.md)
 - [Safety](docs/SAFETY.md)
 - [Quality Gates](docs/QUALITY.md)
+- [CLI Presentation](docs/CLI_PRESENTATION.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Technical Notes](docs/TECHNICAL.md)
 - [Build / Install Modes](docs/BUILD.md)

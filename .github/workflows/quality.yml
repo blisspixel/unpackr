@@ -6,13 +6,14 @@ on:
 
 jobs:
   checks:
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
     env:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: "utf-8"
     strategy:
       fail-fast: false
       matrix:
+        os: ["windows-latest", "ubuntu-latest", "macos-latest"]
         python-version: ["3.11", "3.12", "3.13"]
     steps:
       - name: Checkout
@@ -36,5 +37,10 @@ jobs:
       - name: MyPy
         run: python -m mypy
 
-      - name: Pytest
+      - name: Pytest (Windows Full Suite)
+        if: runner.os == 'Windows'
         run: python -m pytest -q --cov --cov-fail-under=80 --cov-report=term-missing
+
+      - name: Pytest (Linux/macOS Smoke)
+        if: runner.os != 'Windows'
+        run: python -m pytest -q tests/test_cli_render.py tests/test_runtime_helpers.py
