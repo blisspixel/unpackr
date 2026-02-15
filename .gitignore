@@ -89,8 +89,6 @@ build/
 *.exe
 unpackr.exe
 
-# Don't ignore bin/par2.exe (external tool, not built)
-!bin/par2.exe
 
 # ============================================================================
 # IDE & Editors
@@ -233,8 +231,6 @@ archive/temp/
 # ============================================================================
 /archive
 /.claude
-/.claude
-/.claude
-nul
-_ul
 .kiro/
+_ul*
+nul
