@@ -268,11 +268,11 @@ class EnvironmentProfiler:
                     pass
             elapsed = time.time() - start
 
-            if elapsed > 0:
-                speed_mbps = file_size_mb / elapsed
-                return speed_mbps
-            else:
-                return 0.0
+            if elapsed <= 0:
+                # Timer resolution edge case on very fast I/O.
+                return 100.0
+            speed_mbps = file_size_mb / elapsed
+            return max(speed_mbps, 0.1)
 
         except Exception as e:
             logger.warning(f"Sequential read benchmark failed: {e}")
@@ -307,20 +307,20 @@ class EnvironmentProfiler:
             chunk_size = 64 * 1024  # 64KB chunks
             num_reads = 100
 
-            start = time.time()
+            start = time.perf_counter()
             with open(test_file, 'rb') as f:
                 for _ in range(num_reads):
                     offset = random.randint(0, (file_size_mb * 1024 * 1024) - chunk_size)
                     f.seek(offset)
                     f.read(chunk_size)
-            elapsed = time.time() - start
+            elapsed = time.perf_counter() - start
 
-            if elapsed > 0:
-                bytes_read = num_reads * chunk_size
-                speed_mbps = (bytes_read / (1024 * 1024)) / elapsed
-                return speed_mbps
-            else:
-                return 0.0
+            if elapsed <= 0:
+                # Timer resolution edge case on very fast I/O.
+                return 50.0
+            bytes_read = num_reads * chunk_size
+            speed_mbps = (bytes_read / (1024 * 1024)) / elapsed
+            return max(speed_mbps, 0.1)
 
         except Exception as e:
             logger.warning(f"Random read benchmark failed: {e}")

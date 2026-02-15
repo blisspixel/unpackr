@@ -142,10 +142,10 @@ def test_scan_and_plan_handles_unreadable_stat_in_sort(monkeypatch, tmp_path):
 
     original_stat = unpackr.Path.stat
 
-    def patched_stat(path_obj):
+    def patched_stat(path_obj, *args, **kwargs):
         if path_obj == blocked:
             raise PermissionError("denied")
-        return original_stat(path_obj)
+        return original_stat(path_obj, *args, **kwargs)
 
     monkeypatch.setattr(unpackr.Path, "stat", patched_stat)
     dummy = types.SimpleNamespace(config=DummyConfig(), work_plan=None)
