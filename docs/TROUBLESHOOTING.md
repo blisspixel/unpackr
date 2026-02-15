@@ -6,7 +6,7 @@ Most failures are environment or dependency related. Start with `unpackr-doctor`
 
 ### 7-Zip Not Found
 
-Install 7-Zip from https://www.7-zip.org/ or add the path in `config_files/config.json`:
+Install [7-Zip](https://www.7-zip.org/) or add the path in `config_files/config.json`:
 
 ```json
 {
@@ -18,13 +18,13 @@ Install 7-Zip from https://www.7-zip.org/ or add the path in `config_files/confi
 
 ### `par2cmdline` Not Found
 
-Optional but recommended. Install from https://github.com/Parchive/par2cmdline or add the path in `config_files/config.json`.
+Optional but recommended. Install [par2cmdline](https://github.com/Parchive/par2cmdline) or add the path in `config_files/config.json`.
 
 Without par2, corrupted archives cannot be repaired.
 
 ### `ffmpeg` Not Found
 
-Optional. Install from https://ffmpeg.org/ for video validation.
+Optional. Install [ffmpeg](https://ffmpeg.org/) for video validation.
 
 Without ffmpeg, health-check reliability is reduced. Install ffmpeg for expected video validation behavior.
 

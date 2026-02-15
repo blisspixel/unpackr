@@ -255,7 +255,7 @@ class UnpackrDoctor:
             self._check_tool_min_version("7z", "7-Zip", path, critical=True)
         else:
             print(f"{Fore.RED}✗ Not found (CRITICAL){Style.RESET_ALL}")
-            self.issues.append("7-Zip not found - required for RAR extraction")
+            self.issues.append("7-Zip not found - required for archive extraction")
             print(f"    {Style.DIM}Download: https://www.7-zip.org/{Style.RESET_ALL}")
 
         # Check par2
@@ -272,7 +272,7 @@ class UnpackrDoctor:
             self._check_tool_min_version("par2", "par2cmdline", path, critical=False)
         else:
             print(f"{Fore.YELLOW}⚠ Not found (recommended - repair capability reduced){Style.RESET_ALL}")
-            self.warnings.append("par2cmdline not found - PAR2 repair disabled")
+            self.warnings.append("par2cmdline not found - repair capability reduced")
             print(f"    {Style.DIM}Install for better recovery on damaged downloads{Style.RESET_ALL}")
 
         # Check ffmpeg

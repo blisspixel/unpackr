@@ -1733,8 +1733,8 @@ def main():
                 
         else:
             # Interactive mode - get paths from user
-            print(Style.BRIGHT + Fore.YELLOW + 
-                  "This script requires par2cmdline and 7-Zip installed and available in PATH." + 
+            print(Style.BRIGHT + Fore.YELLOW +
+                  "This script requires 7-Zip; par2cmdline is recommended for repair support." +
                   Style.RESET_ALL)
             print(Fore.CYAN + "\nEnter paths with or without quotes." + Style.RESET_ALL)
             source_dir = get_user_input("\nEnter the path to your downloads directory: ")
