@@ -2,7 +2,6 @@
 
 import builtins
 import json
-from pathlib import Path
 import types
 
 import pytest
