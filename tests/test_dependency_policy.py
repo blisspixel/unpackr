@@ -22,7 +22,7 @@ def test_doctor_treats_missing_par2_and_ffmpeg_as_warnings(monkeypatch, capsys):
     capsys.readouterr()
 
     assert "7-Zip" in doc.passed
-    assert "par2cmdline not found - PAR2 repair disabled" in doc.warnings
+    assert "par2cmdline not found - repair capability reduced" in doc.warnings
     assert "ffmpeg not found - video validation will be skipped" in doc.warnings
     assert all("par2cmdline not found" not in issue for issue in doc.issues)
 

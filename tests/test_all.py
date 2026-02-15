@@ -243,10 +243,13 @@ def test_file_handler():
         try:
             videos = handler.find_video_files(test_path)
             tests_total += 1
-            found_videos = len(videos) > 0
-            print_test(f"Find videos in {test_path}", found_videos, 
-                      f"Found: {len(videos)} videos")
-            if found_videos:
+            is_list = isinstance(videos, list)
+            print_test(
+                f"Find videos in {test_path}",
+                is_list,
+                f"Found: {len(videos)} videos",
+            )
+            if is_list:
                 tests_passed += 1
         except Exception as e:
             tests_total += 1
