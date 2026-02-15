@@ -27,7 +27,7 @@ If needed, place wrappers in a directory that is already on your `PATH`.
 
 ## Standalone EXE
 
-A first-party EXE build pipeline is not currently maintained in active docs.
+A first-party EXE release pipeline is not currently maintained.
 For historical packaging notes and scripts, see `docs/archive/`.
 
 ## Verification

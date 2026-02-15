@@ -70,7 +70,7 @@ The command exits with:
   "warnings": [],
   "issues": [
     "Python version too old",
-    "7-Zip not found - required for RAR extraction"
+    "7-Zip not found - required for archive extraction"
   ],
   "recommended_actions": [
     "Install Python 3.11+ and run doctor again.",

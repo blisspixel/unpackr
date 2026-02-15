@@ -1,5 +1,7 @@
 # Troubleshooting
 
+Most failures are environment or dependency related. Start with `unpackr-doctor`, then validate tool paths in `config_files/config.json`.
+
 ## Common Issues
 
 ### 7-Zip Not Found
@@ -42,7 +44,7 @@ Without ffmpeg, health-check reliability is reduced. Install ffmpeg for expected
 
 ### Permission Errors
 
-- Run as Administrator if needed
+- Use an elevated shell only when required by folder policy
 - Check folder permissions
 - Files locked by other processes will be retried (3 passes with delays)
 

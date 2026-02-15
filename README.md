@@ -1,12 +1,12 @@
 # Unpackr
 
-Unpackr is a Windows automation tool for cleaning and processing Usenet-style download folders with a reliability-first workflow.
+Unpackr is a Windows automation tool for processing Usenet-style download folders with safety-first, predictable behavior.
 
 ## Why Unpackr
 
 - Reduces manual cleanup: verify, extract, validate, move, and clean in one run.
-- Prioritizes safety: fail-closed behavior, preflight checks, and dry-run support.
-- Designed for operations: clear exit codes, diagnostics, and CI-tested behavior.
+- Keeps risky operations explicit: fail-closed behavior, preflight checks, and dry-run support.
+- Built for operators: clear exit codes, diagnostics, and CI-tested behavior.
 
 ## Requirements
 
@@ -58,11 +58,15 @@ Unpackr performs destructive actions when running live. Use `--dry-run` first.
 
 Policy details and limits: [docs/SAFETY.md](docs/SAFETY.md)
 
-## Legal Notice
+## Legal And Compliance Notice
 
-Recording, retention, and monitoring requirements (including one-party/two-party consent rules) vary by jurisdiction and context.
+Only use Unpackr on files you are allowed to handle.
 
-You are responsible for complying with applicable laws, contracts, and organizational policies. This project does not provide legal advice.
+You are responsible for following the laws, licenses, and rules that apply to your setup (including copyright, privacy, and retention requirements).
+
+Unpackr can move and delete files. Run `--dry-run` first and review the plan before live use.
+
+This project is a technical tool, not legal advice, and is provided "as is." See `LICENSE` for full terms.
 
 ## Tooling And Exit Codes
 
@@ -88,3 +92,6 @@ Detailed documentation is in [`docs/`](docs/README.md).
 - [CLI Presentation](docs/CLI_PRESENTATION.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Technical Notes](docs/TECHNICAL.md)
+- [Quality Gates](docs/QUALITY.md)
+- [Build And Install](docs/BUILD.md)
+- [Changelog](docs/CHANGELOG.md)

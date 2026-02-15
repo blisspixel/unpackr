@@ -1,6 +1,7 @@
 # Documentation
 
-This directory contains the authoritative documentation for current behavior.
+This directory contains the authoritative documentation for current supported behavior.
+Use this index to find the right doc for operations, troubleshooting, and maintenance work.
 
 ## Start Here
 
