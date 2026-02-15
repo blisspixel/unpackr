@@ -50,7 +50,8 @@ unpackr --source "G:\Downloads" --destination "G:\Videos"
 
 ## Safety
 
-Unpackr performs destructive actions when running live. Use `--dry-run` first.
+Unpackr is intended to clean messy download folders and produce clean, validated video outputs.
+It can perform destructive actions during live runs. Use at your own risk, and run `--dry-run` first.
 
 - Can delete junk, samples, corrupt videos, and empty processed folders.
 - Uses conservative decision rules when state is uncertain.
@@ -64,7 +65,7 @@ Only use Unpackr on files you are allowed to handle.
 
 You are responsible for following the laws, licenses, and rules that apply to your setup (including copyright, privacy, and retention requirements).
 
-Unpackr can move and delete files. Run `--dry-run` first and review the plan before live use.
+Unpackr can move and permanently delete files. You are responsible for backups and for reviewing planned actions before live use.
 
 This project is a technical tool, not legal advice, and is provided "as is." See `LICENSE` for full terms.
 
