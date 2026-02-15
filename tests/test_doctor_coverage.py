@@ -87,13 +87,10 @@ def test_check_external_tools_paths(monkeypatch, doc, capsys, tmp_path):
 
 
 def test_check_write_permissions_failure(monkeypatch, doc, capsys):
-    class DummyPath(Path):
-        _flavour = type(Path())._flavour
+    def patched_write_text(self, *args, **kwargs):
+        raise PermissionError("denied")
 
-        def write_text(self, *args, **kwargs):
-            raise PermissionError("denied")
-
-    monkeypatch.setattr(doctor, "Path", DummyPath)
+    monkeypatch.setattr(doctor.Path, "write_text", patched_write_text)
     doc.check_write_permissions()
     out = capsys.readouterr().out
     assert "Cannot write" in out
@@ -157,13 +154,10 @@ def test_check_core_modules_missing(monkeypatch, doc, capsys):
 
 
 def test_check_log_directory_failure(monkeypatch, doc, capsys):
-    class DummyPath(Path):
-        _flavour = type(Path())._flavour
+    def patched_mkdir(self, *args, **kwargs):
+        raise OSError("nope")
 
-        def mkdir(self, *args, **kwargs):
-            raise OSError("nope")
-
-    monkeypatch.setattr(doctor, "Path", DummyPath)
+    monkeypatch.setattr(doctor.Path, "mkdir", patched_mkdir)
     doc.check_log_directory()
     out = capsys.readouterr().out
     assert "Cannot create" in out
