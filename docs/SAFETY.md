@@ -62,7 +62,7 @@ No automated deletion workflow can eliminate all risk.
 ### Process Safety
 - Subprocesses killed on timeout
 - Thread-safe progress and stats
-- Graceful shutdown on Ctrl+C
+- Graceful shutdown on `Ctrl+C`
 
 ## Dry-Run Mode
 

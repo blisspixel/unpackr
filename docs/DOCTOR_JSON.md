@@ -91,11 +91,10 @@ The command exits with:
 
 The step fails automatically on exit code `1`.
 
-### PowerShell gate (custom rule)
+### PowerShell Gate (Custom Rule)
 
 ```powershell
 unpackr-doctor --json | Out-File -Encoding utf8 doctor.json
 $doc = Get-Content doctor.json | ConvertFrom-Json
 if ($doc.counts.issues -gt 0) { throw "Doctor blocking issues: $($doc.counts.issues)" }
 ```
-

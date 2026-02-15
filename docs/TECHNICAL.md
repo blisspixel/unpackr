@@ -34,9 +34,8 @@ unpackr/
 Unpackr intentionally delegates archive/parity/media engine work to mature external tools.
 
 - Required runtime tool: `7z` (`22.0+`, blocking if missing/too old)
-- Recommended runtime tools:
-  - `par2` (`0.8.1+`, warning if missing/too old)
-  - `ffmpeg` (`4.4+`, warning if missing/too old)
+- Recommended runtime tool: `par2` (`0.8.1+`, warning if missing/too old)
+- Recommended runtime tool: `ffmpeg` (`4.4+`, warning if missing/too old)
 
 Why:
 - Lower defect surface for complex binary formats

@@ -1,20 +1,28 @@
-# Documentation Index
+# Documentation
 
-## Active Docs
+This directory contains the authoritative documentation for current behavior.
 
-- `../README.md` - project overview, install, quick start
-- `../ROADMAP.md` - reliability roadmap and milestones
-- `QUALITY.md` - required quality gates
-- `CLI_PRESENTATION.md` - terminal rendering modes, flags, and fallback behavior
+## Start Here
+
+- `../README.md` - product overview and quick start
+- `../ROADMAP.md` - current priorities and milestone status
+
+## Operations And Policy
+
 - `SAFETY.md` - destructive-operation safety contract
 - `CONFIGURATION.md` - `config_files/config.json` reference
-- `DOCTOR_JSON.md` - `unpackr-doctor --json` contract
 - `TROUBLESHOOTING.md` - common failures and remediation
+- `DOCTOR_JSON.md` - `unpackr-doctor --json` schema/contract
+
+## Engineering And Release
+
+- `QUALITY.md` - quality gates and enforcement
 - `TECHNICAL.md` - implementation notes for maintainers
+- `CLI_PRESENTATION.md` - terminal rendering modes and fallback behavior
 - `BUILD.md` - install/build modes
-- `CHANGELOG.md` - user-visible changes
+- `CHANGELOG.md` - user-visible changes by release
 
 ## Archive
 
-- `archive/` contains historical/superseded docs kept for context.
-- Treat archive files as non-authoritative unless explicitly re-promoted.
+- `archive/` contains historical or superseded documents kept for context.
+- Archive content is non-authoritative unless explicitly re-promoted.

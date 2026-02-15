@@ -1,4 +1,4 @@
-# Build / Install Modes
+# Build And Install Modes
 
 ## Supported Runtime
 

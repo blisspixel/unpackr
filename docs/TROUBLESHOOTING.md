@@ -2,7 +2,7 @@
 
 ## Common Issues
 
-### "7-Zip not found"
+### 7-Zip Not Found
 
 Install 7-Zip from https://www.7-zip.org/ or add the path in `config_files/config.json`:
 
@@ -14,39 +14,39 @@ Install 7-Zip from https://www.7-zip.org/ or add the path in `config_files/confi
 }
 ```
 
-### "par2cmdline not found"
+### `par2cmdline` Not Found
 
 Optional but recommended. Install from https://github.com/Parchive/par2cmdline or add the path in `config_files/config.json`.
 
 Without par2, corrupted archives cannot be repaired.
 
-### "ffmpeg not found"
+### `ffmpeg` Not Found
 
 Optional. Install from https://ffmpeg.org/ for video validation.
 
 Without ffmpeg, health-check reliability is reduced. Install ffmpeg for expected video validation behavior.
 
-### Videos not moving to destination
+### Videos Not Moving To Destination
 
 1. Check destination path exists and is writable
 2. Check logs for errors: `logs/unpackr-YYYYMMDD-HHMMSS.log`
 3. Run with `--dry-run` to see what would happen
 4. Search logs for `Video health check FAILED` (corrupt videos are deleted, not moved)
 
-### Slow or hanging
+### Slow Or Hanging
 
 - Large archives take time (for example, a `50GB` archive can take up to ~2 hours)
 - Network drives are slower than local
 - Check logs for timeout messages
 - Timeouts are dynamic based on file size
 
-### Permission errors
+### Permission Errors
 
 - Run as Administrator if needed
 - Check folder permissions
 - Files locked by other processes will be retried (3 passes with delays)
 
-### Command not found
+### Command Not Found
 
 From the project directory: ensure installation completed (`pip install -e .`) or wrapper `.bat` files are present.
 
