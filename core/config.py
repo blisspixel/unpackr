@@ -4,6 +4,7 @@ Loads and validates configuration settings.
 """
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, cast
 
@@ -215,10 +216,24 @@ class Config:
             if not isinstance(paths, list):
                 continue  # Already caught by _validate_config
 
+            unsafe_relative = [
+                path_str for path_str in paths
+                if not Path(path_str).is_absolute() and ('/' in path_str or '\\' in path_str or path_str.startswith('.'))
+            ]
+            if unsafe_relative:
+                errors.append(
+                    f"Tool '{tool_name}' has unsafe relative executable path(s): {', '.join(unsafe_relative)}\n"
+                    "  Fix: Use an absolute path or a command name that resolves from PATH"
+                )
+                continue
+
             found_valid = False
             for path_str in paths:
                 path = Path(path_str)
-                if path.exists():
+                if path.is_absolute() and path.exists():
+                    found_valid = True
+                    break
+                if not path.is_absolute() and shutil.which(path_str):
                     found_valid = True
                     break
 

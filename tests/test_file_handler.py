@@ -230,6 +230,14 @@ class TestFolderCleanup:
 
         assert not handler.is_folder_empty_or_removable(temp_dir)
 
+    def test_folder_not_removable_exact_min_image_collection(self, handler, temp_dir):
+        """Test folder with exactly min_image_files and >10MB is preserved."""
+        for i in range(handler.config.min_image_files):
+            img = temp_dir / f"image{i}.jpg"
+            img.write_bytes(b"x" * (1100 * 1024))
+
+        assert not handler.is_folder_empty_or_removable(temp_dir)
+
     def test_folder_removable_few_images(self, handler, temp_dir):
         """Test folder with few small images (cover art) is removable."""
         # Create 3 small images (likely cover art, not collection)
@@ -273,6 +281,16 @@ class TestFolderCleanup:
 
         # All junk, should be removable
         assert handler.is_folder_empty_or_removable(temp_dir)
+
+    def test_folder_not_removable_linklike_subdirectory(self, handler, temp_dir, monkeypatch):
+        """Test folder with a symlink/junction-like subdirectory is not removable."""
+        subdir = temp_dir / "linked"
+        subdir.mkdir()
+        (temp_dir / "file.nfo").write_text("test")
+
+        monkeypatch.setattr(handler, "_is_linklike_path", lambda path: path == subdir)
+
+        assert not handler.is_folder_empty_or_removable(temp_dir)
 
     def test_folder_not_removable_nested_video(self, handler, temp_dir):
         """Test folder not removable if subdirectory has video."""

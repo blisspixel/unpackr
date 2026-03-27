@@ -1,3 +1,4 @@
+import base64
 import tempfile
 from pathlib import Path
 
@@ -28,6 +29,59 @@ def test_safe_delete_folder_success_first_try(tmp_path):
 
     assert handler.safe_delete_folder(folder, max_attempts=1) is True
     assert not folder.exists()
+
+
+def test_safe_delete_folder_powershell_fallback_encodes_literal_path(tmp_path, monkeypatch):
+    handler = _handler()
+    folder = tmp_path / "bad;name'&calc"
+    folder.mkdir()
+
+    captured = {}
+    original_exists = Path.exists
+
+    def fake_rmtree(_folder):
+        raise OSError("locked")
+
+    def fake_run(args, **kwargs):
+        captured["args"] = args
+        return type("CompletedProcess", (), {"returncode": 0})()
+
+    def fake_exists(self):
+        if self == folder:
+            return False
+        return original_exists(self)
+
+    monkeypatch.setattr(handler, "is_folder_empty_or_removable", lambda *args, **kwargs: True)
+    monkeypatch.setattr(handler, "_delete_tree_safely", fake_rmtree)
+    monkeypatch.setattr(handler, "_tree_contains_linklike_entries", lambda path: False)
+    monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setattr("core.file_handler.Path.exists", fake_exists)
+
+    assert handler.safe_delete_folder(folder, max_attempts=1) is True
+
+    args = captured["args"]
+    assert args[:3] == ["powershell", "-NoProfile", "-EncodedCommand"]
+    assert str(folder) not in args
+
+    decoded = base64.b64decode(args[3]).decode("utf-16le")
+    assert "Remove-Item -LiteralPath $target" in decoded
+    escaped_folder = str(folder).replace("'", "''")
+    assert f"$target = '{escaped_folder}'" in decoded
+
+
+def test_safe_delete_folder_aborts_when_delete_tree_finds_linklike_entry(tmp_path, monkeypatch):
+    handler = _handler()
+    folder = tmp_path / "junk"
+    child = folder / "nested"
+    folder.mkdir()
+    child.mkdir()
+    (child / "info.nfo").write_text("x", encoding="utf-8")
+
+    monkeypatch.setattr(handler, "is_folder_empty_or_removable", lambda *args, **kwargs: True)
+    monkeypatch.setattr(handler, "_is_linklike_path", lambda path: path == child)
+
+    assert handler.safe_delete_folder(folder, max_attempts=1) is False
+    assert folder.exists()
 
 
 def test_delete_video_file_with_retry_success(tmp_path, monkeypatch):

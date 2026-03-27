@@ -37,7 +37,9 @@ class TestArchiveDetection:
     def processor(self):
         """Create ArchiveProcessor instance."""
         config = Config()
-        return ArchiveProcessor(config)
+        processor = ArchiveProcessor(config)
+        processor.system_check.get_tool_command = Mock(return_value=[r"C:\Program Files\7-Zip\7z.exe"])
+        return processor
 
     def test_finds_rar_files(self, processor, temp_dir):
         """Test detection of RAR files in directory."""
@@ -111,7 +113,39 @@ class TestExtractionProcess:
     def processor(self):
         """Create ArchiveProcessor instance."""
         config = Config()
-        return ArchiveProcessor(config)
+        processor = ArchiveProcessor(config)
+        processor.system_check.get_tool_command = Mock(return_value=[r"C:\Program Files\7-Zip\7z.exe"])
+        return processor
+
+    @patch('core.archive_processor.StateValidator.check_disk_space')
+    def test_extraction_fails_closed_when_no_safe_7z_command(self, mock_disk_space, processor, temp_dir):
+        """Test extraction aborts if no safe 7-Zip command resolves."""
+        (temp_dir / "archive.rar").write_bytes(b"fake rar data" * 1000)
+        processor.system_check.get_tool_command = Mock(return_value=[])
+        mock_disk_space.return_value = True
+
+        with patch.object(processor, '_validate_archive_paths', return_value=True):
+            with patch('core.archive_processor.SubprocessSafety.run_with_timeout') as mock_run:
+                result = processor.process_rar_files(temp_dir)
+
+        assert result is False
+        assert not mock_run.called
+
+    @patch('core.archive_processor.SubprocessSafety.run_with_timeout')
+    @patch('core.archive_processor.StateValidator.check_disk_space')
+    def test_extraction_uses_temp_files_for_large_7z_output(self, mock_disk_space, mock_subprocess, processor, temp_dir):
+        """Extraction should avoid PIPE buffering for potentially huge 7z output."""
+        (temp_dir / "archive.rar").write_bytes(b"fake rar data" * 1000)
+
+        mock_disk_space.return_value = True
+        mock_subprocess.return_value = (True, 'extracted', '', 0)
+
+        with patch.object(processor, '_validate_archive_paths', return_value=True):
+            with patch.object(processor, '_delete_archive_files'):
+                result = processor.process_rar_files(temp_dir)
+
+        assert result is True
+        assert mock_subprocess.call_args.kwargs['use_temp_files'] is True
 
     @patch('core.archive_processor.SubprocessSafety.run_with_timeout')
     @patch('core.archive_processor.StateValidator.check_disk_space')
@@ -185,7 +219,9 @@ class TestSecurityValidation:
     def processor(self):
         """Create ArchiveProcessor instance."""
         config = Config()
-        return ArchiveProcessor(config)
+        processor = ArchiveProcessor(config)
+        processor.system_check.get_tool_command = Mock(return_value=[r"C:\Program Files\7-Zip\7z.exe"])
+        return processor
 
     @pytest.fixture
     def temp_dir(self):
@@ -229,6 +265,12 @@ class TestPAR2Processing:
         config = Config()
         return ArchiveProcessor(config)
 
+    def test_par2_processing_fails_closed_when_no_safe_command(self, processor, temp_dir):
+        (temp_dir / "repair.par2").write_text("test")
+        processor.system_check.get_tool_command = Mock(return_value=[])
+
+        assert processor.process_par2_files(temp_dir) is False
+
     def test_no_par2_files_returns_true(self, processor, temp_dir):
         """Test that folders with no PAR2 files return success."""
         result = processor.process_par2_files(temp_dir)
@@ -239,6 +281,7 @@ class TestPAR2Processing:
         """Test successful PAR2 verification (no repair needed)."""
         (temp_dir / "file.par2").write_text("test")
         (temp_dir / "file.vol01.par2").write_text("test")
+        processor.system_check.get_tool_command = Mock(return_value=[r"C:\Program Files\par2cmdline\par2.exe"])
 
         # Simulate successful verification (code 0, success message in output)
         mock_subprocess.return_value = (True, 'All files are correct', '', 0)
@@ -253,6 +296,7 @@ class TestPAR2Processing:
     def test_successful_par2_repair(self, mock_subprocess, processor, temp_dir):
         """Test successful PAR2 repair."""
         (temp_dir / "file.par2").write_text("test")
+        processor.system_check.get_tool_command = Mock(return_value=[r"C:\Program Files\par2cmdline\par2.exe"])
 
         # Simulate successful repair (repair complete message)
         mock_subprocess.return_value = (True, 'Repair complete', '', 0)

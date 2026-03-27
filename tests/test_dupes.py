@@ -10,22 +10,24 @@ from vhealth import VideoHealthChecker
 
 
 def test_find_videos_handles_unreadable_paths(monkeypatch, tmp_path):
-    """Discovery should continue when one extension scan hits OSError."""
+    """Discovery should continue when one directory walk hits OSError."""
     config = Config()
     config.set('video_extensions', ['.mkv', '.mp4'])
     checker = VideoHealthChecker(config)
 
     readable_video = tmp_path / "ok.mp4"
+    blocked_dir = tmp_path / "blocked"
     readable_video.write_bytes(b"video")
+    blocked_dir.mkdir()
 
-    def fake_rglob(self, pattern):
-        if pattern == "*.mkv":
+    original_iter = checker._iter_directory_entries
+
+    def fake_iter(directory):
+        if directory == blocked_dir:
             raise OSError("locked volume")
-        if pattern == "*.mp4":
-            return iter([readable_video])
-        return iter([])
+        return original_iter(directory)
 
-    monkeypatch.setattr(Path, "rglob", fake_rglob)
+    monkeypatch.setattr(checker, "_iter_directory_entries", fake_iter)
     videos = checker._find_videos(tmp_path)
     assert videos == [readable_video]
 

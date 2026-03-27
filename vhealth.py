@@ -11,6 +11,7 @@ Usage:
 import sys
 import argparse
 import logging
+import stat
 from pathlib import Path
 from colorama import init, Fore, Style
 from typing import Dict, List, Optional, Tuple, cast
@@ -47,6 +48,7 @@ class VideoHealthChecker:
         self.low_res_videos = []
         self.duplicate_videos = []  # (video, duplicate_of, reason)
         self.potential_duplicates = []  # [(video1, video2, similarity_score)]
+        self._active_root: Optional[Path] = None
 
     def check_path(
         self,
@@ -67,8 +69,13 @@ class VideoHealthChecker:
             delete_bad: Auto-delete bad files immediately without prompting
         """
         if path.is_file():
+            self._active_root = path.parent.resolve(strict=False)
+            if self._is_unsafe_path(path, self._active_root):
+                print(f"{Fore.RED}Refusing to process symlinked or out-of-root file: {path}{Style.RESET_ALL}")
+                return
             self._check_video(path, min_resolution, skip_health=skip_health)
         elif path.is_dir():
+            self._active_root = path.resolve(strict=False)
             video_files = self._find_videos(path)
             print(f"{Fore.CYAN}{path}{Style.RESET_ALL}")
             print(f"{Style.DIM}Found {len(video_files)} videos{Style.RESET_ALL}")
@@ -476,21 +483,71 @@ class VideoHealthChecker:
                         self.duplicate_videos.append((dupe, keeper, "Duplicate filename pattern"))
                     break
 
+    def _iter_directory_entries(self, directory: Path) -> List[Path]:
+        """Return directory entries or raise OSError for unreadable directories."""
+        return list(directory.iterdir())
+
+    def _is_linklike_path(self, path: Path) -> bool:
+        """Return True for symlinks, junctions, and other reparse points."""
+        try:
+            if path.is_symlink():
+                return True
+        except (OSError, PermissionError):
+            return True
+
+        try:
+            file_attributes = getattr(path.lstat(), 'st_file_attributes', 0)
+        except (OSError, PermissionError):
+            return True
+
+        reparse_flag = getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0)
+        return bool(reparse_flag and file_attributes & reparse_flag)
+
+    def _is_unsafe_path(self, path: Path, root: Optional[Path]) -> bool:
+        """Return True when a path is symlink-like or resolves outside root."""
+        if self._is_linklike_path(path):
+            return True
+
+        if root is None:
+            return False
+
+        try:
+            resolved_path = path.resolve(strict=False)
+            resolved_root = root.resolve(strict=False)
+            resolved_path.relative_to(resolved_root)
+            return False
+        except (OSError, RuntimeError, ValueError):
+            return True
+
     def _find_videos(self, directory: Path) -> List[Path]:
         """Find all video files in directory and subdirectories."""
-        video_extensions = self.config.video_extensions
+        video_extensions = {ext.lower() for ext in self.config.video_extensions}
+        root = directory.resolve(strict=False)
         videos = []
         seen = set()
 
-        for ext in video_extensions:
+        def walk(current: Path) -> None:
             try:
-                for video_path in directory.rglob(f"*{ext}"):
-                    if video_path in seen:
-                        continue
-                    seen.add(video_path)
-                    videos.append(video_path)
+                entries = self._iter_directory_entries(current)
             except OSError as e:
-                logging.warning(f"Skipping unreadable path while scanning {directory}: {e}")
+                logging.warning(f"Skipping unreadable path while scanning {current}: {e}")
+                return
+
+            for entry in entries:
+                if self._is_unsafe_path(entry, root):
+                    logging.warning(f"Skipping symlinked, junctioned, or out-of-root path in vhealth scan: {entry}")
+                    continue
+
+                try:
+                    if entry.is_dir():
+                        walk(entry)
+                    elif entry.is_file() and entry.suffix.lower() in video_extensions and entry not in seen:
+                        seen.add(entry)
+                        videos.append(entry)
+                except OSError as e:
+                    logging.warning(f"Skipping unreadable path while scanning {entry}: {e}")
+
+        walk(directory)
 
         # Sort by size (largest first) for better UX
         def safe_size(path: Path) -> int:
@@ -803,12 +860,16 @@ class VideoHealthChecker:
         deleted_count = 0
         failed_count = 0
         total_freed_mb = 0.0
+        root = self._active_root
 
         print(f"\n{Style.DIM}Deleting {len(videos)} files...{Style.RESET_ALL}\n")
 
         for i, video in enumerate(videos, 1):
             filename = video.name[:55] + '...' if len(video.name) > 55 else video.name
             try:
+                if self._is_unsafe_path(video, root):
+                    raise RuntimeError(f"Refusing to delete symlinked or out-of-root file: {video}")
+
                 size_mb = video.stat().st_size / (1024 * 1024)
 
                 # Show current file being deleted with running count
@@ -826,8 +887,9 @@ class VideoHealthChecker:
                 if failed_count > 0:
                     status_line += f"  {Fore.RED}{failed_count} failed{Style.RESET_ALL}"
                 print(f"\r{status_line}", end='', flush=True)
-            except Exception:
+            except Exception as e:
                 failed_count += 1
+                logging.warning(f"Skipping unsafe or undeletable video in vhealth: {video} ({e})")
                 # Show failure and keep it visible
                 print(f"\r{' ' * 120}\r", end='', flush=True)
                 print(f"  {Style.DIM}[{i}/{len(videos)}]{Style.RESET_ALL} {filename[:50]}... {Fore.RED}failed{Style.RESET_ALL}")

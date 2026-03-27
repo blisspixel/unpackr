@@ -99,7 +99,8 @@ class ArchiveProcessor:
                     # Get 7z command from config
                     sevenzip_cmd = self.system_check.get_tool_command('7z')
                     if not sevenzip_cmd:
-                        sevenzip_cmd = ['7z']
+                        logging.error("7-Zip executable unavailable or configured with an unsafe relative path")
+                        continue
 
                     # Log start time for this archive
                     start_time = time.time()
@@ -147,6 +148,7 @@ class ArchiveProcessor:
                         timeout=extraction_timeout,
                         cwd=folder,
                         operation=f"Archive extraction: {archive_file.name}",
+                        use_temp_files=True,
                         process_tracker=self.process_tracker
                     )
 
@@ -239,7 +241,8 @@ class ArchiveProcessor:
             # Get par2 command from config
             par2_cmd = self.system_check.get_tool_command('par2')
             if not par2_cmd:
-                par2_cmd = ['par2']
+                logging.warning("PAR2 executable unavailable or configured with an unsafe relative path")
+                return False
 
             # Count PAR2 files and calculate total size for timeout calculation
             par2_count = len(par2_files)

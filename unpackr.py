@@ -895,6 +895,15 @@ class UnpackrApp:
                     sys.stdout.flush()
 
     @staticmethod
+    @staticmethod
+    def _sanitize_console_text(text: str) -> str:
+        """Best-effort sanitize text for the active stdout encoding."""
+        encoding = getattr(sys.stdout, 'encoding', None) or 'utf-8'
+        try:
+            return text.encode(encoding, errors='replace').decode(encoding, errors='replace')
+        except LookupError:
+            return text.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+
     def _derive_progress_context(action: str) -> Tuple[str, str]:
         """
         Convert a progress action string into a normalized verb + target.
@@ -1020,6 +1029,8 @@ class UnpackrApp:
                 renderer.start(total)
 
             verb, target = UnpackrApp._derive_progress_context(action)
+            safe_target = UnpackrApp._sanitize_console_text(target)
+            safe_verb = UnpackrApp._sanitize_console_text(verb)
 
             comment_result = self._get_random_comment(current)
             comment_line = ""
@@ -1032,12 +1043,12 @@ class UnpackrApp:
             renderer.update(
                 current=current,
                 total=total,
-                action=action,
-                verb=verb,
-                target=target,
-                stats_line=re.sub(r"\x1b\[[0-9;]*m", "", stats_line),
-                time_line=f"speed: {throughput_str.strip()} folders/min | eta: {eta} | saved: {time_saved_str}",
-                comment_line=comment_line,
+                action=UnpackrApp._sanitize_console_text(action),
+                verb=UnpackrApp._sanitize_console_text(verb),
+                target=UnpackrApp._sanitize_console_text(target),
+                stats_line=re.sub(r"\x1b\[[0-9;]*m", "", UnpackrApp._sanitize_console_text(stats_line)),
+                time_line=UnpackrApp._sanitize_console_text(f"speed: {throughput_str.strip()} folders/min | eta: {eta} | saved: {time_saved_str}"),
+                comment_line=UnpackrApp._sanitize_console_text(comment_line),
             )
             return
 
@@ -1060,20 +1071,22 @@ class UnpackrApp:
             sys.stdout.write('\033[7;1H')  # Move to line 7, column 1
 
         # Progress bar
-        sys.stdout.write(f"  {Style.DIM}[{Style.RESET_ALL}{Fore.GREEN}{bar}{Style.DIM}]{Style.RESET_ALL} {Fore.WHITE}{percent}%{Style.RESET_ALL} {Style.DIM}│{Style.RESET_ALL} {Fore.WHITE}{current}{Style.RESET_ALL}{Style.DIM}/{total} folders{Style.RESET_ALL}\033[K\n")
+        sys.stdout.write(UnpackrApp._sanitize_console_text(f"  {Style.DIM}[{Style.RESET_ALL}{Fore.GREEN}{bar}{Style.DIM}]{Style.RESET_ALL} {Fore.WHITE}{percent}%{Style.RESET_ALL} {Style.DIM}│{Style.RESET_ALL} {Fore.WHITE}{current}{Style.RESET_ALL}{Style.DIM}/{total} folders{Style.RESET_ALL}\033[K\n"))
 
         # Stats
-        sys.stdout.write(f"{stats_line}\033[K\n")
+        sys.stdout.write(UnpackrApp._sanitize_console_text(f"{stats_line}\033[K\n"))
 
         # Time metrics
-        sys.stdout.write(f"  {Style.DIM}speed:{Style.RESET_ALL} {Fore.CYAN}{throughput_str}{Style.RESET_ALL} {Style.DIM}folders/min  time left:{Style.RESET_ALL} {Fore.CYAN}{eta}{Style.RESET_ALL}  {Style.DIM}saved:{Style.RESET_ALL} {Fore.MAGENTA}{time_saved_str}{Style.RESET_ALL}\033[K\n")
+        sys.stdout.write(UnpackrApp._sanitize_console_text(f"  {Style.DIM}speed:{Style.RESET_ALL} {Fore.CYAN}{throughput_str}{Style.RESET_ALL} {Style.DIM}folders/min  time left:{Style.RESET_ALL} {Fore.CYAN}{eta}{Style.RESET_ALL}  {Style.DIM}saved:{Style.RESET_ALL} {Fore.MAGENTA}{time_saved_str}{Style.RESET_ALL}\033[K\n"))
         sys.stdout.write("\n")
 
         # Extract operation and target for display.
         verb, target = UnpackrApp._derive_progress_context(action)
+        safe_target = UnpackrApp._sanitize_console_text(target)
+        safe_verb = UnpackrApp._sanitize_console_text(verb)
 
         # Current file/folder (line 11)
-        sys.stdout.write(f"  {Style.DIM}>{Style.RESET_ALL} {target[:80]:<80}\033[K\n")
+        sys.stdout.write(UnpackrApp._sanitize_console_text(f"  {Style.DIM}>{Style.RESET_ALL} {safe_target[:80]:<80}\033[K\n"))
 
         # Easter egg comment (line 12) - optional snarky comment with rarity
         comment_result = self._get_random_comment(current)
@@ -1086,7 +1099,7 @@ class UnpackrApp:
                 # Apply visual effects based on rarity
                 if effect == 'legendary':
                     # Special legendary effect: rockets + gold/yellow + bright (1% drop!)
-                    sys.stdout.write(f"  {Style.DIM}│{Style.RESET_ALL} {Fore.YELLOW}{Style.BRIGHT}🚀 {comment[:71]} 🚀{Style.RESET_ALL}\033[K\n")
+                    sys.stdout.write(UnpackrApp._sanitize_console_text(f"  {Style.DIM}│{Style.RESET_ALL} {Fore.YELLOW}{Style.BRIGHT}🚀 {comment[:71]} 🚀{Style.RESET_ALL}\033[K\n"))
                 else:
                     # Normal rarity effects
                     style = ''
@@ -1099,15 +1112,15 @@ class UnpackrApp:
                     elif effect == 'normal':
                         style = Style.NORMAL
 
-                    sys.stdout.write(f"  {Style.DIM}│{Style.RESET_ALL} {color}{style}{comment[:75]}{Style.RESET_ALL}\033[K\n")
+                    sys.stdout.write(UnpackrApp._sanitize_console_text(f"  {Style.DIM}│{Style.RESET_ALL} {color}{style}{comment[:75]}{Style.RESET_ALL}\033[K\n"))
             else:
                 # Old format fallback
-                sys.stdout.write(f"  {Style.DIM}│{Style.RESET_ALL} {Fore.YELLOW}{comment_result[:75]}{Style.RESET_ALL}\033[K\n")
+                sys.stdout.write(UnpackrApp._sanitize_console_text(f"  {Style.DIM}│{Style.RESET_ALL} {Fore.YELLOW}{comment_result[:75]}{Style.RESET_ALL}\033[K\n"))
         else:
             sys.stdout.write("\033[K\n")  # Clear line if no comment
 
         # Spinner line (line 13) - spinner + verb
-        sys.stdout.write(f"  {Fore.GREEN}{spinner}{Style.RESET_ALL} {Style.DIM}{verb}{Style.RESET_ALL}\033[K")
+        sys.stdout.write(UnpackrApp._sanitize_console_text(f"  {Fore.GREEN}{spinner}{Style.RESET_ALL} {Style.DIM}{safe_verb}{Style.RESET_ALL}\033[K"))
 
         sys.stdout.flush()
     

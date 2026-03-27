@@ -1,11 +1,86 @@
 {
-    "video_extensions": [".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".mpg", ".mpeg", ".m4v", ".3gp", ".webm"],
-    "music_extensions": [".mp3", ".flac", ".wav", ".aac", ".m4a", ".ogg", ".wma"],
-    "image_extensions": [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp", ".raw", ".cr2", ".nef"],
-    "document_extensions": [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".rtf", ".odt"],
-    "ebook_extensions": [".epub", ".mobi", ".azw", ".azw3", ".pdf"],
-    "archive_extensions": [".zip", ".7z", ".rar"],
-    "removable_extensions": [".sfv", ".nfo", ".srr", ".srs", ".url", ".db", ".nzb", ".txt", ".xml", ".dat", ".exe", ".htm", ".html", ".log", ".json", ".encr", ".encrypted", ".md5", ".sha1", ".sha256", ".torrent", ".magnet"],
+    "video_extensions": [
+        ".mp4",
+        ".avi",
+        ".mkv",
+        ".mov",
+        ".wmv",
+        ".flv",
+        ".mpg",
+        ".mpeg",
+        ".m4v",
+        ".3gp",
+        ".webm"
+    ],
+    "music_extensions": [
+        ".mp3",
+        ".flac",
+        ".wav",
+        ".aac",
+        ".m4a",
+        ".ogg",
+        ".wma"
+    ],
+    "image_extensions": [
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".gif",
+        ".bmp",
+        ".tiff",
+        ".webp",
+        ".raw",
+        ".cr2",
+        ".nef"
+    ],
+    "document_extensions": [
+        ".pdf",
+        ".doc",
+        ".docx",
+        ".xls",
+        ".xlsx",
+        ".ppt",
+        ".pptx",
+        ".txt",
+        ".rtf",
+        ".odt"
+    ],
+    "ebook_extensions": [
+        ".epub",
+        ".mobi",
+        ".azw",
+        ".azw3",
+        ".pdf"
+    ],
+    "archive_extensions": [
+        ".zip",
+        ".7z",
+        ".rar"
+    ],
+    "removable_extensions": [
+        ".sfv",
+        ".nfo",
+        ".srr",
+        ".srs",
+        ".url",
+        ".db",
+        ".nzb",
+        ".txt",
+        ".xml",
+        ".dat",
+        ".exe",
+        ".htm",
+        ".html",
+        ".log",
+        ".json",
+        ".encr",
+        ".encrypted",
+        ".md5",
+        ".sha1",
+        ".sha256",
+        ".torrent",
+        ".magnet"
+    ],
     "min_music_files": 10,
     "min_image_files": 10,
     "min_documents": 10,
@@ -26,8 +101,18 @@
     "max_subfolder_depth": 20,
     "stuck_timeout_hours": 3,
     "tool_paths": {
-        "7z": ["C:\\Program Files\\7-Zip\\7z.exe", "C:\\Program Files (x86)\\7-Zip\\7z.exe", "7z"],
-        "par2": ["bin\\par2.exe", "par2", "C:\\Program Files\\par2cmdline\\par2.exe"],
-        "ffmpeg": ["ffmpeg", "C:\\ffmpeg\\bin\\ffmpeg.exe"]
+        "7z": [
+            "C:\\Program Files\\7-Zip\\7z.exe",
+            "C:\\Program Files (x86)\\7-Zip\\7z.exe",
+            "7z"
+        ],
+        "par2": [
+            "par2",
+            "C:\\Program Files\\par2cmdline\\par2.exe"
+        ],
+        "ffmpeg": [
+            "ffmpeg",
+            "C:\\ffmpeg\\bin\\ffmpeg.exe"
+        ]
     }
 }

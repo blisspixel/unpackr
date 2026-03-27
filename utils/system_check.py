@@ -7,6 +7,7 @@ import subprocess
 import os
 import sys
 import re
+import shutil
 from typing import Dict, List, Tuple
 from colorama import Fore, Style
 
@@ -76,18 +77,15 @@ class SystemCheck:
         
         # Try each path until one works
         for custom_path in custom_paths:
+            resolved_path = self._resolve_tool_path(custom_path)
+            if not resolved_path:
+                continue
+
             try:
-                if os.path.isfile(custom_path):
-                    # Full path to executable
-                    command = [custom_path]
-                    if tool_key == 'ffmpeg':
-                        command.append('-version')
-                else:
-                    # Command name (still try it)
-                    command = [custom_path]
-                    if tool_key == 'ffmpeg':
-                        command.append('-version')
-                
+                command = [resolved_path]
+                if tool_key == 'ffmpeg':
+                    command.append('-version')
+
                 subprocess.run(
                     command,
                     stdout=subprocess.PIPE,
@@ -96,12 +94,31 @@ class SystemCheck:
                 )
                 # If we get here, it worked - store the working path
                 self._working_paths = getattr(self, '_working_paths', {})
-                self._working_paths[tool_key] = custom_path
+                self._working_paths[tool_key] = resolved_path
                 return True
             except (FileNotFoundError, subprocess.TimeoutExpired):
                 continue
-        
+
         return False
+
+    @staticmethod
+    def _looks_like_relative_filesystem_path(path_str: str) -> bool:
+        """Return True for relative filesystem paths such as .\bin\tool.exe."""
+        return not os.path.isabs(path_str) and (os.sep in path_str or '/' in path_str or path_str.startswith('.'))
+
+    def _resolve_tool_path(self, tool_path: str) -> str:
+        """Resolve a configured tool entry to an absolute executable path."""
+        candidate = (tool_path or '').strip()
+        if not candidate:
+            return ''
+
+        if os.path.isabs(candidate):
+            return candidate if os.path.isfile(candidate) else ''
+
+        if self._looks_like_relative_filesystem_path(candidate):
+            return ''
+
+        return shutil.which(candidate) or ''
 
     @staticmethod
     def _extract_version_tuple(text: str):
@@ -268,12 +285,15 @@ class SystemCheck:
         elif custom_paths is None:
             custom_paths = []
 
-        # Try first available path, or fall back to default
-        if custom_paths:
-            return [custom_paths[0]]
-        else:
-            # Use default command (first part only, no arguments)
-            return [tool_info['command'][0]]
+        if not custom_paths:
+            custom_paths = [tool_info['command'][0]]
+
+        for custom_path in custom_paths:
+            resolved_path = self._resolve_tool_path(custom_path)
+            if resolved_path:
+                return [resolved_path]
+
+        return []
 
     def check_running_processes(self) -> Tuple[bool, List[str]]:
         """

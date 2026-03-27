@@ -40,6 +40,41 @@ def test_update_progress_first_and_subsequent_render_paths(monkeypatch):
     unpackr.UnpackrApp._update_progress(app, current=1, total=20, action="Scanning folder: test")
 
 
+def test_update_progress_sanitizes_non_ascii_for_stdout(monkeypatch):
+    writes = []
+
+    class AsciiStdout:
+        encoding = "ascii"
+
+        def write(self, value):
+            value.encode("ascii")
+            writes.append(value)
+            return len(value)
+
+        def flush(self):
+            return None
+
+    app = types.SimpleNamespace(
+        spinner_lock=threading.Lock(),
+        current_action="",
+        spinner_frames=["-", "+"],
+        spinner_index=0,
+        start_time=1.0,
+        stats=_base_stats(),
+        first_progress_update=True,
+        _start_spinner_thread=lambda: None,
+        _get_random_comment=lambda _cur: "café comment",
+    )
+    monkeypatch.setattr(unpackr.time, "time", lambda: 40.0)
+    monkeypatch.setattr(unpackr.sys, "stdout", AsciiStdout())
+
+    unpackr.UnpackrApp._update_progress(app, current=10, total=20, action="[földer] Validate 1/2: café.mp4")
+
+    output = "".join(writes)
+    assert "caf?" in output
+    assert "f?lder" in output
+
+
 def test_update_progress_renderer_path(monkeypatch):
     calls = {"start": 0, "update": 0}
 

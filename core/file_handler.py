@@ -3,8 +3,9 @@ File handling operations for Unpackr.
 Manages file operations, folder cleanup, and content classification.
 """
 
-import shutil
+import base64
 import logging
+import stat
 import time
 import psutil
 from pathlib import Path
@@ -290,6 +291,10 @@ class FileHandler:
         image_total_bytes = 0
         image_extensions = self.config.image_extensions
 
+        if self._is_linklike_path(folder):
+            logging.info(f"Folder '{folder}' not deleted: path is a symlink or junction")
+            return False
+
         try:
             entries = list(folder.iterdir())
         except (OSError, PermissionError) as e:
@@ -303,8 +308,13 @@ class FileHandler:
                 logging.warning(f"Folder '{folder}' not deleted: cannot inspect '{file}' ({e})")
                 return False
 
+            if self._is_linklike_path(file):
+                logging.info(f"Folder '{folder}' not deleted: contains symlink or junction '{file.name}'")
+                return False
+
             if is_dir:
-                # Recursively check if subdirectory is also removable
+                # Recursively check if subdirectory is also removable. Link-like
+                # directories are rejected above so recursion stays inside the tree.
                 if not self.is_folder_empty_or_removable(file, par2_error, archive_error):
                     logging.info(f"Folder '{folder}' not deleted: contains non-removable subdirectory '{file.name}'")
                     return False
@@ -320,11 +330,11 @@ class FileHandler:
                     image_total_bytes += file.stat().st_size
                 except (OSError, FileNotFoundError):
                     pass
-                # Match scan logic: need both min_image_files threshold AND >10MB to be considered a collection
-                # Just having 5-10 cover art images shouldn't protect the folder
+                # Match minimum-threshold semantics: collections at exactly
+                # min_image_files and >10MB are preserved.
                 image_total_mb = image_total_bytes / (1024 * 1024)
                 min_images = self.config.min_image_files
-                if image_count > min_images and image_total_mb > 10:
+                if image_count >= min_images and image_total_mb > 10:
                     logging.info(f"Folder '{folder}' not deleted: contains image collection ({image_count} images, {image_total_mb:.1f}MB)")
                     return False
                 continue  # Single images and small collections (cover art) are treated as removable
@@ -381,6 +391,10 @@ class FileHandler:
             max_attempts = getattr(self.config, 'folder_delete_max_attempts', 2)
         retry_delay = getattr(self.config, 'folder_delete_retry_delay', 5)
 
+        if self._is_linklike_path(folder):
+            logging.warning(f"Folder {folder} is a symlink or junction; refusing to delete")
+            return False
+
         # RACE CONDITION FIX: Double-check folder is still removable before deletion
         # Prevents deleting folders whose contents changed since initial check
         if not self.is_folder_empty_or_removable(folder, par2_error, archive_error):
@@ -389,8 +403,7 @@ class FileHandler:
 
         for attempt in range(max_attempts):
             try:
-                # Try standard shutil.rmtree first
-                shutil.rmtree(folder)
+                self._delete_tree_safely(folder)
                 logging.info(f"Successfully deleted folder {folder}")
                 return True
             except PermissionError as e:
@@ -404,16 +417,18 @@ class FileHandler:
                 if attempt < max_attempts - 1:
                     time.sleep(retry_delay)
 
+        if self._tree_contains_linklike_entries(folder):
+            logging.warning(f"Folder {folder} contains a symlink or junction; refusing PowerShell fallback delete")
+            return False
+
         # Final attempt using PowerShell (handles special chars better)
         logging.info(f"Trying PowerShell force delete for {folder}")
         try:
             import subprocess
-            # SECURITY FIX: Use array form to prevent command injection
-            # Pass folder path as parameter, not via string interpolation
-            # PowerShell's -LiteralPath handles special chars without injection risk
+            # Use an encoded command so the folder path is never parsed as
+            # PowerShell command text, even if it contains metacharacters.
             subprocess.run(
-                ['powershell', '-Command',
-                 'Remove-Item', '-LiteralPath', str(folder), '-Recurse', '-Force', '-ErrorAction', 'SilentlyContinue'],
+                self._build_powershell_delete_command(folder),
                 capture_output=True,
                 text=True,
                 timeout=60
@@ -427,6 +442,77 @@ class FileHandler:
 
         logging.error(f"Could not delete folder {folder} after all attempts")
         return False
+
+    def _build_powershell_delete_command(self, folder: Path) -> List[str]:
+        """
+        Build a PowerShell command that treats the folder path as data rather
+        than command text.
+        """
+        folder_literal = str(folder).replace("'", "''")
+        script = (
+            f"$target = '{folder_literal}'; "
+            "$item = Get-Item -LiteralPath $target -Force -ErrorAction Stop; "
+            "if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { exit 3 }; "
+            "$reparse = Get-ChildItem -LiteralPath $target -Force -Recurse -ErrorAction SilentlyContinue | "
+            "Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint } | Select-Object -First 1; "
+            "if ($reparse) { exit 3 }; "
+            "Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue"
+        )
+        encoded_script = base64.b64encode(script.encode('utf-16le')).decode('ascii')
+        return ['powershell', '-NoProfile', '-EncodedCommand', encoded_script]
+
+    def _is_linklike_path(self, path: Path) -> bool:
+        """Return True for symlinks, junctions, and other reparse points."""
+        try:
+            if path.is_symlink():
+                return True
+        except (OSError, PermissionError):
+            return True
+
+        try:
+            file_attributes = getattr(path.lstat(), 'st_file_attributes', 0)
+        except (OSError, PermissionError):
+            return True
+
+        reparse_flag = getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0)
+        return bool(reparse_flag and file_attributes & reparse_flag)
+
+    def _tree_contains_linklike_entries(self, folder: Path) -> bool:
+        """Return True if the folder or any descendant is symlink-like."""
+        if self._is_linklike_path(folder):
+            return True
+
+        try:
+            entries = list(folder.iterdir())
+        except (OSError, PermissionError):
+            return True
+
+        for entry in entries:
+            if self._is_linklike_path(entry):
+                return True
+            try:
+                if entry.is_dir() and self._tree_contains_linklike_entries(entry):
+                    return True
+            except (OSError, PermissionError):
+                return True
+
+        return False
+
+    def _delete_tree_safely(self, folder: Path) -> None:
+        """Delete a directory tree without following symlinks or junctions."""
+        if self._is_linklike_path(folder):
+            raise RuntimeError(f"Refusing to delete symlink or junction: {folder}")
+
+        for entry in list(folder.iterdir()):
+            if self._is_linklike_path(entry):
+                raise RuntimeError(f"Refusing to traverse symlink or junction: {entry}")
+
+            if entry.is_dir():
+                self._delete_tree_safely(entry)
+            else:
+                entry.unlink()
+
+        folder.rmdir()
 
     def _kill_processes_using_folder(self, folder: Path):
         """

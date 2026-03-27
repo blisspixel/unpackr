@@ -101,3 +101,39 @@ def test_find_videos_safe_size_and_delete_failures(tmp_path):
 
     # include missing path to hit delete failure branch
     checker._delete_videos([a, tmp_path / "missing.mp4"])
+
+
+
+def test_find_videos_skips_linklike_paths(tmp_path, monkeypatch):
+    checker = _checker(tmp_path)
+    real = tmp_path / "real.mp4"
+    nested = tmp_path / "nested"
+    nested_video = nested / "nested.mp4"
+    linked = tmp_path / "linked"
+    real.write_bytes(b"x" * 5)
+    nested.mkdir()
+    nested_video.write_bytes(b"x" * 7)
+    linked.mkdir()
+
+    monkeypatch.setattr(checker, "_is_linklike_path", lambda path: path == linked)
+
+    vids = checker._find_videos(tmp_path)
+    assert vids == [nested_video, real]
+
+
+def test_delete_videos_refuses_out_of_root_paths(tmp_path, monkeypatch):
+    checker = _checker(tmp_path)
+    inside = tmp_path / "inside.mp4"
+    outside = tmp_path.parent / "outside.mp4"
+    inside.write_bytes(b"x" * 5)
+    outside.write_bytes(b"x" * 5)
+    checker._active_root = tmp_path.resolve(strict=False)
+
+    original_unsafe = checker._is_unsafe_path
+    monkeypatch.setattr(checker, "_is_unsafe_path", lambda path, root: path == outside or original_unsafe(path, root))
+
+    checker._delete_videos([inside, outside])
+
+    assert inside.exists() is False
+    assert outside.exists() is True
+    outside.unlink(missing_ok=True)

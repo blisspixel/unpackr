@@ -66,12 +66,14 @@ def test_doctor_recommended_actions_and_to_dict():
     assert payload["counts"]["issues"] == 3
 
 
-def test_system_check_tool_command_and_display(capsys):
+def test_system_check_tool_command_and_display(capsys, monkeypatch):
     checker = SystemCheck(config={"tool_paths": {"7z": ["C:/x/7z.exe"]}})
     checker._working_paths = {"7z": "7z"}
 
+    monkeypatch.setattr("utils.system_check.shutil.which", lambda cmd: f"C:/tools/{cmd}.exe")
+
     assert checker.get_tool_command("7z") == ["7z"]
-    assert checker.get_tool_command("par2") == ["par2"]
+    assert checker.get_tool_command("par2") == ["C:/tools/par2.exe"]
     assert checker.get_tool_command("missing") == []
 
     can_continue = checker.display_tool_status({"7z": True, "par2": False, "ffmpeg": False})
