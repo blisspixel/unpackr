@@ -24,10 +24,10 @@ def configure_windows_console_utf8() -> None:
 
             sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer, "strict")
             sys.stderr = codecs.getwriter("utf-8")(sys.stderr.buffer, "strict")
-        os.system("chcp 65001 >nul 2>&1")
+        os.system("chcp 65001 >nul 2>&1")  # nosec B605 - fixed command for Windows console codepage setup
     except Exception:
         # Terminal-dependent setup; safe fallback is default encoding.
-        pass
+        return
 
 
 def build_unpackr_arg_parser() -> argparse.ArgumentParser:
@@ -46,7 +46,9 @@ def build_unpackr_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--destination", "-d", help="Path to destination directory")
     parser.add_argument("--config", "-c", help="Path to config.json file")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be done without making changes")
-    parser.add_argument("--show-plan", action="store_true", help="Show detailed pre-flight plan and exit (no processing)")
+    parser.add_argument(
+        "--show-plan", action="store_true", help="Show detailed pre-flight plan and exit (no processing)"
+    )
     parser.add_argument("--vhealth", action="store_true", help="Run video health check on destination after processing")
     parser.add_argument(
         "--animations",

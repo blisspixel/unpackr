@@ -226,4 +226,3 @@ def test_main_exits_zero_when_countdown_cancelled(monkeypatch, tmp_path):
     with pytest.raises(SystemExit) as exc:
         unpackr.main()
     assert exc.value.code == 0
-

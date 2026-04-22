@@ -69,7 +69,7 @@ class TestEndToEndIntegration:
 
         # Create a test video file (empty file for testing structure)
         video_in_source = source / "test_video.mkv"
-        video_in_source.write_bytes(b'\x00' * (5 * 1024 * 1024))  # 5MB dummy file
+        video_in_source.write_bytes(b"\x00" * (5 * 1024 * 1024))  # 5MB dummy file
 
         # Create dummy RAR file (simulating archive)
         rar_file = source / "test_video.rar"
@@ -126,7 +126,7 @@ class TestEndToEndIntegration:
 
         # Create test structure
         video = source / "video.mkv"
-        video.write_bytes(b'\x00' * (10 * 1024 * 1024))  # 10MB
+        video.write_bytes(b"\x00" * (10 * 1024 * 1024))  # 10MB
 
         nfo_file = source / "info.nfo"
         nfo_file.write_text("Release info")
@@ -164,7 +164,7 @@ class TestEndToEndIntegration:
 
         # Create video
         video = source / "video.mkv"
-        video.write_bytes(b'\x00' * (10 * 1024 * 1024))
+        video.write_bytes(b"\x00" * (10 * 1024 * 1024))
 
         # Create music folder with enough files to trigger protection
         music_folder = source / "Soundtrack"
@@ -173,7 +173,7 @@ class TestEndToEndIntegration:
         min_music_files = config.min_music_files
         for i in range(min_music_files + 1):
             music_file = music_folder / f"track{i:02d}.mp3"
-            music_file.write_bytes(b'\x00' * (3 * 1024 * 1024))  # 3MB each
+            music_file.write_bytes(b"\x00" * (3 * 1024 * 1024))  # 3MB each
 
         # Move video
         file_handler.move_file(video, dest)
@@ -199,7 +199,7 @@ class TestEndToEndIntegration:
 
         for i in range(3):
             img = cover_art_folder / f"cover{i}.jpg"
-            img.write_bytes(b'\x00' * (500 * 1024))  # 500KB each = 1.5MB total
+            img.write_bytes(b"\x00" * (500 * 1024))  # 500KB each = 1.5MB total
 
         is_removable = file_handler.is_folder_empty_or_removable(cover_art_folder)
         assert is_removable  # Small collection, removable
@@ -211,7 +211,7 @@ class TestEndToEndIntegration:
         min_images = config.min_image_files
         for i in range(min_images + 2):
             img = photo_folder / f"photo{i:03d}.jpg"
-            img.write_bytes(b'\x00' * (2 * 1024 * 1024))  # 2MB each = >10MB total
+            img.write_bytes(b"\x00" * (2 * 1024 * 1024))  # 2MB each = >10MB total
 
         is_removable = file_handler.is_folder_empty_or_removable(photo_folder)
         assert not is_removable  # Large collection, protected
@@ -229,7 +229,7 @@ class TestEndToEndIntegration:
 
         # Create video in source
         video = source / "video.mkv"
-        video.write_bytes(b'\x00' * (5 * 1024 * 1024))
+        video.write_bytes(b"\x00" * (5 * 1024 * 1024))
 
         # Try to move to location outside destination (should fail with enforcer)
         outside_dest = Path(tempfile.gettempdir()) / "outside.mkv"
@@ -258,14 +258,14 @@ class TestEndToEndIntegration:
         """
         source, dest = temp_dirs
 
-        file_handler = FileHandler(config, destination_root=dest, stats={'files_sanitized': 0})
+        file_handler = FileHandler(config, destination_root=dest, stats={"files_sanitized": 0})
 
         # Create video with problematic filename (use valid name on disk, test sanitization logic)
         # Windows doesn't allow creating files with these chars, so we create a normal file
         # and test that sanitization would handle bad names
-        original_name = 'video_temp.mkv'
+        original_name = "video_temp.mkv"
         video = source / original_name
-        video.write_bytes(b'\x00' * (5 * 1024 * 1024))
+        video.write_bytes(b"\x00" * (5 * 1024 * 1024))
 
         # Test sanitization function directly
         bad_name = 'video<>:"|?*.mkv'
@@ -298,7 +298,7 @@ class TestEndToEndIntegration:
         nested.mkdir(parents=True)
 
         video = nested / "video.mkv"
-        video.write_bytes(b'\x00' * (10 * 1024 * 1024))
+        video.write_bytes(b"\x00" * (10 * 1024 * 1024))
 
         junk = nested / "info.nfo"
         junk.write_text("metadata")
@@ -331,13 +331,9 @@ class TestEndToEndIntegration:
         rar_file.write_text("corrupted archive")
 
         # Check folder is removable when par2_error=True
-        is_removable = file_handler.is_folder_empty_or_removable(
-            source,
-            par2_error=True,
-            archive_error=True
-        )
+        is_removable = file_handler.is_folder_empty_or_removable(source, par2_error=True, archive_error=True)
         assert is_removable
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v', '--tb=short'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v", "--tb=short"])

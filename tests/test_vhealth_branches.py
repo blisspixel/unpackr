@@ -103,7 +103,6 @@ def test_find_videos_safe_size_and_delete_failures(tmp_path):
     checker._delete_videos([a, tmp_path / "missing.mp4"])
 
 
-
 def test_find_videos_skips_linklike_paths(tmp_path, monkeypatch):
     checker = _checker(tmp_path)
     real = tmp_path / "real.mp4"

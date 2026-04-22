@@ -29,6 +29,20 @@ unpackr-doctor
 
 Run `unpackr-doctor` before live processing and resolve blocking issues first.
 
+Developer quality tooling:
+
+```bash
+pip install -e .[dev]
+pre-commit install
+pre-commit run --all-files
+```
+
+Current engineering baseline:
+- `482` tests passing in the full suite
+- `86.24%` total coverage
+- stricter Pyright tier on `core/config.py`, `core/file_handler.py`, and `core/safety_invariants.py`
+- enforced local + CI gate via `ruff`, `mypy`, `pyright`, `bandit`, `pytest`, coverage, and `pre-commit`
+
 ## Quick Start
 
 ```bash
@@ -74,6 +88,7 @@ This project is a technical tool, not legal advice, and is provided "as is." See
 - `unpackr`: processing pipeline
 - `unpackr-doctor`: environment and dependency checks
 - `vhealth`: post-run video health checks
+- Quality gate: `ruff`, `mypy`, `pyright`, `bandit`, `pytest`, `coverage`, `pre-commit`
 
 Exit semantics:
 - `unpackr-doctor`: `0` ready, `1` blocked

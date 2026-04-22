@@ -19,19 +19,19 @@ References:
 
 import json
 import logging
-from pathlib import Path
+import uuid
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List
 from datetime import datetime
 from enum import Enum, auto
-import uuid
-
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 
 class EventType(Enum):
     """Types of events that can occur."""
+
     # Archive operations
     ARCHIVE_DISCOVERED = auto()
     ARCHIVE_VALIDATION_STARTED = auto()
@@ -81,6 +81,7 @@ class EventType(Enum):
 
 class EventSeverity(Enum):
     """Severity levels for events."""
+
     DEBUG = auto()
     INFO = auto()
     WARNING = auto()
@@ -95,6 +96,7 @@ class StructuredEvent:
 
     All events have these core fields plus event-specific data.
     """
+
     event_id: str
     event_type: EventType
     timestamp: datetime
@@ -108,15 +110,15 @@ class StructuredEvent:
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
         return {
-            'event_id': self.event_id,
-            'event_type': self.event_type.name,
-            'timestamp': self.timestamp.isoformat(),
-            'severity': self.severity.name,
-            'message': self.message,
-            'context': self.context,
-            'metadata': self.metadata,
-            'session_id': self.session_id,
-            'parent_event_id': self.parent_event_id
+            "event_id": self.event_id,
+            "event_type": self.event_type.name,
+            "timestamp": self.timestamp.isoformat(),
+            "severity": self.severity.name,
+            "message": self.message,
+            "context": self.context,
+            "metadata": self.metadata,
+            "session_id": self.session_id,
+            "parent_event_id": self.parent_event_id,
         }
 
     def to_json(self) -> str:
@@ -124,12 +126,12 @@ class StructuredEvent:
         return json.dumps(self.to_dict())
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'StructuredEvent':
+    def from_dict(cls, data: dict) -> "StructuredEvent":
         """Create from dictionary."""
         data = data.copy()
-        data['event_type'] = EventType[data['event_type']]
-        data['severity'] = EventSeverity[data['severity']]
-        data['timestamp'] = datetime.fromisoformat(data['timestamp'])
+        data["event_type"] = EventType[data["event_type"]]
+        data["severity"] = EventSeverity[data["severity"]]
+        data["timestamp"] = datetime.fromisoformat(data["timestamp"])
         return cls(**data)
 
 
@@ -149,7 +151,7 @@ class EventEmitter:
         log_file: Optional[Path] = None,
         session_id: Optional[str] = None,
         enable_console: bool = True,
-        enable_file: bool = True
+        enable_file: bool = True,
     ):
         """
         Initialize event emitter.
@@ -160,9 +162,7 @@ class EventEmitter:
             enable_console: Emit to console via standard logging
             enable_file: Emit to file
         """
-        self.log_file = log_file or (
-            Path.home() / '.unpackr' / 'events.jsonl'
-        )
+        self.log_file = log_file or (Path.home() / ".unpackr" / "events.jsonl")
         self.session_id = session_id or str(uuid.uuid4())
         self.enable_console = enable_console
         self.enable_file = enable_file
@@ -181,7 +181,7 @@ class EventEmitter:
         severity: EventSeverity = EventSeverity.INFO,
         context: Optional[Dict] = None,
         metadata: Optional[Dict] = None,
-        parent_event_id: Optional[str] = None
+        parent_event_id: Optional[str] = None,
     ) -> StructuredEvent:
         """
         Emit a structured event.
@@ -206,7 +206,7 @@ class EventEmitter:
             context=context or {},
             metadata=metadata or {},
             session_id=self.session_id,
-            parent_event_id=parent_event_id
+            parent_event_id=parent_event_id,
         )
 
         # Add to buffer
@@ -230,7 +230,7 @@ class EventEmitter:
             EventSeverity.INFO: logging.INFO,
             EventSeverity.WARNING: logging.WARNING,
             EventSeverity.ERROR: logging.ERROR,
-            EventSeverity.CRITICAL: logging.CRITICAL
+            EventSeverity.CRITICAL: logging.CRITICAL,
         }
 
         log_level = level_map.get(event.severity, logging.INFO)
@@ -238,20 +238,17 @@ class EventEmitter:
         # Format message with context
         context_str = ""
         if event.context:
-            key_context = {k: v for k, v in event.context.items() if k in ['path', 'size', 'duration']}
+            key_context = {k: v for k, v in event.context.items() if k in ["path", "size", "duration"]}
             if key_context:
                 context_str = " | " + ", ".join(f"{k}={v}" for k, v in key_context.items())
 
-        logger.log(
-            log_level,
-            f"[{event.event_type.name}] {event.message}{context_str}"
-        )
+        logger.log(log_level, f"[{event.event_type.name}] {event.message}{context_str}")
 
     def _emit_to_file(self, event: StructuredEvent):
         """Emit event to JSON lines file."""
         try:
-            with open(self.log_file, 'a') as f:
-                f.write(event.to_json() + '\n')
+            with open(self.log_file, "a") as f:
+                f.write(event.to_json() + "\n")
         except Exception as e:
             logger.error(f"Failed to write event to file: {e}")
 
@@ -264,7 +261,7 @@ class EventEmitter:
         event_type: Optional[EventType] = None,
         severity: Optional[EventSeverity] = None,
         since: Optional[datetime] = None,
-        until: Optional[datetime] = None
+        until: Optional[datetime] = None,
     ) -> List[StructuredEvent]:
         """
         Query events with filters.
@@ -319,37 +316,23 @@ class EventBuilder:
             EventType.ARCHIVE_DISCOVERED,
             f"Discovered archive: {path.name}",
             severity=EventSeverity.DEBUG,
-            context={
-                'path': str(path),
-                'size_bytes': size,
-                'size_mb': size / (1024 * 1024)
-            }
+            context={"path": str(path), "size_bytes": size, "size_mb": size / (1024 * 1024)},
         )
 
     def archive_extraction_started(
-        self,
-        path: Path,
-        timeout: int,
-        parent_event_id: Optional[str] = None
+        self, path: Path, timeout: int, parent_event_id: Optional[str] = None
     ) -> StructuredEvent:
         """Emit archive extraction started event."""
         return self.emitter.emit(
             EventType.ARCHIVE_EXTRACTION_STARTED,
             f"Extracting archive: {path.name}",
             severity=EventSeverity.INFO,
-            context={
-                'path': str(path),
-                'timeout_seconds': timeout
-            },
-            parent_event_id=parent_event_id
+            context={"path": str(path), "timeout_seconds": timeout},
+            parent_event_id=parent_event_id,
         )
 
     def archive_extraction_completed(
-        self,
-        path: Path,
-        duration: float,
-        files_extracted: int,
-        parent_event_id: Optional[str] = None
+        self, path: Path, duration: float, files_extracted: int, parent_event_id: Optional[str] = None
     ) -> StructuredEvent:
         """Emit archive extraction completed event."""
         # Calculate extraction speed if file exists and duration > 0
@@ -357,38 +340,26 @@ class EventBuilder:
             extraction_speed = (path.stat().st_size / (1024 * 1024)) / duration if duration > 0 else 0
         except (FileNotFoundError, OSError):
             extraction_speed = 0
-        
+
         return self.emitter.emit(
             EventType.ARCHIVE_EXTRACTION_COMPLETED,
             f"Extracted {files_extracted} files from {path.name}",
             severity=EventSeverity.INFO,
-            context={
-                'path': str(path),
-                'duration_seconds': duration,
-                'files_extracted': files_extracted
-            },
-            metadata={
-                'extraction_speed_mbps': extraction_speed
-            },
-            parent_event_id=parent_event_id
+            context={"path": str(path), "duration_seconds": duration, "files_extracted": files_extracted},
+            metadata={"extraction_speed_mbps": extraction_speed},
+            parent_event_id=parent_event_id,
         )
 
     def archive_extraction_failed(
-        self,
-        path: Path,
-        error: str,
-        parent_event_id: Optional[str] = None
+        self, path: Path, error: str, parent_event_id: Optional[str] = None
     ) -> StructuredEvent:
         """Emit archive extraction failed event."""
         return self.emitter.emit(
             EventType.ARCHIVE_EXTRACTION_FAILED,
             f"Failed to extract {path.name}: {error}",
             severity=EventSeverity.ERROR,
-            context={
-                'path': str(path),
-                'error': error
-            },
-            parent_event_id=parent_event_id
+            context={"path": str(path), "error": error},
+            parent_event_id=parent_event_id,
         )
 
     # Video events
@@ -399,34 +370,21 @@ class EventBuilder:
             EventType.VIDEO_DISCOVERED,
             f"Discovered video: {path.name}",
             severity=EventSeverity.DEBUG,
-            context={
-                'path': str(path),
-                'size_bytes': size,
-                'size_mb': size / (1024 * 1024)
-            }
+            context={"path": str(path), "size_bytes": size, "size_mb": size / (1024 * 1024)},
         )
 
-    def video_validation_started(
-        self,
-        path: Path,
-        parent_event_id: Optional[str] = None
-    ) -> StructuredEvent:
+    def video_validation_started(self, path: Path, parent_event_id: Optional[str] = None) -> StructuredEvent:
         """Emit video validation started event."""
         return self.emitter.emit(
             EventType.VIDEO_VALIDATION_STARTED,
             f"Validating video: {path.name}",
             severity=EventSeverity.DEBUG,
-            context={'path': str(path)},
-            parent_event_id=parent_event_id
+            context={"path": str(path)},
+            parent_event_id=parent_event_id,
         )
 
     def video_validation_passed(
-        self,
-        path: Path,
-        duration: float,
-        resolution: str,
-        bitrate: int,
-        parent_event_id: Optional[str] = None
+        self, path: Path, duration: float, resolution: str, bitrate: int, parent_event_id: Optional[str] = None
     ) -> StructuredEvent:
         """Emit video validation passed event."""
         return self.emitter.emit(
@@ -434,80 +392,56 @@ class EventBuilder:
             f"Video validation passed: {path.name}",
             severity=EventSeverity.INFO,
             context={
-                'path': str(path),
-                'duration_seconds': duration,
-                'resolution': resolution,
-                'bitrate_kbps': bitrate
+                "path": str(path),
+                "duration_seconds": duration,
+                "resolution": resolution,
+                "bitrate_kbps": bitrate,
             },
-            parent_event_id=parent_event_id
+            parent_event_id=parent_event_id,
         )
 
     def video_validation_failed(
-        self,
-        path: Path,
-        reason: str,
-        parent_event_id: Optional[str] = None
+        self, path: Path, reason: str, parent_event_id: Optional[str] = None
     ) -> StructuredEvent:
         """Emit video validation failed event."""
         return self.emitter.emit(
             EventType.VIDEO_VALIDATION_FAILED,
             f"Video validation failed: {path.name} - {reason}",
             severity=EventSeverity.WARNING,
-            context={
-                'path': str(path),
-                'failure_reason': reason
-            },
-            parent_event_id=parent_event_id
+            context={"path": str(path), "failure_reason": reason},
+            parent_event_id=parent_event_id,
         )
 
     # Safety events
 
-    def safety_invariant_violated(
-        self,
-        invariant_name: str,
-        operation: str,
-        details: str
-    ) -> StructuredEvent:
+    def safety_invariant_violated(self, invariant_name: str, operation: str, details: str) -> StructuredEvent:
         """Emit safety invariant violation event."""
         return self.emitter.emit(
             EventType.SAFETY_INVARIANT_VIOLATED,
             f"SAFETY VIOLATION: {invariant_name} - {details}",
             severity=EventSeverity.CRITICAL,
-            context={
-                'invariant': invariant_name,
-                'operation': operation,
-                'details': details
-            }
+            context={"invariant": invariant_name, "operation": operation, "details": details},
         )
 
-    def disk_space_warning(
-        self,
-        path: Path,
-        available_bytes: int,
-        required_bytes: int
-    ) -> StructuredEvent:
+    def disk_space_warning(self, path: Path, available_bytes: int, required_bytes: int) -> StructuredEvent:
         """Emit disk space warning event."""
         return self.emitter.emit(
             EventType.DISK_SPACE_WARNING,
             f"Low disk space: {available_bytes / (1024**3):.1f} GB available",
             severity=EventSeverity.WARNING,
             context={
-                'path': str(path),
-                'available_bytes': available_bytes,
-                'required_bytes': required_bytes,
-                'available_gb': available_bytes / (1024**3),
-                'required_gb': required_bytes / (1024**3)
-            }
+                "path": str(path),
+                "available_bytes": available_bytes,
+                "required_bytes": required_bytes,
+                "available_gb": available_bytes / (1024**3),
+                "required_gb": required_bytes / (1024**3),
+            },
         )
 
     # Adaptive learning events
 
     def policy_threshold_adjusted(
-        self,
-        policy_name: str,
-        old_threshold: float,
-        new_threshold: float,
-        reason: str
+        self, policy_name: str, old_threshold: float, new_threshold: float, reason: str
     ) -> StructuredEvent:
         """Emit policy threshold adjustment event."""
         return self.emitter.emit(
@@ -515,29 +449,24 @@ class EventBuilder:
             f"Policy {policy_name} adjusted: {old_threshold:.3f} → {new_threshold:.3f}",
             severity=EventSeverity.INFO,
             context={
-                'policy_name': policy_name,
-                'old_threshold': old_threshold,
-                'new_threshold': new_threshold,
-                'reason': reason
-            }
+                "policy_name": policy_name,
+                "old_threshold": old_threshold,
+                "new_threshold": new_threshold,
+                "reason": reason,
+            },
         )
 
-    def environment_profiled(
-        self,
-        disk_type: str,
-        sequential_speed: float,
-        random_speed: float
-    ) -> StructuredEvent:
+    def environment_profiled(self, disk_type: str, sequential_speed: float, random_speed: float) -> StructuredEvent:
         """Emit environment profiling completed event."""
         return self.emitter.emit(
             EventType.ENVIRONMENT_PROFILED,
             f"Environment profiled: {disk_type} disk",
             severity=EventSeverity.INFO,
             context={
-                'disk_type': disk_type,
-                'sequential_read_mbps': sequential_speed,
-                'random_read_mbps': random_speed
-            }
+                "disk_type": disk_type,
+                "sequential_read_mbps": sequential_speed,
+                "random_read_mbps": random_speed,
+            },
         )
 
     # Session events
@@ -549,18 +478,14 @@ class EventBuilder:
             "Processing session started",
             severity=EventSeverity.INFO,
             context={
-                'source': str(source_path),
-                'destination': str(destination_path),
-                'session_id': self.emitter.session_id
-            }
+                "source": str(source_path),
+                "destination": str(destination_path),
+                "session_id": self.emitter.session_id,
+            },
         )
 
     def session_completed(
-        self,
-        duration: float,
-        files_processed: int,
-        files_moved: int,
-        files_deleted: int
+        self, duration: float, files_processed: int, files_moved: int, files_deleted: int
     ) -> StructuredEvent:
         """Emit session completed event."""
         return self.emitter.emit(
@@ -568,12 +493,12 @@ class EventBuilder:
             f"Session completed: {files_processed} files processed in {duration:.1f}s",
             severity=EventSeverity.INFO,
             context={
-                'duration_seconds': duration,
-                'files_processed': files_processed,
-                'files_moved': files_moved,
-                'files_deleted': files_deleted,
-                'session_id': self.emitter.session_id
-            }
+                "duration_seconds": duration,
+                "files_processed": files_processed,
+                "files_moved": files_moved,
+                "files_deleted": files_deleted,
+                "session_id": self.emitter.session_id,
+            },
         )
 
 
@@ -611,7 +536,7 @@ class EventAnalyzer:
             return
 
         try:
-            with open(self.log_file, 'r') as f:
+            with open(self.log_file, "r") as f:
                 for line in f:
                     try:
                         data = json.loads(line)
@@ -638,24 +563,15 @@ class EventAnalyzer:
         Returns:
             Success rate (0.0 to 1.0) based on terminal states (passed/completed vs failed)
         """
-        relevant_events = [
-            e for e in self.events
-            if e.event_type.name.startswith(event_type_prefix)
-        ]
+        relevant_events = [e for e in self.events if e.event_type.name.startswith(event_type_prefix)]
 
         if not relevant_events:
             return 0.0
 
         # Count only terminal states for meaningful success rate
-        passed = sum(
-            1 for e in relevant_events
-            if 'COMPLETED' in e.event_type.name or 'PASSED' in e.event_type.name
-        )
-        failed = sum(
-            1 for e in relevant_events
-            if 'FAILED' in e.event_type.name
-        )
-        
+        passed = sum(1 for e in relevant_events if "COMPLETED" in e.event_type.name or "PASSED" in e.event_type.name)
+        failed = sum(1 for e in relevant_events if "FAILED" in e.event_type.name)
+
         total_terminal = passed + failed
         if total_terminal == 0:
             return 0.0
@@ -672,16 +588,13 @@ class EventAnalyzer:
         Returns:
             Average duration in seconds, or None if no data
         """
-        relevant_events = [
-            e for e in self.events
-            if e.event_type == event_type and 'duration_seconds' in e.context
-        ]
+        relevant_events = [e for e in self.events if e.event_type == event_type and "duration_seconds" in e.context]
 
         if not relevant_events:
             return None
 
-        durations = [e.context['duration_seconds'] for e in relevant_events]
-        return sum(durations) / len(durations)
+        durations = [float(e.context["duration_seconds"]) for e in relevant_events]
+        return float(sum(durations) / len(durations))
 
     def get_error_summary(self) -> Dict[str, int]:
         """
@@ -690,23 +603,16 @@ class EventAnalyzer:
         Returns:
             Dictionary mapping error types to counts
         """
-        error_events = [
-            e for e in self.events
-            if e.severity in (EventSeverity.ERROR, EventSeverity.CRITICAL)
-        ]
+        error_events = [e for e in self.events if e.severity in (EventSeverity.ERROR, EventSeverity.CRITICAL)]
 
-        summary = {}
+        summary: Dict[str, int] = {}
         for event in error_events:
             event_type = event.event_type.name
             summary[event_type] = summary.get(event_type, 0) + 1
 
         return summary
 
-    def detect_performance_degradation(
-        self,
-        event_type: EventType,
-        window_size: int = 10
-    ) -> bool:
+    def detect_performance_degradation(self, event_type: EventType, window_size: int = 10) -> bool:
         """
         Detect if operation is getting slower over time.
 
@@ -717,20 +623,17 @@ class EventAnalyzer:
         Returns:
             True if performance degrading
         """
-        relevant_events = [
-            e for e in self.events
-            if e.event_type == event_type and 'duration_seconds' in e.context
-        ]
+        relevant_events = [e for e in self.events if e.event_type == event_type and "duration_seconds" in e.context]
 
         if len(relevant_events) < window_size * 2:
             return False  # Not enough data
 
         # Compare recent window to earlier window
         recent = relevant_events[-window_size:]
-        earlier = relevant_events[-window_size*2:-window_size]
+        earlier = relevant_events[-window_size * 2 : -window_size]
 
-        recent_avg = sum(e.context['duration_seconds'] for e in recent) / len(recent)
-        earlier_avg = sum(e.context['duration_seconds'] for e in earlier) / len(earlier)
+        recent_avg = sum(float(e.context["duration_seconds"]) for e in recent) / len(recent)
+        earlier_avg = sum(float(e.context["duration_seconds"]) for e in earlier) / len(earlier)
 
         # Consider degraded if 50% slower
-        return recent_avg > earlier_avg * 1.5
+        return bool(recent_avg > earlier_avg * 1.5)

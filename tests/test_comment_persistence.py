@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from unpackr import UnpackrApp
 from core import Config
 
+
 def test_comment_persistence():
     """Test that comments persist across multiple calls for the same folder."""
 
@@ -69,5 +70,6 @@ def test_comment_persistence():
     print("\n" + "=" * 60)
     print("✓ Comment persistence test passed!\n")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     test_comment_persistence()

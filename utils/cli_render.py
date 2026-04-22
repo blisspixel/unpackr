@@ -77,7 +77,7 @@ class RichRenderer:  # pragma: no cover - optional path when Rich is installed i
         """
         try:
             # Optional dependency; may not exist in runtime environments.
-            import terminaltexteffects  # type: ignore # noqa: F401
+            import terminaltexteffects  # noqa: F401
         except Exception:
             return None
         return None

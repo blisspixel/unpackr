@@ -3,19 +3,21 @@ Unpackr Doctor - Diagnostic tool to check system health and configuration.
 Run this to verify everything is set up correctly before processing.
 """
 
-import sys
-import json
 import argparse
 import io
-import subprocess
+import json
 import re
-from typing import Optional
+import subprocess
+import sys
 from contextlib import redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
-from colorama import init, Fore, Style
+from typing import Optional
+
+from colorama import Fore, Style, init
 
 init(autoreset=True)
+
 
 class UnpackrDoctor:
     """Diagnostic tool for Unpackr setup."""
@@ -33,10 +35,10 @@ class UnpackrDoctor:
 
     def print_header(self):
         """Print diagnostic header."""
-        print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+        print(f"\n{Fore.CYAN}{'=' * 60}{Style.RESET_ALL}")
         print(f"{Fore.CYAN}Unpackr Doctor - System Diagnostic{Style.RESET_ALL}")
         print(f"{Style.DIM}Checks runtime, tools, config, and safety prerequisites{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}\n")
+        print(f"{Fore.CYAN}{'=' * 60}{Style.RESET_ALL}\n")
 
     def _build_recommended_actions(self):
         """Generate actionable remediation steps from current findings."""
@@ -87,7 +89,7 @@ class UnpackrDoctor:
     def check_dependencies(self):
         """Check required Python packages."""
         print(f"{Fore.YELLOW}[2/10]{Style.RESET_ALL} Checking Python dependencies...", end=" ")
-        required = ['tqdm', 'psutil', 'colorama']
+        required = ["tqdm", "psutil", "colorama"]
         missing = []
 
         for package in required:
@@ -107,7 +109,7 @@ class UnpackrDoctor:
     def check_config_file(self):
         """Check config file exists and is valid."""
         print(f"{Fore.YELLOW}[3/10]{Style.RESET_ALL} Checking configuration file...", end=" ")
-        config_path = Path(__file__).parent / 'config_files' / 'config.json'
+        config_path = Path(__file__).parent / "config_files" / "config.json"
 
         if not config_path.exists():
             print(f"{Fore.RED}✗ Config file not found{Style.RESET_ALL}")
@@ -115,11 +117,11 @@ class UnpackrDoctor:
             return
 
         try:
-            with open(config_path, 'r') as f:
+            with open(config_path, "r") as f:
                 config = json.load(f)
 
             # Check for required keys
-            required_keys = ['tool_paths', 'video_extensions', 'removable_extensions']
+            required_keys = ["tool_paths", "video_extensions", "removable_extensions"]
             missing_keys = [k for k in required_keys if k not in config]
 
             if missing_keys:
@@ -140,22 +142,12 @@ class UnpackrDoctor:
                 # Handle both string paths and command names
                 if Path(cmd).exists():
                     # It's a file path
-                    subprocess.run(
-                        [cmd],
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        timeout=2
-                    )
+                    subprocess.run([cmd], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=2)
                     return True, cmd
                 else:
                     # It's a command name
-                    test_cmd = [cmd] if tool_name != 'ffmpeg' else [cmd, '-version']
-                    subprocess.run(
-                        test_cmd,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        timeout=2
-                    )
+                    test_cmd = [cmd] if tool_name != "ffmpeg" else [cmd, "-version"]
+                    subprocess.run(test_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=2)
                     return True, cmd
             except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
                 continue
@@ -233,23 +225,23 @@ class UnpackrDoctor:
         print(f"{Fore.YELLOW}[4/10]{Style.RESET_ALL} Checking external tools...")
 
         # Load config to get tool paths
-        config_path = Path(__file__).parent / 'config_files' / 'config.json'
+        config_path = Path(__file__).parent / "config_files" / "config.json"
         try:
-            with open(config_path, 'r') as f:
+            with open(config_path, "r") as f:
                 config = json.load(f)
-            tool_paths = config.get('tool_paths', {})
+            tool_paths = config.get("tool_paths", {})
         except (OSError, json.JSONDecodeError):
             tool_paths = {}
 
         # Check 7-Zip
         print(f"  {Style.DIM}7-Zip:{Style.RESET_ALL} ", end="")
-        commands = tool_paths.get('7z', [])
+        commands = tool_paths.get("7z", [])
         if isinstance(commands, str):
             commands = [commands]
-        commands.extend(['7z', 'C:\\Program Files\\7-Zip\\7z.exe'])
+        commands.extend(["7z", "C:\\Program Files\\7-Zip\\7z.exe"])
 
-        found, path = self.check_tool('7z', commands, critical=True)
-        if found:
+        found, path = self.check_tool("7z", commands, critical=True)
+        if found and path:
             print(f"{Fore.GREEN}✓ Found at: {path}{Style.RESET_ALL}")
             self.passed.append("7-Zip")
             self._check_tool_min_version("7z", "7-Zip", path, critical=True)
@@ -260,13 +252,13 @@ class UnpackrDoctor:
 
         # Check par2
         print(f"  {Style.DIM}par2cmdline:{Style.RESET_ALL} ", end="")
-        commands = tool_paths.get('par2', [])
+        commands = tool_paths.get("par2", [])
         if isinstance(commands, str):
             commands = [commands]
-        commands.extend(['par2', 'bin\\par2.exe'])
+        commands.extend(["par2", "bin\\par2.exe"])
 
-        found, path = self.check_tool('par2', commands, critical=True)
-        if found:
+        found, path = self.check_tool("par2", commands, critical=True)
+        if found and path:
             print(f"{Fore.GREEN}✓ Found at: {path}{Style.RESET_ALL}")
             self.passed.append("par2cmdline")
             self._check_tool_min_version("par2", "par2cmdline", path, critical=False)
@@ -277,13 +269,13 @@ class UnpackrDoctor:
 
         # Check ffmpeg
         print(f"  {Style.DIM}ffmpeg:{Style.RESET_ALL} ", end="")
-        commands = tool_paths.get('ffmpeg', [])
+        commands = tool_paths.get("ffmpeg", [])
         if isinstance(commands, str):
             commands = [commands]
-        commands.extend(['ffmpeg'])
+        commands.extend(["ffmpeg"])
 
-        found, path = self.check_tool('ffmpeg', commands, critical=False)
-        if found:
+        found, path = self.check_tool("ffmpeg", commands, critical=False)
+        if found and path:
             print(f"{Fore.GREEN}✓ Found at: {path}{Style.RESET_ALL}")
             self.passed.append("ffmpeg")
             self._check_tool_min_version("ffmpeg", "ffmpeg", path, critical=False)
@@ -294,10 +286,10 @@ class UnpackrDoctor:
     def check_write_permissions(self):
         """Check write permissions in current directory."""
         print(f"{Fore.YELLOW}[5/10]{Style.RESET_ALL} Checking write permissions...", end=" ")
-        test_file = Path(__file__).parent / '.doctor_test'
+        test_file = Path(__file__).parent / ".doctor_test"
 
         try:
-            test_file.write_text('test')
+            test_file.write_text("test")
             test_file.unlink()
             print(f"{Fore.GREEN}✓ Can write to current directory{Style.RESET_ALL}")
             self.passed.append("Write permissions")
@@ -310,6 +302,7 @@ class UnpackrDoctor:
         print(f"{Fore.YELLOW}[6/10]{Style.RESET_ALL} Checking disk space...", end=" ")
         try:
             import shutil
+
             total, used, free = shutil.disk_usage(Path.cwd())
             free_gb = free // (2**30)
 
@@ -328,7 +321,7 @@ class UnpackrDoctor:
     def check_comments_file(self):
         """Check easter egg comments file."""
         print(f"{Fore.YELLOW}[7/10]{Style.RESET_ALL} Checking easter egg comments...", end=" ")
-        comments_path = Path(__file__).parent / 'config_files' / 'comments.json'
+        comments_path = Path(__file__).parent / "config_files" / "comments.json"
 
         if not comments_path.exists():
             print(f"{Fore.YELLOW}⚠ Comments file not found (easter eggs disabled){Style.RESET_ALL}")
@@ -336,10 +329,10 @@ class UnpackrDoctor:
             return
 
         try:
-            with open(comments_path, 'r') as f:
+            with open(comments_path, "r") as f:
                 data = json.load(f)
 
-            comments = data.get('comments', [])
+            comments = data.get("comments", [])
             if len(comments) > 0:
                 print(f"{Fore.GREEN}✓ {len(comments)} comments loaded{Style.RESET_ALL}")
                 self.passed.append("Easter egg comments")
@@ -354,12 +347,12 @@ class UnpackrDoctor:
         """Check core Python modules are present."""
         print(f"{Fore.YELLOW}[8/10]{Style.RESET_ALL} Checking core modules...", end=" ")
         required_modules = [
-            'core.config',
-            'core.file_handler',
-            'core.archive_processor',
-            'core.video_processor',
-            'utils.system_check',
-            'utils.safety'
+            "core.config",
+            "core.file_handler",
+            "core.archive_processor",
+            "core.video_processor",
+            "utils.system_check",
+            "utils.safety",
         ]
 
         missing = []
@@ -379,7 +372,7 @@ class UnpackrDoctor:
     def check_log_directory(self):
         """Check log directory can be created."""
         print(f"{Fore.YELLOW}[9/10]{Style.RESET_ALL} Checking log directory...", end=" ")
-        log_dir = Path(__file__).parent / 'logs'
+        log_dir = Path(__file__).parent / "logs"
 
         try:
             log_dir.mkdir(exist_ok=True)
@@ -394,20 +387,15 @@ class UnpackrDoctor:
         print(f"{Fore.YELLOW}[10/10]{Style.RESET_ALL} Checking for process conflicts...", end=" ")
 
         try:
-            if sys.platform == 'win32':
-                result = subprocess.run(
-                    ['tasklist', '/FO', 'CSV', '/NH'],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
+            if sys.platform == "win32":
+                result = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True, timeout=5)
                 output = result.stdout.lower()
 
                 conflicts = []
-                if '7z.exe' in output or '7zfm.exe' in output:
-                    conflicts.append('7-Zip')
-                if 'par2.exe' in output:
-                    conflicts.append('par2')
+                if "7z.exe" in output or "7zfm.exe" in output:
+                    conflicts.append("7-Zip")
+                if "par2.exe" in output:
+                    conflicts.append("par2")
 
                 if conflicts:
                     print(f"{Fore.YELLOW}⚠ Running: {', '.join(conflicts)}{Style.RESET_ALL}")
@@ -424,9 +412,9 @@ class UnpackrDoctor:
 
     def print_summary(self):
         """Print diagnostic summary."""
-        print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+        print(f"\n{Fore.CYAN}{'=' * 60}{Style.RESET_ALL}")
         print(f"{Fore.CYAN}Summary{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}\n")
+        print(f"{Fore.CYAN}{'=' * 60}{Style.RESET_ALL}\n")
 
         print(f"{Fore.GREEN}✓ Passed:{Style.RESET_ALL} {len(self.passed)}")
         print(f"{Fore.YELLOW}⚠ Warnings:{Style.RESET_ALL} {len(self.warnings)}")
@@ -445,9 +433,9 @@ class UnpackrDoctor:
                 print(f"  • {i}")
             print(f"\n{Fore.RED}Fix blocking issues before running Unpackr.{Style.RESET_ALL}")
         else:
-            print(f"\n{Fore.GREEN}{'='*60}{Style.RESET_ALL}")
+            print(f"\n{Fore.GREEN}{'=' * 60}{Style.RESET_ALL}")
             print(f"{Fore.GREEN}All checks passed! Ready to run Unpackr.{Style.RESET_ALL}")
-            print(f"{Fore.GREEN}{'='*60}{Style.RESET_ALL}")
+            print(f"{Fore.GREEN}{'=' * 60}{Style.RESET_ALL}")
 
         actions = self._build_recommended_actions()
         if actions:
@@ -518,5 +506,5 @@ def main():
     sys.exit(exit_code)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

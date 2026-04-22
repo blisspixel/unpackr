@@ -6,35 +6,36 @@ A specialized tool for cleaning up download folders from Usenet/newsgroups.
 Extracts archives, repairs files, validates videos, and removes garbage.
 """
 
-import sys
-import time
-import logging
-import re
-import os
-import signal
-import threading
 import json
+import logging
+import os
 import random
+import re
+import signal
+import sys
+import threading
+import time
 from collections import deque
-from pathlib import Path
+from contextlib import suppress
 from datetime import timedelta
-from typing import Any, Deque, Dict, List, Optional, Tuple, cast
-from colorama import init, Fore, Style
+from pathlib import Path
+from typing import Any, Deque, Dict, List, Optional, Tuple
 
-# Set UTF-8 encoding for Windows console to handle special characters in easter eggs
-from utils.cli_runtime import configure_windows_console_utf8, build_unpackr_arg_parser
+from colorama import Fore, Style, init
 
 from core import Config, setup_logging
-from core.file_handler import FileHandler
 from core.archive_processor import ArchiveProcessor
+from core.file_handler import FileHandler
 from core.video_processor import VideoProcessor
-from utils.system_check import SystemCheck
-from utils.safety import (LoopSafety, RecursionSafety,
-                          StuckDetector)
+from utils.cli_prompts import clean_path, countdown_prompt, get_user_input, quick_preflight, resolve_cli_presentation
+from utils.cli_render import create_renderer
+from utils.cli_runtime import build_unpackr_arg_parser, configure_windows_console_utf8
 from utils.defensive import InputValidator, StateValidator, ValidationError
 from utils.dry_run_summary import DryRunPlan
-from utils.cli_render import AnimationMode, create_renderer
+from utils.safety import LoopSafety, RecursionSafety, StuckDetector
+from utils.system_check import SystemCheck
 
+# Set UTF-8 encoding for Windows console to handle special characters in easter eggs
 configure_windows_console_utf8()
 
 
@@ -45,21 +46,21 @@ class ThreadSafeStats:
         """Initialize statistics with thread safety."""
         self._lock = threading.Lock()
         self._stats: Dict[str, int] = {
-            'folders_processed': 0,
-            'folders_deleted': 0,
-            'folders_preserved': 0,
-            'empty_folders_deleted': 0,
-            'videos_found': 0,  # Total videos discovered (before processing)
-            'videos_moved': 0,
-            'videos_healthy': 0,
-            'videos_corrupt': 0,
-            'videos_sample': 0,
-            'videos_failed': 0,
-            'files_sanitized': 0,
-            'rars_extracted': 0,
-            'par2s_repaired': 0,
-            'junk_files_deleted': 0,
-            'safety_stops': 0
+            "folders_processed": 0,
+            "folders_deleted": 0,
+            "folders_preserved": 0,
+            "empty_folders_deleted": 0,
+            "videos_found": 0,  # Total videos discovered (before processing)
+            "videos_moved": 0,
+            "videos_healthy": 0,
+            "videos_corrupt": 0,
+            "videos_sample": 0,
+            "videos_failed": 0,
+            "files_sanitized": 0,
+            "rars_extracted": 0,
+            "par2s_repaired": 0,
+            "junk_files_deleted": 0,
+            "safety_stops": 0,
         }
 
     def increment(self, key: str, value: int = 1):
@@ -93,19 +94,19 @@ class ThreadSafeStats:
 
 # ASCII Art
 ASCII_ART = r"""
-                               _         
-  _   _ _ __  _ __   __ _  ___| | ___ __ 
+                               _
+  _   _ _ __  _ __   __ _  ___| | ___ __
  | | | | '_ \| '_ \ / _` |/ __| |/ / '__|
- | |_| | | | | |_) | (_| | (__|   <| |   
-  \__,_|_| |_| .__/ \__,_|\___|_|\_\_|   
-             |_|        
+ | |_| | | | | |_) | (_| | (__|   <| |
+  \__,_|_| |_| .__/ \__,_|\___|_|\_\_|
+             |_|
 
 """
 
 
 class WorkPlan:
     """Represents the work plan from pre-scan analysis."""
-    
+
     def __init__(self):
         self.video_folders = []
         self.content_folders = []
@@ -115,35 +116,27 @@ class WorkPlan:
         self.total_rars = 0
         self.total_par2s = 0
         self.estimated_time = 0
-        
+
     def add_video_folder(self, folder: Path, videos: int, rars: int, par2s: int):
         """Add a video folder to the plan."""
-        self.video_folders.append({
-            'path': folder,
-            'videos': videos,
-            'rars': rars,
-            'par2s': par2s
-        })
+        self.video_folders.append({"path": folder, "videos": videos, "rars": rars, "par2s": par2s})
         self.total_videos += videos
         self.total_rars += rars
         self.total_par2s += par2s
-        
+
     def add_content_folder(self, folder: Path, reason: str = ""):
         """Add a content folder to keep."""
-        self.content_folders.append({
-            'path': folder,
-            'reason': reason
-        })
+        self.content_folders.append({"path": folder, "reason": reason})
 
     def add_junk_folder(self, folder: Path):
         """Add a junk folder to delete."""
         self.junk_folders.append(folder)
-        
+
     def add_loose_video(self, video: Path):
         """Add a loose video file."""
         self.loose_videos.append(video)
         self.total_videos += 1
-        
+
     def calculate_time_estimate(self):
         """Calculate estimated processing time."""
         # More realistic estimates:
@@ -154,41 +147,45 @@ class WorkPlan:
 
         time_estimate = 0
         time_estimate += self.total_videos * 10  # Video health checks
-        time_estimate += self.total_rars * 3     # RAR extractions (only .part001)
-        time_estimate += self.total_par2s * 5    # PAR2 verify (not full repair)
+        time_estimate += self.total_rars * 3  # RAR extractions (only .part001)
+        time_estimate += self.total_par2s * 5  # PAR2 verify (not full repair)
         time_estimate += len(self.video_folders) * 2  # Folder operations
 
         self.estimated_time = time_estimate
         return time_estimate
-        
+
     def display(self):
         """Display the work plan."""
         # Compact single-line summary
         eta = timedelta(seconds=self.estimated_time)
-        eta_str = str(eta).split('.')[0]
+        eta_str = str(eta).split(".")[0]
 
-        print(f"{Fore.YELLOW}{len(self.video_folders)}{Style.RESET_ALL} folders, "
-              f"{Fore.YELLOW}{self.total_videos}{Style.RESET_ALL} videos, "
-              f"{Fore.YELLOW}{self.total_rars}{Style.RESET_ALL} RARs, "
-              f"{Fore.YELLOW}{self.total_par2s}{Style.RESET_ALL} PAR2s | "
-              f"ETA: {Fore.CYAN}{eta_str}{Style.RESET_ALL} | "
-              f"{Fore.GREEN}{len(self.content_folders)}{Style.RESET_ALL} folders preserved")
+        print(
+            f"{Fore.YELLOW}{len(self.video_folders)}{Style.RESET_ALL} folders, "
+            f"{Fore.YELLOW}{self.total_videos}{Style.RESET_ALL} videos, "
+            f"{Fore.YELLOW}{self.total_rars}{Style.RESET_ALL} RARs, "
+            f"{Fore.YELLOW}{self.total_par2s}{Style.RESET_ALL} PAR2s | "
+            f"ETA: {Fore.CYAN}{eta_str}{Style.RESET_ALL} | "
+            f"{Fore.GREEN}{len(self.content_folders)}{Style.RESET_ALL} folders preserved"
+        )
 
     def display_detailed(self):
         """Display detailed pre-flight plan showing what will happen to each folder."""
-        print(f"\n{Fore.CYAN}{'='*80}{Style.RESET_ALL}")
+        print(f"\n{Fore.CYAN}{'=' * 80}{Style.RESET_ALL}")
         print(f"{Fore.CYAN}PRE-FLIGHT CHECK - Detailed Plan{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}{'='*80}{Style.RESET_ALL}\n")
+        print(f"{Fore.CYAN}{'=' * 80}{Style.RESET_ALL}\n")
 
         # Video folders to process
         if self.video_folders:
             print(f"{Fore.YELLOW}FOLDERS TO PROCESS ({len(self.video_folders)} folders):{Style.RESET_ALL}")
-            print(f"{Fore.WHITE}These will be processed: PAR2 verify -> RAR extract -> Video check -> Move good videos -> Delete folder{Style.RESET_ALL}\n")
+            print(
+                f"{Fore.WHITE}These will be processed: PAR2 verify -> RAR extract -> Video check -> Move good videos -> Delete folder{Style.RESET_ALL}\n"
+            )
             for item in self.video_folders:
-                folder = item['path']
-                videos = item['videos']
-                rars = item['rars']
-                par2s = item['par2s']
+                folder = item["path"]
+                videos = item["videos"]
+                rars = item["rars"]
+                par2s = item["par2s"]
 
                 actions = []
                 if par2s > 0:
@@ -207,28 +204,30 @@ class WorkPlan:
             print(f"{Fore.GREEN}FOLDERS TO PRESERVE ({len(self.content_folders)} folders):{Style.RESET_ALL}")
             print(f"{Fore.WHITE}These will NOT be deleted (contain music/images/documents){Style.RESET_ALL}\n")
             for item in self.content_folders:
-                folder = item['path']
-                reason = item.get('reason', 'content detected')
+                folder = item["path"]
+                reason = item.get("reason", "content detected")
                 print(f"  {Fore.BLUE}*{Style.RESET_ALL} {folder.name[:60]:<60} | {reason}")
             print()
 
         # Summary
         eta = timedelta(seconds=self.estimated_time)
-        eta_str = str(eta).split('.')[0]
-        print(f"{Fore.CYAN}{'='*80}{Style.RESET_ALL}")
+        eta_str = str(eta).split(".")[0]
+        print(f"{Fore.CYAN}{'=' * 80}{Style.RESET_ALL}")
         print(f"{Fore.YELLOW}SUMMARY:{Style.RESET_ALL}")
-        print(f"  Process: {len(self.video_folders)} folders -> {self.total_videos} videos -> Estimated time: {eta_str}")
+        print(
+            f"  Process: {len(self.video_folders)} folders -> {self.total_videos} videos -> Estimated time: {eta_str}"
+        )
         print(f"  Preserve: {len(self.content_folders)} folders (will NOT be deleted)")
-        print(f"{Fore.CYAN}{'='*80}{Style.RESET_ALL}\n")
+        print(f"{Fore.CYAN}{'=' * 80}{Style.RESET_ALL}\n")
 
 
 class UnpackrApp:
     """Main application class for Unpackr."""
-    
+
     def __init__(self, config: Config):
         """
         Initialize the application.
-        
+
         Args:
             config: Configuration instance
         """
@@ -245,17 +244,21 @@ class UnpackrApp:
         self.destination_dir: Optional[Path] = None  # Store for display_summary tip
         # MEMORY FIX: Use bounded deque to prevent unbounded memory growth in 24+ hour runs
         # Keeps last 1000 failed deletions (oldest are dropped automatically)
-        self.failed_deletions: Deque[Tuple[Path, bool, bool]] = deque(maxlen=1000)  # Track folders that couldn't be deleted
+        self.failed_deletions: Deque[Tuple[Path, bool, bool]] = deque(
+            maxlen=1000
+        )  # Track folders that couldn't be deleted
         self.recursion_guard = RecursionSafety(config.max_subfolder_depth, "Subfolder processing")
         self.stuck_detector = StuckDetector(timeout=config.stuck_timeout_hours * 3600, check_interval=60)
         self.runtime_limit: Optional[Any] = None  # Will be initialized when processing starts
-        self.spinner_frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']  # Modern spinner
+        self.spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]  # Modern spinner
         self.spinner_index = 0
         self.first_progress_update = True  # Track if this is the first render
         self.current_action = ""  # Current action text
         self.progress_current = 0  # Current progress
         self.progress_total = 0  # Total progress
-        self.current_comment_display: Optional[Tuple[str, Optional[str], str, str]] = None  # Store current comment to persist across updates
+        self.current_comment_display: Optional[Tuple[str, Optional[str], str, str]] = (
+            None  # Store current comment to persist across updates
+        )
         self.spinner_thread: Optional[threading.Thread] = None  # Background spinner thread
         self.spinner_running = False  # Control flag for spinner thread
         self.spinner_lock = threading.Lock()  # Thread safety for spinner updates
@@ -272,7 +275,7 @@ class UnpackrApp:
         # Debug: Log if comments loaded successfully
         if self.comments:
             if isinstance(self.comments, dict):
-                num_categories = len(self.comments.get('comments', {}))
+                num_categories = len(self.comments.get("comments", {}))
                 logging.debug(f"Loaded rarity-based comments with {num_categories} categories")
             else:
                 logging.debug(f"Loaded {len(self.comments)} flat comments")
@@ -282,10 +285,10 @@ class UnpackrApp:
     def scan_and_plan(self, source_dir: Path) -> WorkPlan:
         """
         Scan source directory and create a work plan.
-        
+
         Args:
             source_dir: Source directory to scan
-            
+
         Returns:
             WorkPlan instance
         """
@@ -322,6 +325,7 @@ class UnpackrApp:
                     subfolders.append(entry)
             except (PermissionError, OSError):
                 continue
+
         def _safe_mtime(path_obj: Path) -> float:
             try:
                 return path_obj.stat().st_mtime
@@ -356,11 +360,11 @@ class UnpackrApp:
                 if is_regular_file:
                     filename_lower = file.name.lower()
                     # Check if filename contains a video extension followed by another extension
-                    video_exts = ['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg']
+                    video_exts = [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v", ".mpg", ".mpeg"]
                     for video_ext in video_exts:
-                        if f'{video_ext}.' in filename_lower:
+                        if f"{video_ext}." in filename_lower:
                             # File like "video.mp4.1" - rename to "video.mp4"
-                            new_name = file.name[:file.name.lower().rindex(video_ext) + len(video_ext)]
+                            new_name = file.name[: file.name.lower().rindex(video_ext) + len(video_ext)]
                             new_path = file.parent / new_name
                             try:
                                 if not new_path.exists():
@@ -377,7 +381,7 @@ class UnpackrApp:
             music_extensions = set(self.config.music_extensions)
             image_extensions = set(self.config.image_extensions)
             document_extensions = set(self.config.document_extensions)
-            rar_pattern = re.compile(r'\.r\d{2}$')
+            rar_pattern = re.compile(r"\.r\d{2}$")
 
             videos = []
             rars = []
@@ -415,21 +419,19 @@ class UnpackrApp:
 
                 if ext_lower in video_extensions:
                     videos.append(file_path)
-                elif ext_lower == '.rar' or rar_pattern.match(ext_lower):
+                elif ext_lower == ".rar" or rar_pattern.match(ext_lower):
                     rars.append(file_path)
-                elif ext_lower == '.7z' or '.7z.' in filename_lower:  # Catch .7z and .7z.001 etc
+                elif ext_lower == ".7z" or ".7z." in filename_lower:  # Catch .7z and .7z.001 etc
                     sevenz.append(file_path)
-                elif ext_lower == '.par2':
+                elif ext_lower == ".par2":
                     par2s.append(file_path)
                 elif ext_lower in music_extensions:
                     music_files += 1
                 elif ext_lower in image_extensions:
                     image_files += 1
-                    try:
+                    with suppress(OSError, FileNotFoundError):
                         # PERFORMANCE: Use cached stat from DirEntry (no extra syscall)
                         image_total_bytes += entry.stat(follow_symlinks=False).st_size
-                    except (OSError, FileNotFoundError):
-                        pass
                 elif ext_lower in document_extensions:
                     document_files += 1
 
@@ -441,12 +443,13 @@ class UnpackrApp:
                 # Check if this is a content folder worth preserving
                 # For images: must have both >10 files AND >10MB total (avoids thumbnail folders)
                 image_total_mb = image_total_bytes / (1024 * 1024)
-                has_significant_images = (image_files > self.config.min_image_files and
-                                         image_total_mb > 10)
+                has_significant_images = image_files > self.config.min_image_files and image_total_mb > 10
 
-                if (music_files > self.config.min_music_files or
-                    has_significant_images or
-                    document_files > self.config.min_documents):
+                if (
+                    music_files > self.config.min_music_files
+                    or has_significant_images
+                    or document_files > self.config.min_documents
+                ):
                     # This is a content folder with significant music/images/docs - preserve it
                     reasons = []
                     if music_files > self.config.min_music_files:
@@ -460,9 +463,9 @@ class UnpackrApp:
                 else:
                     # Not a video folder and not enough content - mark as junk to be deleted
                     plan.add_junk_folder(folder)
-        
+
         # Check for loose video files (optimized single-pass)
-        video_extensions = {'.mp4', '.avi', '.mkv', '.mov'}
+        video_extensions = {".mp4", ".avi", ".mkv", ".mov"}
         for item in root_entries:
             try:
                 is_regular_file = item.is_file()
@@ -470,9 +473,9 @@ class UnpackrApp:
                 continue
             if is_regular_file and item.suffix.lower() in video_extensions:
                 plan.add_loose_video(item)
-        
-        sys.stdout.write("\r" + " "*80 + "\r")
-        
+
+        sys.stdout.write("\r" + " " * 80 + "\r")
+
         plan.calculate_time_estimate()
         self.work_plan = plan
         return plan
@@ -493,7 +496,7 @@ class UnpackrApp:
         if not video_files:
             return video_files
 
-        sample_keywords = ['sample', 'preview', 'trailer', 'promo']
+        sample_keywords = ["sample", "preview", "trailer", "promo"]
         to_delete = []
 
         # Group videos by folder for efficient comparison
@@ -505,7 +508,7 @@ class UnpackrApp:
             by_folder[folder].append(video)
 
         # For each folder, find sample videos and check if full version exists
-        for folder, videos in by_folder.items():
+        for _folder, videos in by_folder.items():
             for video in videos:
                 video_name_lower = video.stem.lower()
 
@@ -517,15 +520,15 @@ class UnpackrApp:
                     base_name = video_name_lower
                     for keyword in sample_keywords:
                         # Remove keyword and surrounding separators
-                        base_name = base_name.replace(f'-{keyword}', '').replace(f'_{keyword}', '')
-                        base_name = base_name.replace(f'.{keyword}', '').replace(f'{keyword}-', '')
-                        base_name = base_name.replace(f'{keyword}_', '').replace(f'{keyword}.', '')
-                        base_name = base_name.replace(keyword, '')
+                        base_name = base_name.replace(f"-{keyword}", "").replace(f"_{keyword}", "")
+                        base_name = base_name.replace(f".{keyword}", "").replace(f"{keyword}-", "")
+                        base_name = base_name.replace(f"{keyword}_", "").replace(f"{keyword}.", "")
+                        base_name = base_name.replace(keyword, "")
 
                     # Clean up multiple separators and normalize
-                    base_name = base_name.replace('..', '.').replace('--', '-').replace('__', '_')
-                    base_name = base_name.replace('.', ' ').replace('-', ' ').replace('_', ' ')
-                    base_name = ' '.join(base_name.split())  # Normalize whitespace
+                    base_name = base_name.replace("..", ".").replace("--", "-").replace("__", "_")
+                    base_name = base_name.replace(".", " ").replace("-", " ").replace("_", " ")
+                    base_name = " ".join(base_name.split())  # Normalize whitespace
 
                     # Extract meaningful words (skip very short words)
                     base_words = {w for w in base_name.split() if len(w) > 2}
@@ -546,7 +549,9 @@ class UnpackrApp:
 
                             if not other_is_sample and other_size > sample_size:
                                 # Normalize other video name
-                                other_normalized = other_name_lower.replace('.', ' ').replace('-', ' ').replace('_', ' ')
+                                other_normalized = (
+                                    other_name_lower.replace(".", " ").replace("-", " ").replace("_", " ")
+                                )
                                 other_words = {w for w in other_normalized.split() if len(w) > 2}
 
                                 if base_words and other_words:
@@ -559,8 +564,10 @@ class UnpackrApp:
                                     # If >50% average match, consider it the same video
                                     if avg_ratio > 0.5:
                                         to_delete.append(video)
-                                        logging.info(f"Sample video detected: {video.name} ({sample_size / (1024*1024):.1f}MB) - full version: {other_video.name} ({other_size / (1024*1024):.1f}MB)")
-                                        self.stats['videos_sample'] += 1
+                                        logging.info(
+                                            f"Sample video detected: {video.name} ({sample_size / (1024 * 1024):.1f}MB) - full version: {other_video.name} ({other_size / (1024 * 1024):.1f}MB)"
+                                        )
+                                        self.stats["videos_sample"] += 1
                                         break
 
                     except (OSError, FileNotFoundError) as e:
@@ -611,7 +618,7 @@ class UnpackrApp:
         # Process PAR2 files FIRST - verify/repair archives before extraction
         # This is more efficient: if no repair needed, PAR2 files are deleted early (saves disk I/O)
         # If repair fails, corrupted archives are deleted, skipping extraction entirely
-        par2_files = [f for f in folder.iterdir() if f.is_file() and f.suffix.lower() == '.par2']
+        par2_files = [f for f in folder.iterdir() if f.is_file() and f.suffix.lower() == ".par2"]
         if par2_files:
             self._update_progress(current, total, f"PAR2 verify/repair: {folder.name[:50]}")
             self.stuck_detector.mark_progress()  # Mark progress before long PAR2 operation
@@ -624,7 +631,7 @@ class UnpackrApp:
             else:
                 success = self.archive_processor.process_par2_files(folder)
                 if success:
-                    self.stats['par2s_repaired'] += 1
+                    self.stats["par2s_repaired"] += 1
                 self.stuck_detector.mark_progress()  # Mark progress after PAR2 completes
                 # If PAR2 repair failed, corrupted archives are already deleted
                 par2_error = not success
@@ -634,14 +641,19 @@ class UnpackrApp:
         # Process archive files AFTER PAR2 (only if PAR2 didn't delete them)
         # Skip extraction if PAR2 repair failed (archives already deleted as corrupted)
         if not par2_error:
-            rar_pattern = re.compile(r'\.r\d{2}$')
+            rar_pattern = re.compile(r"\.r\d{2}$")
             archive_files = []
 
             for file in folder.iterdir():
                 if file.is_file():
                     ext_lower = file.suffix.lower()
                     filename_lower = file.name.lower()
-                    if ext_lower == '.rar' or rar_pattern.match(ext_lower) or ext_lower == '.7z' or '.7z.' in filename_lower:
+                    if (
+                        ext_lower == ".rar"
+                        or rar_pattern.match(ext_lower)
+                        or ext_lower == ".7z"
+                        or ".7z." in filename_lower
+                    ):
                         archive_files.append(file)
             if archive_files:
                 # More specific message - show archive count
@@ -669,7 +681,7 @@ class UnpackrApp:
 
                     success = self.archive_processor.process_rar_files(folder, progress_callback=extraction_progress)
                     if success:
-                        self.stats['rars_extracted'] += 1
+                        self.stats["rars_extracted"] += 1
                     self.stuck_detector.mark_progress()  # Mark progress after extraction
                     # If extraction failed, archives are now junk and should be treated as removable
                     archive_error = not success
@@ -691,7 +703,9 @@ class UnpackrApp:
         for idx, video_file in enumerate(video_files, 1):
             # Show folder context and video being validated
             folder_context = f"[{folder.name[:30]}]" if len(folder.name) > 30 else f"[{folder.name}]"
-            self._update_progress(current, total, f"{folder_context} Validate {idx}/{len(video_files)}: {video_file.name[:40]}")
+            self._update_progress(
+                current, total, f"{folder_context} Validate {idx}/{len(video_files)}: {video_file.name[:40]}"
+            )
 
             if self.dry_run:
                 if self.dry_run_plan:
@@ -704,7 +718,7 @@ class UnpackrApp:
                 # In dry-run, simulate success
                 logging.info(f"[DRY-RUN] Would move {video_file.name} to {destination_dir}")
                 moved_count += 1
-                self.stats['videos_moved'] += 1
+                self.stats["videos_moved"] += 1
             else:
                 # Get file size BEFORE moving (after move, file no longer at original path)
                 try:
@@ -713,16 +727,16 @@ class UnpackrApp:
                     file_size_mb = 0
 
                 if self.video_processor.check_video_health(video_file):
-                    self.stats['videos_healthy'] += 1
+                    self.stats["videos_healthy"] += 1
                     if self.file_handler.move_file(video_file, destination_dir):
                         moved_count += 1
-                        self.stats['videos_moved'] += 1
+                        self.stats["videos_moved"] += 1
                         # Log success so user knows videos are being moved
                         logging.info(f"MOVED: {video_file.name} ({file_size_mb:.1f}MB) -> {destination_dir}")
                 else:
                     # Delete corrupt video
-                    self.stats['videos_corrupt'] += 1
-                    self.stats['videos_failed'] += 1
+                    self.stats["videos_corrupt"] += 1
+                    self.stats["videos_failed"] += 1
                     logging.info(f"Deleting corrupt video: {video_file.name}")
                     if self.file_handler.wait_for_file_release(str(video_file)):
                         self.file_handler.delete_video_file_with_retry(video_file)
@@ -738,19 +752,19 @@ class UnpackrApp:
                 if self.dry_run_plan:
                     self.dry_run_plan.add_folder_delete(folder)
                 logging.info(f"[DRY-RUN] Would delete folder: {folder}")
-                self.stats['folders_deleted'] += 1
+                self.stats["folders_deleted"] += 1
             else:
                 # Pass par2_error and archive_error for double-check (race condition protection)
                 if self.file_handler.safe_delete_folder(folder, par2_error=par2_error, archive_error=archive_error):
-                    self.stats['folders_deleted'] += 1
+                    self.stats["folders_deleted"] += 1
                 else:
                     # Track failed deletion for retry
                     self.failed_deletions.append((folder, par2_error, archive_error))
                     logging.warning(f"Failed to delete folder {folder}, will retry later")
-        
-        self.stats['folders_processed'] += 1
+
+        self.stats["folders_processed"] += 1
         return moved_count
-    
+
     def _start_spinner_thread(self):
         """Start background thread to animate spinner."""
         if getattr(self, "renderer", None) is not None:
@@ -778,25 +792,26 @@ class UnpackrApp:
         Users can then customize comments.json without affecting the repo.
         """
         try:
-            config_dir = Path(__file__).parent / 'config_files'
-            comments_file = config_dir / 'comments.json'
-            sample_file = config_dir / 'comments.sample.json'
+            config_dir = Path(__file__).parent / "config_files"
+            comments_file = config_dir / "comments.json"
+            sample_file = config_dir / "comments.sample.json"
 
             # First run: copy sample to comments.json if it doesn't exist
             if not comments_file.exists() and sample_file.exists():
                 import shutil
+
                 shutil.copy(sample_file, comments_file)
                 logging.info("Created comments.json from sample (customize as you like)")
 
             # Load comments from user's file
             if comments_file.exists():
-                with open(comments_file, 'r', encoding='utf-8') as f:
+                with open(comments_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     # Support both old format (list) and new format (dict with rarities)
-                    if isinstance(data.get('comments'), dict):
+                    if isinstance(data.get("comments"), dict):
                         return data  # New rarity-based format
                     else:
-                        return data.get('comments', [])  # Old flat list format
+                        return data.get("comments", [])  # Old flat list format
         except Exception as e:
             logging.debug(f"Could not load comments: {e}")
         return []
@@ -837,45 +852,50 @@ class UnpackrApp:
 
         # Support old format (flat list)
         if isinstance(self.comments, list):
-            comment_result: Tuple[str, Optional[str], str, str] = (random.choice(self.comments), None, Fore.YELLOW, "normal")
+            comment_result: Tuple[str, Optional[str], str, str] = (
+                random.choice(self.comments),  # nosec B311 - cosmetic UI randomness only
+                None,
+                Fore.YELLOW,
+                "normal",
+            )
             self.current_comment_display = comment_result
             return comment_result
 
         # New rarity-based format
-        rarities = self.comments.get('rarities', {})
-        comments_by_rarity = self.comments.get('comments', {})
+        rarities = self.comments.get("rarities", {})
+        comments_by_rarity = self.comments.get("comments", {})
 
         # Build weighted pool of rarities
         rarity_pool = []
         for rarity_name, rarity_config in rarities.items():
-            weight = rarity_config.get('weight', 1)
+            weight = rarity_config.get("weight", 1)
             rarity_pool.extend([rarity_name] * weight)
 
         if not rarity_pool:
             return None
 
         # Roll for rarity
-        selected_rarity = random.choice(rarity_pool)
+        selected_rarity = random.choice(rarity_pool)  # nosec B311 - cosmetic UI randomness only
         rarity_config = rarities[selected_rarity]
         comment_list = comments_by_rarity.get(selected_rarity, [])
 
         if not comment_list:
             return None
 
-        comment = random.choice(comment_list)
+        comment = random.choice(comment_list)  # nosec B311 - cosmetic UI randomness only
 
         # Get color from colorama
         color_map = {
-            'white': Fore.WHITE,
-            'green': Fore.GREEN,
-            'cyan': Fore.CYAN,
-            'magenta': Fore.MAGENTA,
-            'yellow': Fore.YELLOW,
-            'red': Fore.RED,
-            'blue': Fore.BLUE
+            "white": Fore.WHITE,
+            "green": Fore.GREEN,
+            "cyan": Fore.CYAN,
+            "magenta": Fore.MAGENTA,
+            "yellow": Fore.YELLOW,
+            "red": Fore.RED,
+            "blue": Fore.BLUE,
         }
-        color = color_map.get(rarity_config.get('color', 'yellow'), Fore.YELLOW)
-        effect = rarity_config.get('effect', 'normal')
+        color = color_map.get(rarity_config.get("color", "yellow"), Fore.YELLOW)
+        effect = rarity_config.get("effect", "normal")
 
         comment_result = (comment, selected_rarity, color, effect)
         self.current_comment_display = comment_result
@@ -891,19 +911,19 @@ class UnpackrApp:
                     spinner = self.spinner_frames[self.spinner_index]
                     self.spinner_index = (self.spinner_index + 1) % len(self.spinner_frames)
                     # Move to line 13, column 3 (spinner line) and update just that character
-                    sys.stdout.write(f'\033[13;3H{Fore.GREEN}{spinner}{Style.RESET_ALL}')
+                    sys.stdout.write(f"\033[13;3H{Fore.GREEN}{spinner}{Style.RESET_ALL}")
                     sys.stdout.flush()
 
     @staticmethod
-    @staticmethod
     def _sanitize_console_text(text: str) -> str:
         """Best-effort sanitize text for the active stdout encoding."""
-        encoding = getattr(sys.stdout, 'encoding', None) or 'utf-8'
+        encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
         try:
-            return text.encode(encoding, errors='replace').decode(encoding, errors='replace')
+            return text.encode(encoding, errors="replace").decode(encoding, errors="replace")
         except LookupError:
-            return text.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+            return text.encode("utf-8", errors="replace").decode("utf-8", errors="replace")
 
+    @staticmethod
     def _derive_progress_context(action: str) -> Tuple[str, str]:
         """
         Convert a progress action string into a normalized verb + target.
@@ -965,7 +985,7 @@ class UnpackrApp:
             if current >= 10 and elapsed >= 30.0:
                 avg_time = elapsed / current
                 remaining = (total - current) * avg_time
-                eta = str(timedelta(seconds=int(remaining))).split('.')[0]
+                eta = str(timedelta(seconds=int(remaining))).split(".")[0]
                 throughput = (current / elapsed) * 60
             else:
                 eta = "calculating..."
@@ -977,15 +997,15 @@ class UnpackrApp:
         # Progress bar - modern block characters
         bar_length = 40
         filled = int(bar_length * current / total) if total > 0 else 0
-        bar = '█' * filled + '░' * (bar_length - filled)
+        bar = "█" * filled + "░" * (bar_length - filled)
 
         # Stats - compact but clear, show interesting work being done
         # found = total videos discovered (before processing)
         # processed = videos that passed health checks and were moved to destination
         # bad = videos that were corrupt or samples (deleted, not moved)
-        videos_found = self.stats['videos_found']
-        videos_processed = self.stats['videos_moved']
-        bad_videos = self.stats['videos_corrupt'] + self.stats['videos_sample']
+        videos_found = self.stats["videos_found"]
+        videos_processed = self.stats["videos_moved"]
+        bad_videos = self.stats["videos_corrupt"] + self.stats["videos_sample"]
 
         # Core stats: found vs processed (success rate at a glance)
         stats_line = f"  {Style.DIM}found videos:{Style.RESET_ALL} {Fore.WHITE}{videos_found}{Style.RESET_ALL}  {Style.DIM}processed:{Style.RESET_ALL} {Fore.GREEN}{videos_processed}{Style.RESET_ALL}"
@@ -995,30 +1015,35 @@ class UnpackrApp:
             stats_line += f"  {Style.DIM}bad:{Style.RESET_ALL} {Fore.RED}{bad_videos}{Style.RESET_ALL}"
 
         # Show work done: extraction, repair, cleanup
-        if self.stats['rars_extracted'] > 0:
-            stats_line += f"  {Style.DIM}extracted:{Style.RESET_ALL} {Fore.CYAN}{self.stats['rars_extracted']}{Style.RESET_ALL}"
+        if self.stats["rars_extracted"] > 0:
+            stats_line += (
+                f"  {Style.DIM}extracted:{Style.RESET_ALL} {Fore.CYAN}{self.stats['rars_extracted']}{Style.RESET_ALL}"
+            )
 
-        if self.stats['par2s_repaired'] > 0:
-            stats_line += f"  {Style.DIM}repaired:{Style.RESET_ALL} {Fore.MAGENTA}{self.stats['par2s_repaired']}{Style.RESET_ALL}"
+        if self.stats["par2s_repaired"] > 0:
+            stats_line += (
+                f"  {Style.DIM}repaired:{Style.RESET_ALL} {Fore.MAGENTA}{self.stats['par2s_repaired']}{Style.RESET_ALL}"
+            )
 
         # Show cleanup progress
-        if self.stats['folders_deleted'] > 0:
-            stats_line += f"  {Style.DIM}cleaned:{Style.RESET_ALL} {Fore.YELLOW}{self.stats['folders_deleted']}{Style.RESET_ALL}"
+        if self.stats["folders_deleted"] > 0:
+            stats_line += (
+                f"  {Style.DIM}cleaned:{Style.RESET_ALL} {Fore.YELLOW}{self.stats['folders_deleted']}{Style.RESET_ALL}"
+            )
 
-        if self.stats['empty_folders_deleted'] > 0:
+        if self.stats["empty_folders_deleted"] > 0:
             stats_line += f"  {Style.DIM}empty:{Style.RESET_ALL} {Fore.CYAN}{self.stats['empty_folders_deleted']}{Style.RESET_ALL}"
 
-        if self.stats['junk_files_deleted'] > 0:
-            stats_line += f"  {Style.DIM}junk:{Style.RESET_ALL} {Fore.YELLOW}{self.stats['junk_files_deleted']}{Style.RESET_ALL}"
+        if self.stats["junk_files_deleted"] > 0:
+            stats_line += (
+                f"  {Style.DIM}junk:{Style.RESET_ALL} {Fore.YELLOW}{self.stats['junk_files_deleted']}{Style.RESET_ALL}"
+            )
 
         # Conservative estimate for manual processing per folder:
         # Using 2 min as conservative baseline (user would likely take longer in practice)
         manual_time_minutes = current * 2
         time_saved_hours = manual_time_minutes / 60
-        if time_saved_hours < 1:
-            time_saved_str = f"{int(manual_time_minutes)} min"
-        else:
-            time_saved_str = f"{time_saved_hours:.1f} hrs"
+        time_saved_str = f"{int(manual_time_minutes)} min" if time_saved_hours < 1 else f"{time_saved_hours:.1f} hrs"
         throughput_str = f"{throughput:>5.1f}" if throughput is not None else "  ---"
 
         # Rich/plain renderer path for cross-platform terminals.
@@ -1047,7 +1072,9 @@ class UnpackrApp:
                 verb=UnpackrApp._sanitize_console_text(verb),
                 target=UnpackrApp._sanitize_console_text(target),
                 stats_line=re.sub(r"\x1b\[[0-9;]*m", "", UnpackrApp._sanitize_console_text(stats_line)),
-                time_line=UnpackrApp._sanitize_console_text(f"speed: {throughput_str.strip()} folders/min | eta: {eta} | saved: {time_saved_str}"),
+                time_line=UnpackrApp._sanitize_console_text(
+                    f"speed: {throughput_str.strip()} folders/min | eta: {eta} | saved: {time_saved_str}"
+                ),
                 comment_line=UnpackrApp._sanitize_console_text(comment_line),
             )
             return
@@ -1055,7 +1082,7 @@ class UnpackrApp:
         # Clear screen and redraw on first update only
         if self.first_progress_update:
             self.first_progress_update = False
-            sys.stdout.write('\033[2J\033[H')  # Clear and home
+            sys.stdout.write("\033[2J\033[H")  # Clear and home
 
             # ASCII art header
             print(f"""  {Style.DIM}_   _ _ __  _ __   __ _  ___| | ___ __
@@ -1068,16 +1095,24 @@ class UnpackrApp:
             self._start_spinner_thread()
         else:
             # Move cursor back to progress bar line (line 7)
-            sys.stdout.write('\033[7;1H')  # Move to line 7, column 1
+            sys.stdout.write("\033[7;1H")  # Move to line 7, column 1
 
         # Progress bar
-        sys.stdout.write(UnpackrApp._sanitize_console_text(f"  {Style.DIM}[{Style.RESET_ALL}{Fore.GREEN}{bar}{Style.DIM}]{Style.RESET_ALL} {Fore.WHITE}{percent}%{Style.RESET_ALL} {Style.DIM}│{Style.RESET_ALL} {Fore.WHITE}{current}{Style.RESET_ALL}{Style.DIM}/{total} folders{Style.RESET_ALL}\033[K\n"))
+        sys.stdout.write(
+            UnpackrApp._sanitize_console_text(
+                f"  {Style.DIM}[{Style.RESET_ALL}{Fore.GREEN}{bar}{Style.DIM}]{Style.RESET_ALL} {Fore.WHITE}{percent}%{Style.RESET_ALL} {Style.DIM}│{Style.RESET_ALL} {Fore.WHITE}{current}{Style.RESET_ALL}{Style.DIM}/{total} folders{Style.RESET_ALL}\033[K\n"
+            )
+        )
 
         # Stats
         sys.stdout.write(UnpackrApp._sanitize_console_text(f"{stats_line}\033[K\n"))
 
         # Time metrics
-        sys.stdout.write(UnpackrApp._sanitize_console_text(f"  {Style.DIM}speed:{Style.RESET_ALL} {Fore.CYAN}{throughput_str}{Style.RESET_ALL} {Style.DIM}folders/min  time left:{Style.RESET_ALL} {Fore.CYAN}{eta}{Style.RESET_ALL}  {Style.DIM}saved:{Style.RESET_ALL} {Fore.MAGENTA}{time_saved_str}{Style.RESET_ALL}\033[K\n"))
+        sys.stdout.write(
+            UnpackrApp._sanitize_console_text(
+                f"  {Style.DIM}speed:{Style.RESET_ALL} {Fore.CYAN}{throughput_str}{Style.RESET_ALL} {Style.DIM}folders/min  time left:{Style.RESET_ALL} {Fore.CYAN}{eta}{Style.RESET_ALL}  {Style.DIM}saved:{Style.RESET_ALL} {Fore.MAGENTA}{time_saved_str}{Style.RESET_ALL}\033[K\n"
+            )
+        )
         sys.stdout.write("\n")
 
         # Extract operation and target for display.
@@ -1086,7 +1121,9 @@ class UnpackrApp:
         safe_verb = UnpackrApp._sanitize_console_text(verb)
 
         # Current file/folder (line 11)
-        sys.stdout.write(UnpackrApp._sanitize_console_text(f"  {Style.DIM}>{Style.RESET_ALL} {safe_target[:80]:<80}\033[K\n"))
+        sys.stdout.write(
+            UnpackrApp._sanitize_console_text(f"  {Style.DIM}>{Style.RESET_ALL} {safe_target[:80]:<80}\033[K\n")
+        )
 
         # Easter egg comment (line 12) - optional snarky comment with rarity
         comment_result = self._get_random_comment(current)
@@ -1094,36 +1131,50 @@ class UnpackrApp:
             # Unpack rarity info
             if isinstance(comment_result, tuple) and len(comment_result) >= 3:
                 comment, color = comment_result[0], comment_result[2]
-                effect = comment_result[3] if len(comment_result) > 3 else ''
+                effect = comment_result[3] if len(comment_result) > 3 else ""
 
                 # Apply visual effects based on rarity
-                if effect == 'legendary':
+                if effect == "legendary":
                     # Special legendary effect: rockets + gold/yellow + bright (1% drop!)
-                    sys.stdout.write(UnpackrApp._sanitize_console_text(f"  {Style.DIM}│{Style.RESET_ALL} {Fore.YELLOW}{Style.BRIGHT}🚀 {comment[:71]} 🚀{Style.RESET_ALL}\033[K\n"))
+                    sys.stdout.write(
+                        UnpackrApp._sanitize_console_text(
+                            f"  {Style.DIM}│{Style.RESET_ALL} {Fore.YELLOW}{Style.BRIGHT}🚀 {comment[:71]} 🚀{Style.RESET_ALL}\033[K\n"
+                        )
+                    )
                 else:
                     # Normal rarity effects
-                    style = ''
-                    if effect == 'dim':
+                    style = ""
+                    if effect == "dim":
                         style = Style.DIM
-                    elif effect == 'bright':
+                    elif effect == "bright" or effect == "bright_bold":
                         style = Style.BRIGHT
-                    elif effect == 'bright_bold':
-                        style = Style.BRIGHT
-                    elif effect == 'normal':
+                    elif effect == "normal":
                         style = Style.NORMAL
 
-                    sys.stdout.write(UnpackrApp._sanitize_console_text(f"  {Style.DIM}│{Style.RESET_ALL} {color}{style}{comment[:75]}{Style.RESET_ALL}\033[K\n"))
+                    sys.stdout.write(
+                        UnpackrApp._sanitize_console_text(
+                            f"  {Style.DIM}│{Style.RESET_ALL} {color}{style}{comment[:75]}{Style.RESET_ALL}\033[K\n"
+                        )
+                    )
             else:
                 # Old format fallback
-                sys.stdout.write(UnpackrApp._sanitize_console_text(f"  {Style.DIM}│{Style.RESET_ALL} {Fore.YELLOW}{comment_result[:75]}{Style.RESET_ALL}\033[K\n"))
+                sys.stdout.write(
+                    UnpackrApp._sanitize_console_text(
+                        f"  {Style.DIM}│{Style.RESET_ALL} {Fore.YELLOW}{comment_result[:75]}{Style.RESET_ALL}\033[K\n"
+                    )
+                )
         else:
             sys.stdout.write("\033[K\n")  # Clear line if no comment
 
         # Spinner line (line 13) - spinner + verb
-        sys.stdout.write(UnpackrApp._sanitize_console_text(f"  {Fore.GREEN}{spinner}{Style.RESET_ALL} {Style.DIM}{safe_verb}{Style.RESET_ALL}\033[K"))
+        sys.stdout.write(
+            UnpackrApp._sanitize_console_text(
+                f"  {Fore.GREEN}{spinner}{Style.RESET_ALL} {Style.DIM}{safe_verb}{Style.RESET_ALL}\033[K"
+            )
+        )
 
         sys.stdout.flush()
-    
+
     def _process_subfolder(self, subfolder: Path, destination_dir: Path):
         """
         Recursively process subfolder, including archive extraction.
@@ -1135,12 +1186,12 @@ class UnpackrApp:
         # Safety: prevent infinite recursion
         if not self.recursion_guard.enter():
             logging.error(f"[SAFETY] Max recursion depth reached at {subfolder}")
-            self.stats['safety_stops'] += 1
+            self.stats["safety_stops"] += 1
             return
 
         try:
             # Process PAR2 files FIRST in this subfolder
-            par2_files = [f for f in subfolder.iterdir() if f.is_file() and f.suffix.lower() == '.par2']
+            par2_files = [f for f in subfolder.iterdir() if f.is_file() and f.suffix.lower() == ".par2"]
             par2_error = False
             if par2_files:
                 logging.info(f"Verifying/repairing PAR2 in subfolder {subfolder.name}")
@@ -1151,19 +1202,24 @@ class UnpackrApp:
                 else:
                     success = self.archive_processor.process_par2_files(subfolder)
                     if success:
-                        self.stats['par2s_repaired'] += 1
+                        self.stats["par2s_repaired"] += 1
                     par2_error = not success
 
             # Process archives AFTER PAR2 in this subfolder (only if PAR2 didn't delete them)
             if not par2_error:
-                rar_pattern = re.compile(r'\.r\d{2}$')
+                rar_pattern = re.compile(r"\.r\d{2}$")
                 archive_files = []
 
                 for file in subfolder.iterdir():
                     if file.is_file():
                         ext_lower = file.suffix.lower()
                         filename_lower = file.name.lower()
-                        if ext_lower == '.rar' or rar_pattern.match(ext_lower) or ext_lower == '.7z' or '.7z.' in filename_lower:
+                        if (
+                            ext_lower == ".rar"
+                            or rar_pattern.match(ext_lower)
+                            or ext_lower == ".7z"
+                            or ".7z." in filename_lower
+                        ):
                             archive_files.append(file)
 
                 archive_error = False
@@ -1177,7 +1233,7 @@ class UnpackrApp:
                         # Extraction progress is logged but no progress bar in subfolders
                         success = self.archive_processor.process_rar_files(subfolder)
                         if success:
-                            self.stats['rars_extracted'] += 1
+                            self.stats["rars_extracted"] += 1
                         archive_error = not success
             else:
                 # PAR2 repair failed - archives already deleted
@@ -1186,11 +1242,11 @@ class UnpackrApp:
             # Find and process videos in this subfolder
             video_files = self.file_handler.find_video_files(subfolder)
             # Track total videos found (before processing)
-            self.stats['videos_found'] += len(video_files)
+            self.stats["videos_found"] += len(video_files)
             for video_file in video_files:
                 if self.dry_run:
                     logging.info(f"[DRY-RUN] Would validate and move video: {video_file.name}")
-                    self.stats['videos_moved'] += 1
+                    self.stats["videos_moved"] += 1
                 else:
                     # Get file size BEFORE moving (after move, file no longer at original path)
                     try:
@@ -1199,15 +1255,15 @@ class UnpackrApp:
                         file_size_mb = 0
 
                     if self.video_processor.check_video_health(video_file):
-                        self.stats['videos_healthy'] += 1
+                        self.stats["videos_healthy"] += 1
                         if self.file_handler.move_file(video_file, destination_dir):
-                            self.stats['videos_moved'] += 1
+                            self.stats["videos_moved"] += 1
                             # Log success so user knows videos are being moved
                             logging.info(f"MOVED: {video_file.name} ({file_size_mb:.1f}MB) -> {destination_dir}")
                     else:
                         # Delete corrupt video
-                        self.stats['videos_corrupt'] += 1
-                        self.stats['videos_failed'] += 1
+                        self.stats["videos_corrupt"] += 1
+                        self.stats["videos_failed"] += 1
                         logging.info(f"Deleting corrupt video: {video_file.name}")
                         if self.file_handler.wait_for_file_release(str(video_file)):
                             self.file_handler.delete_video_file_with_retry(video_file)
@@ -1223,17 +1279,19 @@ class UnpackrApp:
                     logging.info(f"[DRY-RUN] Would delete subfolder: {subfolder}")
                 else:
                     # Pass par2_error and archive_error for double-check (race condition protection)
-                    if not self.file_handler.safe_delete_folder(subfolder, par2_error=par2_error, archive_error=archive_error):
+                    if not self.file_handler.safe_delete_folder(
+                        subfolder, par2_error=par2_error, archive_error=archive_error
+                    ):
                         # Track failed deletion for retry
                         self.failed_deletions.append((subfolder, par2_error, archive_error))
                         logging.warning(f"Failed to delete subfolder {subfolder}, will retry later")
         finally:
             self.recursion_guard.exit()
-    
+
     def run(self, source_dir: Path, destination_dir: Path):
         """
         Run the main processing loop.
-        
+
         Args:
             source_dir: Source directory to process
             destination_dir: Destination for video files
@@ -1246,17 +1304,17 @@ class UnpackrApp:
             print(Fore.RED + "No work plan available. Run scan_and_plan() first." + Style.RESET_ALL)
             return
 
-        video_folders = [item['path'] for item in self.work_plan.video_folders]
+        video_folders = [item["path"] for item in self.work_plan.video_folders]
 
         if not video_folders:
             print(Fore.YELLOW + "No video folders found to process." + Style.RESET_ALL)
             return
 
         # Track preserved folders
-        self.stats['folders_preserved'] = len(self.work_plan.content_folders)
+        self.stats["folders_preserved"] = len(self.work_plan.content_folders)
 
         # Initialize videos_found from pre-scan total
-        self.stats['videos_found'] = self.work_plan.total_videos
+        self.stats["videos_found"] = self.work_plan.total_videos
 
         # Reset all run state (ensure nothing persists from previous runs)
         self.start_time = time.time()
@@ -1273,9 +1331,11 @@ class UnpackrApp:
 
         # Safety: Initialize runtime limit from config
         from utils.safety import OperationTimer
+
         max_runtime_seconds = self.config.max_runtime_hours * 3600
         self.runtime_limit = OperationTimer(max_runtime_seconds, "Total Unpackr Runtime")
-        assert self.runtime_limit is not None
+        if self.runtime_limit is None:
+            raise RuntimeError("Failed to initialize runtime safety timer")
 
         # Safety: loop guard for folder processing
         loop_guard = LoopSafety(self.config.max_videos_per_folder * 2, "Folder processing loop")
@@ -1288,25 +1348,25 @@ class UnpackrApp:
 
                 # CANCELLATION CHECKPOINT: Check before each folder
                 if self.cancellation_requested:
-                    logging.info(f"Cancellation requested - stopping after {i-1} folders")
+                    logging.info(f"Cancellation requested - stopping after {i - 1} folders")
                     break
 
                 # Safety checks
                 if not loop_guard.tick():
                     logging.error("[SAFETY] Folder processing loop exceeded safety limit")
-                    self.stats['safety_stops'] += 1
+                    self.stats["safety_stops"] += 1
                     break
 
                 if not self.runtime_limit.check():
                     logging.error(f"[SAFETY] Runtime limit exceeded ({self.config.max_runtime_hours} hours) - stopping")
-                    self.stats['safety_stops'] += 1
+                    self.stats["safety_stops"] += 1
                     break
-                
+
                 if not self.stuck_detector.check():
                     logging.error("[SAFETY] Process appears stuck - stopping")
-                    self.stats['safety_stops'] += 1
+                    self.stats["safety_stops"] += 1
                     break
-                
+
                 # Process folder
                 self.process_folder(folder, destination_dir, i, total)
 
@@ -1321,20 +1381,20 @@ class UnpackrApp:
                     try:
                         if self.dry_run:
                             logging.info(f"[DRY-RUN] Would validate and move loose video: {video.name}")
-                            self.stats['videos_moved'] += 1
+                            self.stats["videos_moved"] += 1
                         else:
                             # Validate video using video_processor (not undefined video_validator)
                             if self.video_processor and self.video_processor.check_video_health(video):
-                                self.stats['videos_healthy'] += 1
+                                self.stats["videos_healthy"] += 1
                                 # Move to destination
                                 dest_file = destination_dir / video.name
                                 if not dest_file.exists():
                                     video.rename(dest_file)
-                                    self.stats['videos_moved'] += 1
+                                    self.stats["videos_moved"] += 1
                                     logging.info(f"Moved loose video: {video.name}")
                             else:
-                                self.stats['videos_corrupt'] += 1
-                                self.stats['videos_failed'] += 1
+                                self.stats["videos_corrupt"] += 1
+                                self.stats["videos_failed"] += 1
                                 logging.warning(f"Loose video failed validation: {video.name}")
                                 video.unlink()  # Delete corrupt video
                     except Exception as e:
@@ -1349,12 +1409,14 @@ class UnpackrApp:
                     try:
                         if self.dry_run:
                             logging.info(f"[DRY-RUN] Would delete junk folder: {junk_folder}")
-                            self.stats['folders_deleted'] += 1
+                            self.stats["folders_deleted"] += 1
                         else:
                             # Check if folder is still removable (contents might have changed)
-                            if self.file_handler.is_folder_empty_or_removable(junk_folder, par2_error=False, archive_error=False):
+                            if self.file_handler.is_folder_empty_or_removable(
+                                junk_folder, par2_error=False, archive_error=False
+                            ):
                                 if self.file_handler.safe_delete_folder(junk_folder):
-                                    self.stats['folders_deleted'] += 1
+                                    self.stats["folders_deleted"] += 1
                                     logging.info(f"Deleted junk folder: {junk_folder.name}")
                                 else:
                                     logging.warning(f"Failed to delete junk folder: {junk_folder.name}")
@@ -1367,7 +1429,7 @@ class UnpackrApp:
             # Stop spinner thread
             self._stop_spinner_thread()
             # Clear progress line
-            sys.stdout.write('\r' + ' '*100 + '\r')
+            sys.stdout.write("\r" + " " * 100 + "\r")
             sys.stdout.flush()
 
             # Print dry-run summary if in dry-run mode
@@ -1416,7 +1478,7 @@ class UnpackrApp:
 
                 # Try to delete (double-check happens inside safe_delete_folder)
                 if self.file_handler.safe_delete_folder(folder, par2_error=par2_error, archive_error=archive_error):
-                    self.stats['folders_deleted'] += 1
+                    self.stats["folders_deleted"] += 1
                     logging.info(f"Successfully deleted on retry: {folder}")
                 else:
                     remaining.append((folder, par2_error, archive_error))
@@ -1446,22 +1508,25 @@ class UnpackrApp:
             try:
                 # RECURSIVE: Walk through all directories bottom-up
                 # This deletes deepest folders first, then parents
-                for root, dirs, files in os.walk(source_dir, topdown=False):
+                for root, dirs, _files in os.walk(source_dir, topdown=False):
                     for dir_name in dirs:
                         folder = Path(root) / dir_name
                         folders_checked += 1
 
                         # Show progress every 50 folders (only on first pass and if enabled)
                         if show_progress and pass_num == 1 and folders_checked % 50 == 0:
-                            print(f"\r{Style.DIM}  Scanned {folders_checked} folders...{Style.RESET_ALL}", end='', flush=True)
+                            print(
+                                f"\r{Style.DIM}  Scanned {folders_checked} folders...{Style.RESET_ALL}",
+                                end="",
+                                flush=True,
+                            )
 
                         try:
                             # Check if folder is empty
-                            if not any(folder.iterdir()):
-                                if self.file_handler.safe_delete_folder(folder):
-                                    pass_deleted += 1
-                                    total_deleted += 1
-                                    logging.info(f"Pass {pass_num}: Deleted empty folder: {folder}")
+                            if not any(folder.iterdir()) and self.file_handler.safe_delete_folder(folder):
+                                pass_deleted += 1
+                                total_deleted += 1
+                                logging.info(f"Pass {pass_num}: Deleted empty folder: {folder}")
                         except PermissionError:
                             logging.warning(f"Permission denied: {folder}")
                             continue
@@ -1474,7 +1539,7 @@ class UnpackrApp:
 
             # Clear progress line if shown
             if show_progress and pass_num == 1:
-                print(f"\r{' ' * 50}\r", end='', flush=True)
+                print(f"\r{' ' * 50}\r", end="", flush=True)
 
             # If nothing deleted this pass, we're done
             if pass_deleted == 0:
@@ -1484,22 +1549,26 @@ class UnpackrApp:
                 logging.info(f"Pass {pass_num}: Deleted {pass_deleted} empty folders")
 
         if total_deleted > 0:
-            self.stats['empty_folders_deleted'] = total_deleted
+            self.stats["empty_folders_deleted"] = total_deleted
             print(f"{Fore.GREEN}Cleaned up {total_deleted} empty folders{Style.RESET_ALL}")
             logging.info(f"Final cleanup: deleted {total_deleted} empty folders total")
 
     def display_summary(self):
         """Display processing summary with detailed stats."""
         elapsed = time.time() - self.start_time if self.start_time else 0
-        elapsed_str = str(timedelta(seconds=int(elapsed))).split('.')[0]
+        elapsed_str = str(timedelta(seconds=int(elapsed))).split(".")[0]
 
         # Clear screen and show final summary
-        sys.stdout.write('\033[2J\033[H')
+        sys.stdout.write("\033[2J\033[H")
 
-        total_cleaned = self.stats['folders_deleted'] + self.stats['empty_folders_deleted']
+        total_cleaned = self.stats["folders_deleted"] + self.stats["empty_folders_deleted"]
 
         # Show cancelled or complete status
-        status = f"{Fore.YELLOW}cancelled{Style.RESET_ALL}" if self.cancellation_requested else f"{Fore.GREEN}complete{Style.RESET_ALL}"
+        status = (
+            f"{Fore.YELLOW}cancelled{Style.RESET_ALL}"
+            if self.cancellation_requested
+            else f"{Fore.GREEN}complete{Style.RESET_ALL}"
+        )
 
         print(f"""
   {Style.DIM}_   _ _ __  _ __   __ _  ___| | ___ __
@@ -1508,16 +1577,18 @@ class UnpackrApp:
   \\__,_|_| |_| .__/ \\__,_|\\___|_|\\_\\_|
              |_|{Style.RESET_ALL}  {status} {Style.DIM}- runtime:{Style.RESET_ALL} {Fore.CYAN}{elapsed_str}{Style.RESET_ALL}
 
-  {Style.DIM}FOLDERS{Style.RESET_ALL}  processed: {Fore.WHITE}{self.stats['folders_processed']:>4}{Style.RESET_ALL}  |  deleted: {Fore.GREEN}{self.stats['folders_deleted']:>4}{Style.RESET_ALL}  |  empty: {Fore.CYAN}{self.stats['empty_folders_deleted']:>4}{Style.RESET_ALL}  |  preserved: {Fore.MAGENTA}{self.stats['folders_preserved']:>4}{Style.RESET_ALL}  |  {Fore.GREEN}total cleaned: {total_cleaned}{Style.RESET_ALL}
-  {Style.DIM}VIDEOS{Style.RESET_ALL}   found: {Fore.WHITE}{self.stats['videos_found']:>4}{Style.RESET_ALL}  |  processed: {Fore.GREEN}{self.stats['videos_moved']:>4}{Style.RESET_ALL}  |  samples: {Fore.YELLOW}{self.stats['videos_sample']:>4}{Style.RESET_ALL}  |  corrupt: {Fore.RED}{self.stats['videos_corrupt']:>4}{Style.RESET_ALL}  |  failed: {Fore.RED}{self.stats['videos_failed']:>4}{Style.RESET_ALL}
-  {Style.DIM}ARCHIVES{Style.RESET_ALL} extracted: {Fore.CYAN}{self.stats['rars_extracted']:>4}{Style.RESET_ALL}  |  repaired: {Fore.MAGENTA}{self.stats['par2s_repaired']:>4}{Style.RESET_ALL}""")
+  {Style.DIM}FOLDERS{Style.RESET_ALL}  processed: {Fore.WHITE}{self.stats["folders_processed"]:>4}{Style.RESET_ALL}  |  deleted: {Fore.GREEN}{self.stats["folders_deleted"]:>4}{Style.RESET_ALL}  |  empty: {Fore.CYAN}{self.stats["empty_folders_deleted"]:>4}{Style.RESET_ALL}  |  preserved: {Fore.MAGENTA}{self.stats["folders_preserved"]:>4}{Style.RESET_ALL}  |  {Fore.GREEN}total cleaned: {total_cleaned}{Style.RESET_ALL}
+  {Style.DIM}VIDEOS{Style.RESET_ALL}   found: {Fore.WHITE}{self.stats["videos_found"]:>4}{Style.RESET_ALL}  |  processed: {Fore.GREEN}{self.stats["videos_moved"]:>4}{Style.RESET_ALL}  |  samples: {Fore.YELLOW}{self.stats["videos_sample"]:>4}{Style.RESET_ALL}  |  corrupt: {Fore.RED}{self.stats["videos_corrupt"]:>4}{Style.RESET_ALL}  |  failed: {Fore.RED}{self.stats["videos_failed"]:>4}{Style.RESET_ALL}
+  {Style.DIM}ARCHIVES{Style.RESET_ALL} extracted: {Fore.CYAN}{self.stats["rars_extracted"]:>4}{Style.RESET_ALL}  |  repaired: {Fore.MAGENTA}{self.stats["par2s_repaired"]:>4}{Style.RESET_ALL}""")
 
-        if self.stats['files_sanitized'] > 0:
-            print(f"  {Style.DIM}FILES{Style.RESET_ALL}    sanitized: {Fore.CYAN}{self.stats['files_sanitized']:>4}{Style.RESET_ALL}")
+        if self.stats["files_sanitized"] > 0:
+            print(
+                f"  {Style.DIM}FILES{Style.RESET_ALL}    sanitized: {Fore.CYAN}{self.stats['files_sanitized']:>4}{Style.RESET_ALL}"
+            )
 
         # Show warnings/tips on same line if possible
         warnings = []
-        if self.stats['safety_stops'] > 0:
+        if self.stats["safety_stops"] > 0:
             warnings.append(f"{Fore.RED}SAFETY STOPS: {self.stats['safety_stops']}{Style.RESET_ALL}")
         if self.failed_deletions:
             warnings.append(f"{Fore.YELLOW}locked folders: {len(self.failed_deletions)}{Style.RESET_ALL}")
@@ -1526,171 +1597,14 @@ class UnpackrApp:
             print(f"\n  {' | '.join(warnings)}")
 
         # Suggest vhealth for collection maintenance if videos were processed
-        if self.stats['videos_moved'] > 0 and self.destination_dir:
-            print(f"\n  {Style.DIM}Tip: Run 'vhealth \"{self.destination_dir}\"' to check for duplicates, samples, and corruption{Style.RESET_ALL}")
-
-
-def clean_path(path_str: str) -> str:
-    """
-    Clean path string by removing quotes and extra whitespace.
-    
-    Args:
-        path_str: Raw path string
-        
-    Returns:
-        Cleaned path string
-    """
-    cleaned = path_str.strip()
-    # Remove surrounding quotes (single or double)
-    if (cleaned.startswith('"') and cleaned.endswith('"')) or \
-       (cleaned.startswith("'") and cleaned.endswith("'")):
-        cleaned = cleaned[1:-1]
-    return cleaned.strip()
-
-
-def get_user_input(prompt: str) -> Path:
-    """
-    Prompt user for directory path with validation.
-    
-    Args:
-        prompt: Prompt message
-        
-    Returns:
-        Valid directory path
-    """
-    while True:
-        user_input = input(prompt).strip()
-        cleaned = clean_path(user_input)
-        path = Path(cleaned)
-        
-        if path.is_dir():
-            return path
-        else:
-            print(Fore.RED + "Invalid path. Please enter a valid directory path." + Style.RESET_ALL)
-            if user_input != cleaned:
-                print(Fore.YELLOW + f"Tip: Path was cleaned to: {cleaned}" + Style.RESET_ALL)
-
-
-def quick_preflight(config, source_dir, destination_dir) -> bool:
-    """
-    Quick pre-flight check before processing starts.
-    Silent if everything is OK - only shows output if issues found.
-
-    Args:
-        config: Config object
-        source_dir: Source directory path
-        destination_dir: Destination directory path
-
-    Returns:
-        True if checks pass, False if critical issues
-    """
-    warnings = []
-
-    # Check 1: Disk space (quick but important)
-    try:
-        import shutil
-        total, used, free = shutil.disk_usage(destination_dir)
-        free_gb = free // (2**30)
-        if free_gb < 5:
-            warnings.append(f"Very low disk space: {free_gb}GB available (may run out)")
-        elif free_gb < 10:
-            warnings.append(f"Low disk space: {free_gb}GB available")
-    except OSError:
-        pass
-
-    # Check 2: Source has content to process
-    try:
-        dir_list = list(source_dir.iterdir())
-        if not dir_list:
-            warnings.append("Source directory is empty - nothing to process")
-    except Exception as e:
-        warnings.append(f"Cannot read source directory: {e}")
-
-    # Display warnings only if there are any
-    if warnings:
-        print(f"\n{Fore.YELLOW}Pre-flight Check:{Style.RESET_ALL}")
-        for w in warnings:
-            print(f"  {Fore.YELLOW}⚠{Style.RESET_ALL} {w}")
-
-        print(f"\n{Fore.YELLOW}Continue anyway?{Style.RESET_ALL} {Style.DIM}[y/N]{Style.RESET_ALL}: ", end="")
-        try:
-            response = input().strip().lower()
-            if response not in ("y", "yes"):
-                print(Fore.RED + "Aborted by user." + Style.RESET_ALL)
-                return False
-        except KeyboardInterrupt:
-            print(Fore.RED + "\nAborted by user." + Style.RESET_ALL)
-            return False
-        except EOFError:
-            print(Fore.RED + "\nAborted (no interactive input available)." + Style.RESET_ALL)
-            return False
-
-    return True
-
-
-def countdown_prompt(seconds: int = 10, operation_label: str = "processing") -> bool:
-    """
-    Display countdown before starting.
-
-    Args:
-        seconds: Countdown duration
-
-    Returns:
-        True if user didn't cancel, False if cancelled
-    """
-    try:
-        for i in range(seconds, 0, -1):
-            sys.stdout.write(
-                f"\r{Fore.GREEN}Starting {operation_label} in {i} seconds... "
-                f"(Press Ctrl+C to cancel) {Style.RESET_ALL}"
+        if self.stats["videos_moved"] > 0 and self.destination_dir:
+            print(
+                f"\n  {Style.DIM}Tip: Run 'vhealth \"{self.destination_dir}\"' to check for duplicates, samples, and corruption{Style.RESET_ALL}"
             )
-            sys.stdout.flush()
-            time.sleep(1)
-        sys.stdout.write("\r" + " " * 60 + "\r")
-        return True
-    except KeyboardInterrupt:
-        print(Fore.RED + "\n\nOperation cancelled by user." + Style.RESET_ALL)
-        return False
-
-
-def resolve_cli_presentation(args: Any, config: Config) -> tuple[AnimationMode, bool]:
-    """
-    Resolve CLI presentation settings with precedence:
-    CLI args > environment variables > config > defaults.
-    """
-    def _normalize_mode(value: Any) -> Optional[AnimationMode]:
-        if isinstance(value, str):
-            normalized = value.strip().lower()
-            if normalized in {"auto", "off", "light", "full"}:
-                return cast(AnimationMode, normalized)
-        return None
-
-    def _is_truthy_env(value: Optional[str]) -> bool:
-        if value is None:
-            return False
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-
-    cfg_get = getattr(config, "get", None)
-    if callable(cfg_get):
-        config_mode = _normalize_mode(cfg_get("animations", "auto")) or "auto"
-    else:
-        config_mode = "auto"
-
-    env_mode = _normalize_mode(os.getenv("UNPACKR_ANIMATIONS"))
-
-    arg_mode = _normalize_mode(getattr(args, "animations", None))
-    mode = arg_mode or env_mode or config_mode
-
-    env_no_color = _is_truthy_env(os.getenv("UNPACKR_NO_COLOR")) or os.getenv("NO_COLOR") is not None
-    config_no_color = bool(cfg_get("no_color", False)) if callable(cfg_get) else False
-    no_color = bool(getattr(args, "no_color", False) or env_no_color or config_no_color)
-    return mode, no_color
-
-
 def main():
     """Main entry point with defensive error handling."""
     init()  # Initialize colorama with default settings; may be refined after args/config.
-    
+
     try:
         # Parse arguments
         parser = build_unpackr_arg_parser()
@@ -1701,10 +1615,10 @@ def main():
             args.source = args.source_pos
         if args.dest_pos:
             args.destination = args.dest_pos
-        
+
         # Load configuration defensively
-        config_path = Path(args.config) if args.config else Path('config_files/config.json')
-        
+        config_path = Path(args.config) if args.config else Path("config_files/config.json")
+
         try:
             config = Config(config_path if config_path.exists() else None)
         except Exception as e:
@@ -1718,51 +1632,58 @@ def main():
             init(strip=True)
 
         print((ASCII_ART if no_color else Fore.YELLOW + ASCII_ART + Style.RESET_ALL))
-        
+
         # Set up logging
         try:
             log_file = setup_logging(config.log_folder, config.max_log_files)
-            logging.info("="*70)
+            logging.info("=" * 70)
             logging.info("Unpackr started")
             logging.info(f"Log file: {log_file}")
         except Exception as e:
             print(Fore.RED + f"Error setting up logging: {e}" + Style.RESET_ALL)
             sys.exit(1)
-        
+
         # Get and validate source and destination paths
         if args.source and args.destination:
             # Clean and validate paths defensively
             try:
                 source_str = clean_path(args.source)
                 dest_str = clean_path(args.destination)
-                
+
                 source_dir = InputValidator.validate_path(source_str, must_exist=True, must_be_dir=True)
                 destination_dir = InputValidator.validate_path(dest_str, must_exist=True, must_be_dir=True)
-                
+
             except ValidationError as e:
                 print(Fore.RED + f"Path validation failed: {e}" + Style.RESET_ALL)
                 logging.error(f"Path validation: {e}")
                 sys.exit(1)
-                
+
         else:
             # Interactive mode - get paths from user
-            print(Style.BRIGHT + Fore.YELLOW +
-                  "This script requires 7-Zip; par2cmdline is recommended for repair support." +
-                  Style.RESET_ALL)
+            print(
+                Style.BRIGHT
+                + Fore.YELLOW
+                + "This script requires 7-Zip; par2cmdline is recommended for repair support."
+                + Style.RESET_ALL
+            )
             print(Fore.CYAN + "\nEnter paths with or without quotes." + Style.RESET_ALL)
             source_dir = get_user_input("\nEnter the path to your downloads directory: ")
             destination_dir = get_user_input("Enter the path to your destination directory: ")
-        
+
+        if source_dir is None or destination_dir is None:
+            logging.error("Source or destination directory was not provided")
+            sys.exit(1)
+
         # Defensive: Additional checks on paths
         if not StateValidator.check_dir_writable(destination_dir):
             print(Fore.RED + f"Destination directory is not writable: {destination_dir}" + Style.RESET_ALL)
             logging.error(f"Destination not writable: {destination_dir}")
             sys.exit(1)
-        
+
         if not StateValidator.check_disk_space(destination_dir, required_mb=1000):
             print(Fore.YELLOW + "Warning: Low disk space in destination directory" + Style.RESET_ALL)
             logging.warning("Low disk space warning")
-    
+
         # Check system requirements
         print("Checking requirements...", end=" ")
         system_check = SystemCheck(config)
@@ -1805,10 +1726,10 @@ def main():
                     app.active_process.terminate()
                     logging.info("Terminated active subprocess")
                 except Exception:
-                    pass
+                    logging.debug("Failed to terminate active subprocess cleanly", exc_info=True)
 
         signal.signal(signal.SIGINT, handle_cancel)
-        
+
         # Scan and plan
         try:
             work_plan = app.scan_and_plan(source_dir)
@@ -1831,7 +1752,9 @@ def main():
 
         # Display confirmation (compact)
         mode = f"{Fore.YELLOW}DRY-RUN{Style.RESET_ALL}" if args.dry_run else f"{Fore.GREEN}LIVE-RUN{Style.RESET_ALL}"
-        vhealth_mode = f"{Fore.GREEN}enabled{Style.RESET_ALL}" if args.vhealth else f"{Style.DIM}disabled{Style.RESET_ALL}"
+        vhealth_mode = (
+            f"{Fore.GREEN}enabled{Style.RESET_ALL}" if args.vhealth else f"{Style.DIM}disabled{Style.RESET_ALL}"
+        )
         print(f"\n{Fore.CYAN}Run Overview{Style.RESET_ALL}")
         print(f"  Mode:        {mode}")
         print(f"  Source:      {Fore.CYAN}{source_dir}{Style.RESET_ALL}")
@@ -1880,7 +1803,7 @@ def main():
                 app.cleanup_empty_folders(source_dir)
 
             app.display_summary()
-            
+
             if app.cancellation_requested:
                 logging.info("Unpackr cancelled by user")
             else:
@@ -1891,12 +1814,13 @@ def main():
                 print(f"\n{Fore.CYAN}Running video health check on destination...{Style.RESET_ALL}\n")
                 try:
                     from vhealth import VideoHealthChecker
+
                     checker = VideoHealthChecker(config)
                     checker.check_path(
                         destination_dir,
                         min_resolution=None,
                         skip_samples=False,
-                        skip_health=False  # Full health check
+                        skip_health=False,  # Full health check
                     )
                     checker.print_summary(auto_delete=False)  # Prompt user before deleting
                     logging.info("Video health check completed")
@@ -1914,17 +1838,17 @@ def main():
         print(Fore.YELLOW + "\n\nOperation interrupted by user" + Style.RESET_ALL)
         logging.info("User interrupted operation")
         # Stop spinner if app was initialized
-        if 'app' in locals():
+        if "app" in locals():
             app._stop_spinner_thread()
         sys.exit(0)
     except Exception as e:
         print(Fore.RED + f"\nUnexpected error: {e}" + Style.RESET_ALL)
         logging.error(f"Unexpected error: {e}", exc_info=True)
         # Stop spinner if app was initialized
-        if 'app' in locals():
+        if "app" in locals():
             app._stop_spinner_thread()
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -64,4 +64,3 @@ def test_print_summary_all_healthy(capsys):
     checker.print_summary(auto_delete=False)
     out = capsys.readouterr().out
     assert "All videos healthy" in out
-

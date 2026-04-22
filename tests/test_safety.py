@@ -11,19 +11,25 @@ from colorama import init, Fore, Style
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.safety import (
-    SafetyLimits, TimeoutGuard, TimeoutException, SubprocessSafety,
-    LoopSafety, RecursionSafety, OperationTimer, StuckDetector
+    SafetyLimits,
+    TimeoutGuard,
+    TimeoutException,
+    SubprocessSafety,
+    LoopSafety,
+    RecursionSafety,
+    OperationTimer,
+    StuckDetector,
 )
 
 
 class SafetyTestRunner:
     """Test runner for safety mechanisms."""
-    
+
     def __init__(self):
         self.passed = 0
         self.failed = 0
         init()
-    
+
     def test(self, name: str, condition: bool):
         """Run a single test."""
         if condition:
@@ -32,24 +38,26 @@ class SafetyTestRunner:
         else:
             print(f"{Fore.RED}✗{Style.RESET_ALL} {name}")
             self.failed += 1
-    
+
     def summary(self):
         """Display summary."""
         total = self.passed + self.failed
-        print(f"\n{Fore.CYAN}{'='*70}{Style.RESET_ALL}")
-        print(f"Safety Tests: {total} | "
-              f"{Fore.GREEN}Passed: {self.passed}{Style.RESET_ALL} | "
-              f"{Fore.RED}Failed: {self.failed}{Style.RESET_ALL}")
+        print(f"\n{Fore.CYAN}{'=' * 70}{Style.RESET_ALL}")
+        print(
+            f"Safety Tests: {total} | "
+            f"{Fore.GREEN}Passed: {self.passed}{Style.RESET_ALL} | "
+            f"{Fore.RED}Failed: {self.failed}{Style.RESET_ALL}"
+        )
         if self.failed == 0:
             print(f"{Fore.GREEN}ALL SAFETY TESTS PASSED{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}{'='*70}{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}{'=' * 70}{Style.RESET_ALL}")
         return self.failed == 0
 
 
 def test_timeout_guard(runner: SafetyTestRunner):
     """Test timeout guard mechanism."""
     print(f"\n{Fore.YELLOW}[Timeout Guard Tests]{Style.RESET_ALL}")
-    
+
     # Test successful operation
     try:
         with TimeoutGuard(2, "Quick operation"):
@@ -57,7 +65,7 @@ def test_timeout_guard(runner: SafetyTestRunner):
         runner.test("TimeoutGuard: Allows quick operation", True)
     except TimeoutException:
         runner.test("TimeoutGuard: Allows quick operation", False)
-    
+
     # Test timeout trigger (this will actually timeout)
     timed_out = False
     try:
@@ -71,27 +79,22 @@ def test_timeout_guard(runner: SafetyTestRunner):
 def test_subprocess_safety(runner: SafetyTestRunner):
     """Test safe subprocess execution."""
     print(f"\n{Fore.YELLOW}[Subprocess Safety Tests]{Style.RESET_ALL}")
-    
+
     # Test successful command
     import platform
-    if platform.system() == 'Windows':
-        cmd = ['cmd', '/c', 'echo test']
+
+    if platform.system() == "Windows":
+        cmd = ["cmd", "/c", "echo test"]
     else:
-        cmd = ['echo', 'test']
-    success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
-        cmd,
-        timeout=5,
-        operation="Echo test"
-    )
+        cmd = ["echo", "test"]
+    success, stdout, stderr, code = SubprocessSafety.run_with_timeout(cmd, timeout=5, operation="Echo test")
     runner.test("SubprocessSafety: Successful command", success and code == 0)
 
     # Test command with timeout (this should timeout)
-    if platform.system() == 'Windows':
+    if platform.system() == "Windows":
         # Windows sleep command
         success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
-            ['timeout', '/t', '10'],
-            timeout=2,
-            operation="Timeout test"
+            ["timeout", "/t", "10"], timeout=2, operation="Timeout test"
         )
         runner.test("SubprocessSafety: Timeout detection", not success)
 
@@ -99,14 +102,14 @@ def test_subprocess_safety(runner: SafetyTestRunner):
 def test_loop_safety(runner: SafetyTestRunner):
     """Test loop safety mechanism."""
     print(f"\n{Fore.YELLOW}[Loop Safety Tests]{Style.RESET_ALL}")
-    
+
     # Test normal loop
     guard = LoopSafety(10, "Test loop")
     count = 0
     while guard.tick() and count < 5:
         count += 1
     runner.test("LoopSafety: Allows normal loop", count == 5)
-    
+
     # Test loop limit
     guard2 = LoopSafety(10, "Limited loop")
     count2 = 0
@@ -120,9 +123,9 @@ def test_loop_safety(runner: SafetyTestRunner):
 def test_recursion_safety(runner: SafetyTestRunner):
     """Test recursion depth protection."""
     print(f"\n{Fore.YELLOW}[Recursion Safety Tests]{Style.RESET_ALL}")
-    
+
     guard = RecursionSafety(5, "Test recursion")
-    
+
     def recursive_func(depth):
         if not guard.enter():
             return depth
@@ -132,7 +135,7 @@ def test_recursion_safety(runner: SafetyTestRunner):
             return depth
         finally:
             guard.exit()
-    
+
     max_depth = recursive_func(0)
     runner.test("RecursionSafety: Limits recursion depth", max_depth <= 5)
 
@@ -140,17 +143,17 @@ def test_recursion_safety(runner: SafetyTestRunner):
 def test_operation_timer(runner: SafetyTestRunner):
     """Test operation timer."""
     print(f"\n{Fore.YELLOW}[Operation Timer Tests]{Style.RESET_ALL}")
-    
+
     # Test within time limit
     timer = OperationTimer(5, "Quick test")
     time.sleep(0.1)
     runner.test("OperationTimer: Within limit", timer.check())
-    
+
     # Test exceeded time limit
     timer2 = OperationTimer(1, "Slow test")
     time.sleep(1.5)
     runner.test("OperationTimer: Detects exceeded", not timer2.check())
-    
+
     # Test elapsed time
     timer3 = OperationTimer(10, "Elapsed test")
     time.sleep(0.5)
@@ -161,14 +164,14 @@ def test_operation_timer(runner: SafetyTestRunner):
 def test_stuck_detector(runner: SafetyTestRunner):
     """Test stuck process detection."""
     print(f"\n{Fore.YELLOW}[Stuck Detector Tests]{Style.RESET_ALL}")
-    
+
     # Test with progress
     detector = StuckDetector(timeout=2, check_interval=1)
     time.sleep(0.5)
     detector.mark_progress()
     time.sleep(0.5)
     runner.test("StuckDetector: Healthy with progress", detector.check())
-    
+
     # Test stuck detection
     detector2 = StuckDetector(timeout=1, check_interval=0.5)
     time.sleep(1.5)
@@ -178,7 +181,7 @@ def test_stuck_detector(runner: SafetyTestRunner):
 def test_safety_limits_config(runner: SafetyTestRunner):
     """Test safety limits configuration."""
     print(f"\n{Fore.YELLOW}[Safety Limits Configuration]{Style.RESET_ALL}")
-    
+
     runner.test("SafetyLimits: RAR timeout defined", SafetyLimits.RAR_EXTRACTION_TIMEOUT > 0)
     runner.test("SafetyLimits: PAR2 timeout defined", SafetyLimits.PAR2_REPAIR_TIMEOUT > 0)
     runner.test("SafetyLimits: Video check timeout defined", SafetyLimits.VIDEO_CHECK_TIMEOUT > 0)
@@ -190,23 +193,21 @@ def test_safety_limits_config(runner: SafetyTestRunner):
 def test_process_tracker(runner: SafetyTestRunner):
     """Test subprocess process tracking for cancellation."""
     print(f"\n{Fore.YELLOW}[Process Tracker Tests]{Style.RESET_ALL}")
-    
+
     # Create a mock process tracker
     class MockTracker:
         def __init__(self):
             self.active_process = None
-    
+
     tracker = MockTracker()
-    
+
     # Test that process is tracked during execution
     import platform
-    if platform.system() == 'Windows':
+
+    if platform.system() == "Windows":
         # Run a quick command with tracker
         success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
-            ['cmd', '/c', 'echo test'],
-            timeout=5,
-            operation="Tracked command",
-            process_tracker=tracker
+            ["cmd", "/c", "echo test"], timeout=5, operation="Tracked command", process_tracker=tracker
         )
         # After completion, active_process should be None
         runner.test("ProcessTracker: Clears after completion", tracker.active_process is None)
@@ -218,39 +219,37 @@ def test_process_tracker(runner: SafetyTestRunner):
 def test_cancellation_flag(runner: SafetyTestRunner):
     """Test cancellation flag behavior in UnpackrApp."""
     print(f"\n{Fore.YELLOW}[Cancellation Flag Tests]{Style.RESET_ALL}")
-    
+
     from core import Config
     from unpackr import UnpackrApp
-    
+
     # Create app with default config
     config = Config(None)
     app = UnpackrApp(config)
-    
+
     # Test initial state
     runner.test("Cancellation: Initial flag is False", not app.cancellation_requested)
     runner.test("Cancellation: Initial active_process is None", app.active_process is None)
-    
+
     # Test flag can be set
     app.cancellation_requested = True
     runner.test("Cancellation: Flag can be set", app.cancellation_requested)
-    
+
     # Test archive_processor has tracker reference
-    runner.test("Cancellation: ArchiveProcessor has tracker", 
-                app.archive_processor.process_tracker is app)
-    
+    runner.test("Cancellation: ArchiveProcessor has tracker", app.archive_processor.process_tracker is app)
+
     # Test video_processor has tracker reference
-    runner.test("Cancellation: VideoProcessor has tracker", 
-                app.video_processor.process_tracker is app)
+    runner.test("Cancellation: VideoProcessor has tracker", app.video_processor.process_tracker is app)
 
 
 def main():
     """Run all safety tests."""
-    print(f"\n{Fore.CYAN}{'='*70}")
+    print(f"\n{Fore.CYAN}{'=' * 70}")
     print("SAFETY MECHANISM TESTS")
-    print(f"{'='*70}{Style.RESET_ALL}\n")
-    
+    print(f"{'=' * 70}{Style.RESET_ALL}\n")
+
     runner = SafetyTestRunner()
-    
+
     test_timeout_guard(runner)
     test_subprocess_safety(runner)
     test_loop_safety(runner)
@@ -260,10 +259,10 @@ def main():
     test_safety_limits_config(runner)
     test_process_tracker(runner)
     test_cancellation_flag(runner)
-    
+
     success = runner.summary()
     return 0 if success else 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

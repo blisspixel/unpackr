@@ -100,7 +100,9 @@ def test_delete_video_file_with_retry_failure_logs_error(tmp_path, monkeypatch):
     video.write_text("x", encoding="utf-8")
 
     monkeypatch.setattr(handler, "_terminate_related_processes", lambda *_: None)
-    monkeypatch.setattr("core.file_handler.Path.unlink", lambda *args, **kwargs: (_ for _ in ()).throw(PermissionError()))
+    monkeypatch.setattr(
+        "core.file_handler.Path.unlink", lambda *args, **kwargs: (_ for _ in ()).throw(PermissionError())
+    )
     monkeypatch.setattr("core.file_handler.time.sleep", lambda *_: None)
 
     assert handler.delete_video_file_with_retry(video, max_attempts=2, retry_delay=0) is False
@@ -140,8 +142,12 @@ def test_terminate_related_processes_kills_matching_process(monkeypatch):
             self._cmdline = cmdline
             self.terminated = False
 
-        def as_dict(self, attrs=None):
-            return {"pid": 1, "name": self._name}
+        @property
+        def pid(self):
+            return 1
+
+        def name(self):
+            return self._name
 
         def cmdline(self):
             return self._cmdline
@@ -151,7 +157,7 @@ def test_terminate_related_processes_kills_matching_process(monkeypatch):
 
     p1 = FakeProc("ffmpeg", ["ffmpeg", "C:/video.mkv"])
     p2 = FakeProc("other", ["other", "x"])
-    monkeypatch.setattr("core.file_handler.psutil.process_iter", lambda: [p1, p2])
+    monkeypatch.setattr("core.file_handler.psutil.process_iter", lambda *args, **kwargs: [p1, p2])
     handler._terminate_related_processes("C:/video.mkv")
     assert p1.terminated is True
     assert p2.terminated is False

@@ -6,14 +6,15 @@ import sys
 import os
 
 # Set UTF-8 encoding for Windows console
-if sys.platform == 'win32':
+if sys.platform == "win32":
     try:
-        if hasattr(sys.stdout, 'reconfigure'):
-            sys.stdout.reconfigure(encoding='utf-8')
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8")
         else:
             import codecs
-            sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
-        os.system('chcp 65001 >nul 2>&1')
+
+            sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer, "strict")
+        os.system("chcp 65001 >nul 2>&1")
     except Exception:
         pass
 
@@ -21,6 +22,7 @@ from colorama import init, Fore, Style
 
 # Initialize colorama for Windows color support
 init()
+
 
 def show_effect_comparison():
     """Show all rarity effects side by side."""
@@ -41,9 +43,14 @@ def show_effect_comparison():
     print(f"EPIC (4%):       {Style.DIM}|{Style.RESET_ALL} {Fore.MAGENTA}{Style.BRIGHT}{sample_text}{Style.RESET_ALL}")
 
     # Legendary (1%) - ROCKETS + GOLD/YELLOW + BRIGHT
-    print(f"LEGENDARY (1%):  {Style.DIM}|{Style.RESET_ALL} {Fore.YELLOW}{Style.BRIGHT}🚀 {sample_text} 🚀{Style.RESET_ALL}")
+    print(
+        f"LEGENDARY (1%):  {Style.DIM}|{Style.RESET_ALL} {Fore.YELLOW}{Style.BRIGHT}🚀 {sample_text} 🚀{Style.RESET_ALL}"
+    )
 
-    print(f"\n{Style.DIM}The legendary drop has rockets and gold/yellow bright text for maximum hype!{Style.RESET_ALL}\n")
+    print(
+        f"\n{Style.DIM}The legendary drop has rockets and gold/yellow bright text for maximum hype!{Style.RESET_ALL}\n"
+    )
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     show_effect_comparison()

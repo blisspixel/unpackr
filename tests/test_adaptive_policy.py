@@ -22,7 +22,7 @@ from core.adaptive_policy import (
     AdaptiveTimeoutCalculator,
     OperationOutcome,
     OutcomeType,
-    EnvironmentProfile
+    EnvironmentProfile,
 )
 from datetime import datetime
 
@@ -140,7 +140,7 @@ class TestAdaptivePolicy:
             base_threshold=0.7,
             min_threshold=0.5,
             max_threshold=0.9,
-            history_file=history_file
+            history_file=history_file,
         )
 
     def test_policy_initialization(self, policy):
@@ -167,7 +167,7 @@ class TestAdaptivePolicy:
                 duration_seconds=1.0,
                 decision="reject",
                 outcome=OutcomeType.FALSE_POSITIVE,
-                metadata={}
+                metadata={},
             )
             policy.record_outcome(outcome)
 
@@ -187,7 +187,7 @@ class TestAdaptivePolicy:
                 duration_seconds=1.0,
                 decision="accept",
                 outcome=OutcomeType.FALSE_NEGATIVE,
-                metadata={}
+                metadata={},
             )
             policy.record_outcome(outcome)
 
@@ -207,7 +207,7 @@ class TestAdaptivePolicy:
                 duration_seconds=1.0,
                 decision="reject",
                 outcome=OutcomeType.FALSE_POSITIVE,
-                metadata={}
+                metadata={},
             )
             policy.record_outcome(outcome)
 
@@ -226,7 +226,7 @@ class TestAdaptivePolicy:
                 duration_seconds=1.0,
                 decision="accept",
                 outcome=OutcomeType.FALSE_NEGATIVE,
-                metadata={}
+                metadata={},
             )
             policy.record_outcome(outcome)
 
@@ -241,7 +241,7 @@ class TestAdaptivePolicy:
             OutcomeType.TRUE_POSITIVE,
             OutcomeType.TRUE_NEGATIVE,
             OutcomeType.FALSE_POSITIVE,
-            OutcomeType.FALSE_NEGATIVE
+            OutcomeType.FALSE_NEGATIVE,
         ]
 
         for i, outcome_type in enumerate(outcomes):
@@ -253,18 +253,18 @@ class TestAdaptivePolicy:
                 duration_seconds=1.0,
                 decision="test",
                 outcome=outcome_type,
-                metadata={}
+                metadata={},
             )
             policy.record_outcome(outcome)
 
         stats = policy.get_statistics()
 
-        assert stats['total_decisions'] == 5
-        assert stats['true_positives'] == 2
-        assert stats['true_negatives'] == 1
-        assert stats['false_positives'] == 1
-        assert stats['false_negatives'] == 1
-        assert 0.0 <= stats['accuracy'] <= 1.0
+        assert stats["total_decisions"] == 5
+        assert stats["true_positives"] == 2
+        assert stats["true_negatives"] == 1
+        assert stats["false_positives"] == 1
+        assert stats["false_negatives"] == 1
+        assert 0.0 <= stats["accuracy"] <= 1.0
 
     def test_history_persistence(self, policy, history_file):
         """Test outcome history is saved and loaded."""
@@ -278,7 +278,7 @@ class TestAdaptivePolicy:
                 duration_seconds=1.0,
                 decision="test",
                 outcome=OutcomeType.TRUE_POSITIVE,
-                metadata={}
+                metadata={},
             )
             policy.record_outcome(outcome)
 
@@ -288,7 +288,7 @@ class TestAdaptivePolicy:
             base_threshold=0.7,
             min_threshold=0.5,
             max_threshold=0.9,
-            history_file=history_file
+            history_file=history_file,
         )
 
         # Should load history
@@ -384,13 +384,13 @@ class TestEnvironmentProfile:
             cpu_score=1.5,
             extraction_speed_mbps=100.0,
             video_decode_fps=120.0,
-            last_updated=datetime.now()
+            last_updated=datetime.now(),
         )
 
         # Serialize
         data = profile.to_dict()
         assert isinstance(data, dict)
-        assert data['disk_type'] == 'SSD'
+        assert data["disk_type"] == "SSD"
 
         # Deserialize
         restored = EnvironmentProfile.from_dict(data)
@@ -411,13 +411,13 @@ class TestOperationOutcome:
             duration_seconds=5.0,
             decision="success",
             outcome=OutcomeType.TRUE_POSITIVE,
-            metadata={'key': 'value'}
+            metadata={"key": "value"},
         )
 
         # Serialize
         data = outcome.to_dict()
         assert isinstance(data, dict)
-        assert data['outcome'] == 'TRUE_POSITIVE'
+        assert data["outcome"] == "TRUE_POSITIVE"
 
         # Deserialize
         restored = OperationOutcome.from_dict(data)
@@ -425,5 +425,5 @@ class TestOperationOutcome:
         assert restored.file_size_bytes == 1000000
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

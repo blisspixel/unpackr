@@ -17,18 +17,19 @@ References:
 """
 
 import logging
-from pathlib import Path
-from typing import Optional, Set
-from enum import Enum, auto
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime
-
+from enum import Enum, auto
+from pathlib import Path
+from typing import Any, Optional, Set
 
 logger = logging.getLogger(__name__)
 
 
 class OperationType(Enum):
     """Types of file operations that require invariant checking."""
+
     WRITE = auto()
     DELETE = auto()
     MOVE = auto()
@@ -37,6 +38,7 @@ class OperationType(Enum):
 
 class ValidationDecision(Enum):
     """Video validation decisions."""
+
     PASS = auto()
     FAIL_CORRUPT = auto()
     FAIL_LOW_QUALITY = auto()
@@ -48,32 +50,35 @@ class ValidationDecision(Enum):
 @dataclass
 class FileOperation:
     """Represents a file operation that must satisfy invariants."""
+
     type: OperationType
     path: Path
     destination: Optional[Path] = None
-    timestamp: datetime = None
+    timestamp: Optional[datetime] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.timestamp is None:
             self.timestamp = datetime.now()
 
     def is_video(self) -> bool:
         """Check if target is a video file."""
-        video_extensions = {'.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v'}
+        video_extensions = {".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v"}
         return self.path.suffix.lower() in video_extensions
 
 
 @dataclass
 class ValidationResult:
     """Result of video health validation."""
+
     path: Path
     decision: ValidationDecision
     timestamp: datetime
-    metadata: dict
+    metadata: dict[str, Any]
 
 
 class ValidationCache:
     """Cache of video validation results."""
+
     _cache: dict[Path, ValidationResult] = {}
 
     @classmethod
@@ -82,12 +87,12 @@ class ValidationCache:
         return cls._cache.get(path.resolve())
 
     @classmethod
-    def set(cls, path: Path, result: ValidationResult):
+    def set(cls, path: Path, result: ValidationResult) -> None:
         """Store validation result."""
         cls._cache[path.resolve()] = result
 
     @classmethod
-    def clear(cls):
+    def clear(cls) -> None:
         """Clear cache (for testing)."""
         cls._cache.clear()
 
@@ -100,7 +105,7 @@ class SafetyInvariants:
     These are checked before destructive operations to prevent data loss.
     """
 
-    def __init__(self, destination_root: Path, config=None):
+    def __init__(self, destination_root: Path, config: Any = None) -> None:
         """
         Initialize invariants with system configuration.
 
@@ -192,9 +197,7 @@ class SafetyInvariants:
     # ============================================================================
 
     def never_delete_archives_before_validation(
-        self,
-        operation: FileOperation,
-        extraction_verified: bool = False
+        self, operation: FileOperation, extraction_verified: bool = False
     ) -> bool:
         """
         I3: Archive files (.rar, .zip, .7z) are only deleted after successful
@@ -210,17 +213,19 @@ class SafetyInvariants:
         Returns:
             True if safe to delete archive, False otherwise
         """
-        archive_extensions = {'.rar', '.zip', '.7z', '.par2'}
+        archive_extensions = {".rar", ".zip", ".7z", ".par2"}
 
-        if operation.type == OperationType.DELETE:
-            if operation.path.suffix.lower() in archive_extensions:
-                if not extraction_verified:
-                    logger.error(
-                        f"INVARIANT VIOLATION I3: Deleting archive before validation\n"
-                        f"  Archive: {operation.path}\n"
-                        f"  Extraction verified: {extraction_verified}"
-                    )
-                    return False
+        if (
+            operation.type == OperationType.DELETE
+            and operation.path.suffix.lower() in archive_extensions
+            and not extraction_verified
+        ):
+            logger.error(
+                f"INVARIANT VIOLATION I3: Deleting archive before validation\n"
+                f"  Archive: {operation.path}\n"
+                f"  Extraction verified: {extraction_verified}"
+            )
+            return False
 
         return True
 
@@ -229,10 +234,7 @@ class SafetyInvariants:
     # ============================================================================
 
     def never_exceed_loop_bounds(
-        self,
-        loop_name: str,
-        iteration_count: int,
-        max_iterations: Optional[int] = None
+        self, loop_name: str, iteration_count: int, max_iterations: Optional[int] = None
     ) -> bool:
         """
         I4: All loops have explicit upper bounds to prevent infinite loops.
@@ -249,11 +251,7 @@ class SafetyInvariants:
             True if within bounds, False if exceeded
         """
         if max_iterations is None and self.config:
-            max_iterations = getattr(
-                self.config,
-                'archive_extraction_loop_limit',
-                100
-            )
+            max_iterations = getattr(self.config, "archive_extraction_loop_limit", 100)
 
         if max_iterations and iteration_count >= max_iterations:
             logger.error(
@@ -271,10 +269,7 @@ class SafetyInvariants:
     # ============================================================================
 
     def never_operate_without_disk_space(
-        self,
-        required_bytes: int,
-        available_bytes: int,
-        buffer_ratio: float = 1.5
+        self, required_bytes: int, available_bytes: int, buffer_ratio: float = 1.5
     ) -> bool:
         """
         I5: Operations requiring disk space have 1.5x buffer over estimated need.
@@ -322,12 +317,14 @@ class SafetyInvariants:
             True if filename is safe, False otherwise
         """
         dangerous_patterns = [
-            '..',           # Path traversal
-            '~',            # Home directory expansion
-            '$',            # Shell variable expansion
-            '`',            # Command substitution
-            '|', ';', '&',  # Shell operators
-            '\x00',         # Null byte
+            "..",  # Path traversal
+            "~",  # Home directory expansion
+            "$",  # Shell variable expansion
+            "`",  # Command substitution
+            "|",
+            ";",
+            "&",  # Shell operators
+            "\x00",  # Null byte
         ]
 
         # Check for dangerous patterns
@@ -342,17 +339,33 @@ class SafetyInvariants:
 
         # Check for control characters (0x00-0x1F)
         if any(ord(c) < 32 for c in filename):
-            logger.error(
-                f"INVARIANT VIOLATION I6: Control characters in filename\n"
-                f"  Filename: {repr(filename)}"
-            )
+            logger.error(f"INVARIANT VIOLATION I6: Control characters in filename\n  Filename: {repr(filename)}")
             return False
 
         # Check for Windows reserved names
         reserved_names = {
-            'CON', 'PRN', 'AUX', 'NUL',
-            'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
-            'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'
+            "CON",
+            "PRN",
+            "AUX",
+            "NUL",
+            "COM1",
+            "COM2",
+            "COM3",
+            "COM4",
+            "COM5",
+            "COM6",
+            "COM7",
+            "COM8",
+            "COM9",
+            "LPT1",
+            "LPT2",
+            "LPT3",
+            "LPT4",
+            "LPT5",
+            "LPT6",
+            "LPT7",
+            "LPT8",
+            "LPT9",
         }
 
         name_without_ext = Path(filename).stem.upper()
@@ -371,10 +384,7 @@ class SafetyInvariants:
     # ============================================================================
 
     def is_legal_state_transition(
-        self,
-        current_state: str,
-        next_state: str,
-        allowed_transitions: dict
+        self, current_state: str, next_state: str, allowed_transitions: dict[str, Collection[str]]
     ) -> bool:
         """
         I7: State machine transitions follow explicit allowed paths.
@@ -391,10 +401,7 @@ class SafetyInvariants:
             True if transition is legal, False otherwise
         """
         if current_state not in allowed_transitions:
-            logger.error(
-                f"INVARIANT VIOLATION I7: Unknown current state\n"
-                f"  State: {current_state}"
-            )
+            logger.error(f"INVARIANT VIOLATION I7: Unknown current state\n  State: {current_state}")
             return False
 
         if next_state not in allowed_transitions[current_state]:
@@ -412,11 +419,7 @@ class SafetyInvariants:
     # I8: Timeout Bounds - Never use unbounded timeouts
     # ============================================================================
 
-    def has_valid_timeout(
-        self,
-        operation_name: str,
-        timeout_seconds: Optional[int]
-    ) -> bool:
+    def has_valid_timeout(self, operation_name: str, timeout_seconds: Optional[int]) -> bool:
         """
         I8: All subprocess operations have explicit timeouts.
 
@@ -430,10 +433,7 @@ class SafetyInvariants:
             True if timeout is valid, False if None or unreasonably large
         """
         if timeout_seconds is None:
-            logger.error(
-                f"INVARIANT VIOLATION I8: No timeout specified\n"
-                f"  Operation: {operation_name}"
-            )
+            logger.error(f"INVARIANT VIOLATION I8: No timeout specified\n  Operation: {operation_name}")
             return False
 
         # Reasonable upper bound: 2 hours (7200 seconds)
@@ -443,7 +443,7 @@ class SafetyInvariants:
             logger.warning(
                 f"INVARIANT I8: Unusually large timeout\n"
                 f"  Operation: {operation_name}\n"
-                f"  Timeout: {timeout_seconds}s ({timeout_seconds/3600:.1f}h)\n"
+                f"  Timeout: {timeout_seconds}s ({timeout_seconds / 3600:.1f}h)\n"
                 f"  Max reasonable: {max_reasonable_timeout}s"
             )
             # Return True but log warning - may be legitimate for very large archives
@@ -455,11 +455,7 @@ class SafetyInvariants:
     # I9: Resource Cleanup - Never leave temp files after operation
     # ============================================================================
 
-    def verify_cleanup_complete(
-        self,
-        temp_paths: Set[Path],
-        operation_name: str
-    ) -> bool:
+    def verify_cleanup_complete(self, temp_paths: Set[Path], operation_name: str) -> bool:
         """
         I9: Temporary files are cleaned up even on operation failure.
 
@@ -478,8 +474,7 @@ class SafetyInvariants:
             logger.error(
                 f"INVARIANT VIOLATION I9: Temporary files not cleaned up\n"
                 f"  Operation: {operation_name}\n"
-                f"  Remaining files ({len(remaining_files)}):\n" +
-                '\n'.join(f"    {p}" for p in remaining_files[:5])
+                f"  Remaining files ({len(remaining_files)}):\n" + "\n".join(f"    {p}" for p in remaining_files[:5])
             )
             return False
 
@@ -489,11 +484,7 @@ class SafetyInvariants:
     # I10: Provenance Integrity - Never lose operation history
     # ============================================================================
 
-    def has_valid_provenance(
-        self,
-        target_path: Path,
-        expected_source: Optional[Path] = None
-    ) -> bool:
+    def has_valid_provenance(self, target_path: Path, expected_source: Optional[Path] = None) -> bool:
         """
         I10: Every file in destination has traceable origin.
 
@@ -533,11 +524,7 @@ class SafetyInvariants:
     # Convenience: Check all relevant invariants for an operation
     # ============================================================================
 
-    def check_before_operation(
-        self,
-        operation: FileOperation,
-        **kwargs
-    ) -> tuple[bool, list[str]]:
+    def check_before_operation(self, operation: FileOperation, **kwargs: Any) -> tuple[bool, list[str]]:
         """
         Check all relevant invariants before performing an operation.
 
@@ -548,7 +535,7 @@ class SafetyInvariants:
         Returns:
             Tuple of (all_passed, list_of_violations)
         """
-        violations = []
+        violations: list[str] = []
 
         # I1: Path safety
         if not self.never_write_outside_destination(operation):
@@ -559,12 +546,10 @@ class SafetyInvariants:
             violations.append("I2: Deleting validated video")
 
         # I3: Archive safety (if context provided)
-        if 'extraction_verified' in kwargs:
-            if not self.never_delete_archives_before_validation(
-                operation,
-                kwargs['extraction_verified']
-            ):
-                violations.append("I3: Deleting unverified archive")
+        if "extraction_verified" in kwargs and not self.never_delete_archives_before_validation(
+            operation, kwargs["extraction_verified"]
+        ):
+            violations.append("I3: Deleting unverified archive")
 
         # I6: Filename safety
         if operation.type in (OperationType.WRITE, OperationType.MOVE):
@@ -595,12 +580,12 @@ class InvariantEnforcer:
         enforcer.enforce_move(source, destination)
     """
 
-    def __init__(self, destination_root: Path, config=None):
+    def __init__(self, destination_root: Path, config: Any = None) -> None:
         self.invariants = SafetyInvariants(destination_root, config)
         self.violations_count = 0
         self.strict_mode = True  # Raise exceptions on violations
 
-    def enforce_delete(self, path: Path, **kwargs) -> bool:
+    def enforce_delete(self, path: Path, **kwargs: Any) -> bool:
         """
         Check invariants before deleting a file.
 
@@ -626,7 +611,7 @@ class InvariantEnforcer:
 
         return True
 
-    def enforce_move(self, source: Path, destination: Path, **kwargs) -> bool:
+    def enforce_move(self, source: Path, destination: Path, **kwargs: Any) -> bool:
         """
         Check invariants before moving a file.
 
@@ -653,7 +638,7 @@ class InvariantEnforcer:
 
         return True
 
-    def enforce_write(self, path: Path, **kwargs) -> bool:
+    def enforce_write(self, path: Path, **kwargs: Any) -> bool:
         """
         Check invariants before writing a file.
 
@@ -682,4 +667,5 @@ class InvariantEnforcer:
 
 class SafetyViolationError(Exception):
     """Raised when a safety invariant is violated."""
+
     pass

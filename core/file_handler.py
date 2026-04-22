@@ -7,21 +7,21 @@ import base64
 import logging
 import stat
 import time
-import psutil
+from contextlib import suppress
 from pathlib import Path
-from typing import List, Optional
-import sys
+from typing import Any, List, Optional
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils.defensive import InputValidator, StateValidator, ErrorRecovery, ValidationError
+import psutil
+
 from core.safety_invariants import InvariantEnforcer
+from utils.defensive import ErrorRecovery, InputValidator, StateValidator, ValidationError
 from utils.error_messages import log_error
 
 
 class FileHandler:
     """Handles file and folder operations."""
 
-    def __init__(self, config, stats=None, destination_root=None):
+    def __init__(self, config: Any, stats: Any = None, destination_root: Path | None = None) -> None:
         """
         Initialize the file handler.
 
@@ -41,7 +41,7 @@ class FileHandler:
             self.enforcer = InvariantEnforcer(destination_root, config)
 
         # Defensive: verify config has required attributes
-        required_attrs = ['video_extensions', 'removable_extensions']
+        required_attrs = ["video_extensions", "removable_extensions"]
         for attr in required_attrs:
             if not hasattr(config, attr):
                 raise ValidationError(f"Config missing required attribute: {attr}")
@@ -70,29 +70,29 @@ class FileHandler:
 
         # Fix misnamed video files like .mp4.1, .mkv.bak, etc.
         # Check if stem ends with a video extension
-        video_exts = {'.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg'}
+        video_exts = {".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v", ".mpg", ".mpeg"}
         name_lower = name.lower()
         for video_ext in video_exts:
             if name_lower.endswith(video_ext):
                 # file.mp4.1 -> name="file.mp4", ext=".1"
                 # Change to: name="file", ext=".mp4"
-                name = name[:-len(video_ext)]
+                name = name[: -len(video_ext)]
                 ext = video_ext
                 logging.info(f"Fixed misnamed video extension: {filename} -> {name}{ext}")
                 break
 
         # Replace forbidden Windows characters with safe alternatives
         replacements = {
-            '<': '(',
-            '>': ')',
-            ':': '-',
+            "<": "(",
+            ">": ")",
+            ":": "-",
             '"': "'",
-            '/': '-',
-            '\\': '-',
-            '|': '-',
-            '?': '',
-            '*': '',
-            '\x00': '',  # null
+            "/": "-",
+            "\\": "-",
+            "|": "-",
+            "?": "",
+            "*": "",
+            "\x00": "",  # null
         }
 
         for bad_char, replacement in replacements.items():
@@ -102,61 +102,178 @@ class FileHandler:
         # Manual transliteration map for common characters
         transliteration_map = {
             # Cyrillic
-            'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'Yo', 'Ж': 'Zh',
-            'З': 'Z', 'И': 'I', 'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M', 'Н': 'N', 'О': 'O',
-            'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U', 'Ф': 'F', 'Х': 'Kh', 'Ц': 'Ts',
-            'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch', 'Ъ': '', 'Ы': 'Y', 'Ь': '', 'Э': 'E', 'Ю': 'Yu', 'Я': 'Ya',
-            'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo', 'ж': 'zh',
-            'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o',
-            'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'kh', 'ц': 'ts',
-            'ч': 'ch', 'ш': 'sh', 'щ': 'shch', 'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+            "А": "A",
+            "Б": "B",
+            "В": "V",
+            "Г": "G",
+            "Д": "D",
+            "Е": "E",
+            "Ё": "Yo",
+            "Ж": "Zh",
+            "З": "Z",
+            "И": "I",
+            "Й": "Y",
+            "К": "K",
+            "Л": "L",
+            "М": "M",
+            "Н": "N",
+            "О": "O",
+            "П": "P",
+            "Р": "R",
+            "С": "S",
+            "Т": "T",
+            "У": "U",
+            "Ф": "F",
+            "Х": "Kh",
+            "Ц": "Ts",
+            "Ч": "Ch",
+            "Ш": "Sh",
+            "Щ": "Shch",
+            "Ъ": "",
+            "Ы": "Y",
+            "Ь": "",
+            "Э": "E",
+            "Ю": "Yu",
+            "Я": "Ya",
+            "а": "a",
+            "б": "b",
+            "в": "v",
+            "г": "g",
+            "д": "d",
+            "е": "e",
+            "ё": "yo",
+            "ж": "zh",
+            "з": "z",
+            "и": "i",
+            "й": "y",
+            "к": "k",
+            "л": "l",
+            "м": "m",
+            "н": "n",
+            "о": "o",
+            "п": "p",
+            "р": "r",
+            "с": "s",
+            "т": "t",
+            "у": "u",
+            "ф": "f",
+            "х": "kh",
+            "ц": "ts",
+            "ч": "ch",
+            "ш": "sh",
+            "щ": "shch",
+            "ъ": "",
+            "ы": "y",
+            "ь": "",
+            "э": "e",
+            "ю": "yu",
+            "я": "ya",
             # Common accented characters
-            'á': 'a', 'à': 'a', 'â': 'a', 'ä': 'a', 'ã': 'a', 'å': 'a',
-            'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
-            'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i',
-            'ó': 'o', 'ò': 'o', 'ô': 'o', 'ö': 'o', 'õ': 'o',
-            'ú': 'u', 'ù': 'u', 'û': 'u', 'ü': 'u',
-            'ñ': 'n', 'ç': 'c', 'ß': 'ss',
-            'Á': 'A', 'À': 'A', 'Â': 'A', 'Ä': 'A', 'Ã': 'A', 'Å': 'A',
-            'É': 'E', 'È': 'E', 'Ê': 'E', 'Ë': 'E',
-            'Í': 'I', 'Ì': 'I', 'Î': 'I', 'Ï': 'I',
-            'Ó': 'O', 'Ò': 'O', 'Ô': 'O', 'Ö': 'O', 'Õ': 'O',
-            'Ú': 'U', 'Ù': 'U', 'Û': 'U', 'Ü': 'U',
-            'Ñ': 'N', 'Ç': 'C',
+            "á": "a",
+            "à": "a",
+            "â": "a",
+            "ä": "a",
+            "ã": "a",
+            "å": "a",
+            "é": "e",
+            "è": "e",
+            "ê": "e",
+            "ë": "e",
+            "í": "i",
+            "ì": "i",
+            "î": "i",
+            "ï": "i",
+            "ó": "o",
+            "ò": "o",
+            "ô": "o",
+            "ö": "o",
+            "õ": "o",
+            "ú": "u",
+            "ù": "u",
+            "û": "u",
+            "ü": "u",
+            "ñ": "n",
+            "ç": "c",
+            "ß": "ss",
+            "Á": "A",
+            "À": "A",
+            "Â": "A",
+            "Ä": "A",
+            "Ã": "A",
+            "Å": "A",
+            "É": "E",
+            "È": "E",
+            "Ê": "E",
+            "Ë": "E",
+            "Í": "I",
+            "Ì": "I",
+            "Î": "I",
+            "Ï": "I",
+            "Ó": "O",
+            "Ò": "O",
+            "Ô": "O",
+            "Ö": "O",
+            "Õ": "O",
+            "Ú": "U",
+            "Ù": "U",
+            "Û": "U",
+            "Ü": "U",
+            "Ñ": "N",
+            "Ç": "C",
         }
 
         # Apply transliteration
-        transliterated = []
+        transliterated: list[str] = []
         for char in name:
             if char in transliteration_map:
                 transliterated.append(transliteration_map[char])
             else:
                 transliterated.append(char)
-        name = ''.join(transliterated)
+        name = "".join(transliterated)
 
         # Filter to ASCII printable characters only
-        name = ''.join(char for char in name if 32 <= ord(char) < 127)
+        name = "".join(char for char in name if 32 <= ord(char) < 127)
 
         # Normalize multiple separators
-        name = name.replace('..', '.').replace('--', '-').replace('__', '_')
-        name = name.replace('  ', ' ')
+        name = name.replace("..", ".").replace("--", "-").replace("__", "_")
+        name = name.replace("  ", " ")
 
         # Remove leading/trailing dots, spaces, underscores, dashes
-        name = name.strip('. _-')
+        name = name.strip(". _-")
 
         # Ensure name isn't empty after sanitization (use timestamp fallback)
         if not name:
             import time
-            name = f'file_{int(time.time())}'
+
+            name = f"file_{int(time.time())}"
 
         # Windows reserved names (CON, PRN, AUX, etc.) - add underscore suffix
         reserved_names = {
-            'CON', 'PRN', 'AUX', 'NUL',
-            'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
-            'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'
+            "CON",
+            "PRN",
+            "AUX",
+            "NUL",
+            "COM1",
+            "COM2",
+            "COM3",
+            "COM4",
+            "COM5",
+            "COM6",
+            "COM7",
+            "COM8",
+            "COM9",
+            "LPT1",
+            "LPT2",
+            "LPT3",
+            "LPT4",
+            "LPT5",
+            "LPT6",
+            "LPT7",
+            "LPT8",
+            "LPT9",
         }
         if name.upper() in reserved_names:
-            name = name + '_'
+            name = name + "_"
 
         # Limit length (Windows MAX_PATH is 260, leave room for path)
         max_name_length = 200
@@ -165,35 +282,39 @@ class FileHandler:
 
         return name + ext
 
-    def find_video_files(self, folder: Path) -> List[Path]:
+    def find_video_files(self, folder: str | Path) -> List[Path]:
         """
         Recursively find video files in the given folder.
-        
+
         Args:
             folder: Path to search
-            
+
         Returns:
             List of paths to video files (empty list if error)
         """
         # Preserve caller path representation (e.g., Windows short path aliases)
         # so returned paths are comparable with caller-provided Path objects.
-        original_folder = folder if isinstance(folder, (str, Path)) else None
+        original_folder = folder
 
         # Defensive: validate inputs
         try:
-            folder = InputValidator.validate_path(folder, must_exist=True, must_be_dir=True)
+            validated_folder = InputValidator.validate_path(folder, must_exist=True, must_be_dir=True)
         except ValidationError as e:
             logging.error(f"Invalid folder path: {e}")
             return []
-        
+        if validated_folder is None:
+            logging.error("Validated folder path unexpectedly resolved to None")
+            return []
+        folder = validated_folder
+
         try:
             video_extensions = self.config.video_extensions
-            
+
             # Defensive: validate extensions list
             if not video_extensions or not isinstance(video_extensions, list):
                 logging.error("Invalid video_extensions config")
                 return []
-            
+
             # Defensive: check folder is accessible
             if not folder.exists() or not folder.is_dir():
                 logging.warning(f"Folder not accessible: {folder}")
@@ -202,37 +323,33 @@ class FileHandler:
             # For relative inputs, keep resolved absolute folder for returned paths.
             if isinstance(original_folder, Path):
                 result_base = original_folder if original_folder.is_absolute() else folder
-            elif isinstance(original_folder, str):
+            else:
                 original_as_path = Path(original_folder)
                 result_base = original_as_path if original_as_path.is_absolute() else folder
-            else:
-                result_base = folder
 
             # Only look for videos directly in this folder (not recursive)
             # Subfolders are processed separately via _process_subfolder
             return [
-                result_base / f.name
-                for f in folder.iterdir()
-                if f.is_file() and f.suffix.lower() in video_extensions
+                result_base / f.name for f in folder.iterdir() if f.is_file() and f.suffix.lower() in video_extensions
             ]
-            
+
         except Exception as e:
             logging.error(f"Error finding video files in {folder}: {e}")
             return []
-    
+
     def contains_non_video_files(self, folder: Path) -> bool:
         """
         Check if folder contains files other than video files.
-        
+
         Args:
             folder: Path to check
-            
+
         Returns:
             True if non-video files exist, False otherwise
         """
         video_extensions = self.config.video_extensions
         try:
-            for file in folder.rglob('*'):
+            for file in folder.rglob("*"):
                 try:
                     if file.is_file() and file.suffix.lower() not in video_extensions:
                         return True
@@ -243,26 +360,26 @@ class FileHandler:
             # Fail-safe: unreadable tree should be treated as non-video content present
             logging.warning(f"Could not fully scan {folder} for non-video files: {e}")
             return True
-    
+
     def contains_unwanted_files(self, folder: Path) -> bool:
         """
         Check if folder contains files other than video, PAR2, or RAR files.
-        
+
         Args:
             folder: Path to check
-            
+
         Returns:
             True if unwanted files exist, False otherwise
         """
         video_extensions = self.config.video_extensions
-        
+
         try:
-            for file in folder.rglob('*'):
+            for file in folder.rglob("*"):
                 try:
                     if file.is_file() and not (
-                        file.suffix.lower() in video_extensions or
-                        file.suffix.lower() == '.par2' or
-                        file.suffix.lower() == '.rar'
+                        file.suffix.lower() in video_extensions
+                        or file.suffix.lower() == ".par2"
+                        or file.suffix.lower() == ".rar"
                     ):
                         return True
                 except (OSError, PermissionError):
@@ -272,9 +389,8 @@ class FileHandler:
             # Fail-safe: unreadable tree should be treated as containing unwanted files
             logging.warning(f"Could not fully scan {folder} for unwanted files: {e}")
             return True
-    
-    def is_folder_empty_or_removable(self, folder: Path, par2_error: bool = False,
-                                     archive_error: bool = False) -> bool:
+
+    def is_folder_empty_or_removable(self, folder: Path, par2_error: bool = False, archive_error: bool = False) -> bool:
         """
         Check if folder is empty or contains only removable files.
 
@@ -326,16 +442,16 @@ class FileHandler:
             # Count image files (distinguish between single cover art vs image collection)
             if file_ext in image_extensions:
                 image_count += 1
-                try:
+                with suppress(OSError, FileNotFoundError):
                     image_total_bytes += file.stat().st_size
-                except (OSError, FileNotFoundError):
-                    pass
                 # Match minimum-threshold semantics: collections at exactly
                 # min_image_files and >10MB are preserved.
                 image_total_mb = image_total_bytes / (1024 * 1024)
                 min_images = self.config.min_image_files
                 if image_count >= min_images and image_total_mb > 10:
-                    logging.info(f"Folder '{folder}' not deleted: contains image collection ({image_count} images, {image_total_mb:.1f}MB)")
+                    logging.info(
+                        f"Folder '{folder}' not deleted: contains image collection ({image_count} images, {image_total_mb:.1f}MB)"
+                    )
                     return False
                 continue  # Single images and small collections (cover art) are treated as removable
 
@@ -345,32 +461,36 @@ class FileHandler:
             # Also check for misnamed videos like .mp4.1 (treat as removable if extraction failed)
             # Also check for files with no extension (typically junk in download folders)
             filename_lower = file.name.lower()
-            is_misnamed_video = any(f'.{ext}.' in filename_lower for ext in ['mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm'])
-            if (file_ext in removable_extensions or
-                file_ext == '' or  # Files with no extension (e.g., "abusefile")
-                (file_ext.startswith('.r') and len(file_ext) == 3 and file_ext[2:].isdigit()) or
-                '.rar.' in filename_lower or '.7z.' in filename_lower or '.part' in filename_lower or
-                (is_misnamed_video and archive_error)):
+            is_misnamed_video = any(
+                f".{ext}." in filename_lower for ext in ["mp4", "mkv", "avi", "mov", "wmv", "flv", "webm"]
+            )
+            if (
+                file_ext in removable_extensions
+                or file_ext == ""  # Files with no extension (e.g., "abusefile")
+                or (file_ext.startswith(".r") and len(file_ext) == 3 and file_ext[2:].isdigit())
+                or ".rar." in filename_lower
+                or ".7z." in filename_lower
+                or ".part" in filename_lower
+                or (is_misnamed_video and archive_error)
+                or (file_ext == ".par2" and par2_error)
+                or archive_error
+                and (
+                    file_ext == ".rar"
+                    or file_ext == ".7z"
+                    or file_ext.startswith(".7z.")
+                    or (file_ext.startswith(".r") and file_ext[2:].isdigit())
+                )
+            ):
                 continue
 
-            # If PAR2 processing failed, treat PAR2 files as removable junk
-            elif file_ext == '.par2' and par2_error:
-                continue
-
-            # If archive extraction failed, treat archives as removable junk
-            elif archive_error and (file_ext == '.rar' or file_ext == '.7z' or
-                                   file_ext.startswith('.7z.') or
-                                   (file_ext.startswith('.r') and file_ext[2:].isdigit())):
-                continue
-
-            else:
-                logging.info(f"Folder '{folder}' not deleted: contains non-removable file '{file.name}'")
-                return False
+            logging.info(f"Folder '{folder}' not deleted: contains non-removable file '{file.name}'")
+            return False
 
         return True
-    
-    def safe_delete_folder(self, folder: Path, max_attempts: Optional[int] = None,
-                          par2_error: bool = False, archive_error: bool = False) -> bool:
+
+    def safe_delete_folder(
+        self, folder: Path, max_attempts: Optional[int] = None, par2_error: bool = False, archive_error: bool = False
+    ) -> bool:
         """
         Safely delete a folder with retry logic and fallback methods.
         Handles special characters in filenames (brackets, etc.) and locked files.
@@ -388,8 +508,9 @@ class FileHandler:
             True if successful, False otherwise
         """
         if max_attempts is None:
-            max_attempts = getattr(self.config, 'folder_delete_max_attempts', 2)
-        retry_delay = getattr(self.config, 'folder_delete_retry_delay', 5)
+            max_attempts = getattr(self.config, "folder_delete_max_attempts", 2)
+        max_attempts = max_attempts or 2
+        retry_delay = getattr(self.config, "folder_delete_retry_delay", 5) or 5
 
         if self._is_linklike_path(folder):
             logging.warning(f"Folder {folder} is a symlink or junction; refusing to delete")
@@ -425,14 +546,10 @@ class FileHandler:
         logging.info(f"Trying PowerShell force delete for {folder}")
         try:
             import subprocess
+
             # Use an encoded command so the folder path is never parsed as
             # PowerShell command text, even if it contains metacharacters.
-            subprocess.run(
-                self._build_powershell_delete_command(folder),
-                capture_output=True,
-                text=True,
-                timeout=60
-            )
+            subprocess.run(self._build_powershell_delete_command(folder), capture_output=True, text=True, timeout=60)
             # Check if folder still exists
             if not folder.exists():
                 logging.info(f"PowerShell successfully deleted folder {folder}")
@@ -458,8 +575,8 @@ class FileHandler:
             "if ($reparse) { exit 3 }; "
             "Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue"
         )
-        encoded_script = base64.b64encode(script.encode('utf-16le')).decode('ascii')
-        return ['powershell', '-NoProfile', '-EncodedCommand', encoded_script]
+        encoded_script = base64.b64encode(script.encode("utf-16le")).decode("ascii")
+        return ["powershell", "-NoProfile", "-EncodedCommand", encoded_script]
 
     def _is_linklike_path(self, path: Path) -> bool:
         """Return True for symlinks, junctions, and other reparse points."""
@@ -470,11 +587,11 @@ class FileHandler:
             return True
 
         try:
-            file_attributes = getattr(path.lstat(), 'st_file_attributes', 0)
+            file_attributes = getattr(path.lstat(), "st_file_attributes", 0)
         except (OSError, PermissionError):
             return True
 
-        reparse_flag = getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0)
+        reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
         return bool(reparse_flag and file_attributes & reparse_flag)
 
     def _tree_contains_linklike_entries(self, folder: Path) -> bool:
@@ -514,7 +631,7 @@ class FileHandler:
 
         folder.rmdir()
 
-    def _kill_processes_using_folder(self, folder: Path):
+    def _kill_processes_using_folder(self, folder: Path) -> None:
         """
         Kill processes that have files open in the given folder.
 
@@ -523,10 +640,11 @@ class FileHandler:
         """
         try:
             import psutil
-            folder_str = str(folder)
-            killed_pids = set()
 
-            for proc in psutil.process_iter(['pid', 'name']):
+            folder_str = str(folder)
+            killed_pids: set[int] = set()
+
+            for proc in psutil.process_iter(["pid", "name"]):
                 try:
                     # Check if process has any files open in this folder
                     for file in proc.open_files():
@@ -543,33 +661,38 @@ class FileHandler:
                 time.sleep(2)  # Give processes time to die
         except Exception as e:
             logging.warning(f"Error killing processes for {folder}: {e}")
-    
+
     def move_file(self, source: Path, destination_dir: Path) -> bool:
         """
         Move a file to the destination directory.
-        
+
         Args:
             source: Path to source file
             destination_dir: Path to destination directory
-            
+
         Returns:
             True if successful, False otherwise
         """
         # Defensive: validate inputs
         try:
-            source = InputValidator.validate_path(source, must_exist=True, must_be_file=True)
-            destination_dir = InputValidator.validate_path(destination_dir, must_exist=True, must_be_dir=True)
+            validated_source = InputValidator.validate_path(source, must_exist=True, must_be_file=True)
+            validated_destination_dir = InputValidator.validate_path(destination_dir, must_exist=True, must_be_dir=True)
         except ValidationError as e:
             logging.error(f"Invalid path in move_file: {e}")
             return False
-        
+        if validated_source is None or validated_destination_dir is None:
+            logging.error("Validated move paths unexpectedly resolved to None")
+            return False
+        source = validated_source
+        destination_dir = validated_destination_dir
+
         # Defensive: check source is accessible
         if not StateValidator.check_file_accessible(source):
             log_error(
                 what_failed=f"Cannot move {source.name}",
                 reason="Source file not accessible or doesn't exist",
                 action="Check if file exists and is not locked by another process",
-                location=source.parent
+                location=source.parent,
             )
             return False
 
@@ -579,26 +702,27 @@ class FileHandler:
                 what_failed=f"Cannot move {source.name}",
                 reason="Destination directory not writable",
                 action="Check folder permissions and disk space",
-                location=destination_dir
+                location=destination_dir,
             )
             return False
-        
+
         # Defensive: check disk space
         try:
             file_size_mb = source.stat().st_size / (1024 * 1024)
             if not StateValidator.check_disk_space(destination_dir, required_mb=int(file_size_mb * 1.1)):
                 import shutil
+
                 available = shutil.disk_usage(destination_dir).free / (1024 * 1024)
                 log_error(
                     what_failed=f"Cannot move {source.name}",
                     reason=f"Insufficient disk space (need {int(file_size_mb * 1.1)}MB, have {int(available)}MB)",
                     action="Free up disk space in destination",
-                    location=destination_dir
+                    location=destination_dir,
                 )
                 return False
         except Exception as e:
             logging.warning(f"Cannot check disk space: {e}")
-        
+
         # Perform move with defensive error recovery
         try:
             # Sanitize filename before moving
@@ -617,7 +741,7 @@ class FileHandler:
             if sanitized_name != source.name:
                 logging.info(f"Sanitized filename: '{source.name}' -> '{sanitized_name}'")
                 if self.stats:
-                    self.stats['files_sanitized'] += 1
+                    self.stats["files_sanitized"] += 1
 
             # Defensive: check if destination already exists
             if destination_file.exists():
@@ -630,7 +754,7 @@ class FileHandler:
                     destination_file = destination_dir / f"{base}_{counter}{suffix}"
                     counter += 1
                 logging.info(f"Using unique name: {destination_file.name}")
-            
+
             # Use error recovery helper
             if ErrorRecovery.safe_move(source, destination_file):
                 logging.info(f"Moved file: {source.name} -> {destination_file}")
@@ -640,7 +764,7 @@ class FileHandler:
                     what_failed=f"Move failed: {source.name}",
                     reason="shutil.move() returned None or False",
                     action="Check file permissions and disk space",
-                    location=source.parent
+                    location=source.parent,
                 )
                 return False
 
@@ -649,13 +773,12 @@ class FileHandler:
                 what_failed=f"Error moving file: {source.name}",
                 reason=str(e),
                 action="Check file is not locked and destination is accessible",
-                location=source.parent
+                location=source.parent,
             )
             return False
-    
+
     def delete_video_file_with_retry(
-        self, video_file: Path, max_attempts: Optional[int] = None,
-        retry_delay: Optional[int] = None
+        self, video_file: Path, max_attempts: Optional[int] = None, retry_delay: Optional[int] = None
     ) -> bool:
         """
         Delete a video file with retry logic and exponential backoff.
@@ -673,9 +796,11 @@ class FileHandler:
             True if successful, False otherwise
         """
         if max_attempts is None:
-            max_attempts = getattr(self.config, 'file_delete_max_attempts', 5)
+            max_attempts = getattr(self.config, "file_delete_max_attempts", 5)
         if retry_delay is None:
-            retry_delay = getattr(self.config, 'file_delete_retry_delay', 1)
+            retry_delay = getattr(self.config, "file_delete_retry_delay", 1)
+        max_attempts = max_attempts or 5
+        retry_delay = retry_delay or 1
 
         # Safety check: enforce invariants before deletion if enforcer is configured
         if self.enforcer:
@@ -708,13 +833,12 @@ class FileHandler:
             what_failed=f"Failed to delete video: {video_file.name}",
             reason=f"File locked or inaccessible after {max_attempts} attempts",
             action="Close any programs using this file or restart system",
-            location=video_file.parent
+            location=video_file.parent,
         )
         return False
-    
+
     def wait_for_file_release(
-        self, file_path: str, max_attempts: Optional[int] = None,
-        delay: Optional[int] = None
+        self, file_path: str, max_attempts: Optional[int] = None, delay: Optional[int] = None
     ) -> bool:
         """
         Wait for a file to be released by other processes.
@@ -728,47 +852,46 @@ class FileHandler:
             True if file is released, False if timeout
         """
         if max_attempts is None:
-            max_attempts = getattr(self.config, 'file_lock_wait_attempts', 10)
+            max_attempts = getattr(self.config, "file_lock_wait_attempts", 10)
         if delay is None:
-            delay = getattr(self.config, 'file_lock_wait_delay', 1)
-        for attempt in range(max_attempts):
+            delay = getattr(self.config, "file_lock_wait_delay", 1)
+        max_attempts = max_attempts or 10
+        delay = delay or 1
+        for _attempt in range(max_attempts):
             is_locked = False
-            
-            for proc in psutil.process_iter(attrs=['pid', 'name']):
+
+            for proc in psutil.process_iter(attrs=["pid", "name"]):
                 try:
                     if file_path in (f.path for f in proc.open_files()):
                         is_locked = True
                         break
                 except (psutil.AccessDenied, psutil.NoSuchProcess):
                     continue
-            
+
             if not is_locked:
                 return True
-            
+
             time.sleep(delay)
-        
+
         return False
-    
-    def _terminate_related_processes(
-        self, file_name: str,
-        allowed_processes: Optional[List[str]] = None
-    ):
+
+    def _terminate_related_processes(self, file_name: str, allowed_processes: Optional[List[str]] = None) -> None:
         """
         Terminate processes that might be using the file.
-        
+
         Args:
             file_name: Name of the file
             allowed_processes: List of process names to terminate
         """
         if allowed_processes is None:
-            allowed_processes = ['ffmpeg', '7z']
-        
-        for process in psutil.process_iter():
+            allowed_processes = ["ffmpeg", "7z"]
+
+        for process in psutil.process_iter(["pid", "name"]):
             try:
-                process_info = process.as_dict(attrs=['pid', 'name'])
-                if process_info['name'] in allowed_processes and file_name in process.cmdline():
+                process_name = process.name()
+                process_pid = process.pid
+                if process_name in allowed_processes and file_name in process.cmdline():
                     process.terminate()
-                    logging.info(f"Terminated process {process_info['name']} "
-                               f"(PID: {process_info['pid']}) using file {file_name}")
+                    logging.info(f"Terminated process {process_name} (PID: {process_pid}) using file {file_name}")
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 pass

@@ -8,26 +8,18 @@ Usage:
     vhealth "C:\Videos" --min-resolution 720p  # Flag videos below 720p
 """
 
-import sys
 import argparse
 import logging
 import stat
+import sys
 from pathlib import Path
-from colorama import init, Fore, Style
 from typing import Dict, List, Optional, Tuple, cast
 
-try:
-    from core import Config
-    from core.video_processor import VideoProcessor
-    from utils.safety import SubprocessSafety
-except ModuleNotFoundError:
-    # Fallback: support running vhealth.py directly from outside repo root.
-    script_dir = Path(__file__).resolve().parent
-    if str(script_dir) not in sys.path:
-        sys.path.insert(0, str(script_dir))
-    from core import Config
-    from core.video_processor import VideoProcessor
-    from utils.safety import SubprocessSafety
+from colorama import Fore, Style, init
+
+from core import Config
+from core.video_processor import VideoProcessor
+from utils.safety import SubprocessSafety
 
 init(autoreset=True)
 
@@ -98,7 +90,7 @@ class VideoHealthChecker:
                         continue
                     if size_mb < self.sample_threshold_mb:  # Small file
                         small_files.append(video)
-                        if 'sample' in video.name.lower():  # Also has "sample" in name
+                        if "sample" in video.name.lower():  # Also has "sample" in name
                             sample_name_files.append(video)
 
                 # Check resolution if specified
@@ -107,17 +99,21 @@ class VideoHealthChecker:
                     if non_small:
                         print(f"{Style.DIM}Checking resolution ({len(non_small)} files)...{Style.RESET_ALL}\n")
                         for i, video in enumerate(non_small, 1):
-                            filename = video.name[:70] + '...' if len(video.name) > 70 else video.name
-                            print(f"\r  {Style.DIM}[{i}/{len(non_small)}]{Style.RESET_ALL} {filename}", end='', flush=True)
+                            filename = video.name[:70] + "..." if len(video.name) > 70 else video.name
+                            print(
+                                f"\r  {Style.DIM}[{i}/{len(non_small)}]{Style.RESET_ALL} {filename}", end="", flush=True
+                            )
                             resolution = self._get_resolution(video)
                             if resolution and not self._meets_min_resolution(resolution, min_resolution):
                                 res_str = f"{resolution[0]}x{resolution[1]}"
-                                print(f"\r  {Style.DIM}[{i}/{len(non_small)}]{Style.RESET_ALL} {filename[:50]}... {Fore.YELLOW}{res_str}{Style.RESET_ALL}")
+                                print(
+                                    f"\r  {Style.DIM}[{i}/{len(non_small)}]{Style.RESET_ALL} {filename[:50]}... {Fore.YELLOW}{res_str}{Style.RESET_ALL}"
+                                )
                                 self.low_res_videos.append((video, resolution))
                             else:
                                 # Clear line for good files
-                                print(f"\r{' ' * 120}\r", end='', flush=True)
-                        print(f"\r{' ' * 120}\r", end='', flush=True)  # Clear final line
+                                print(f"\r{' ' * 120}\r", end="", flush=True)
+                        print(f"\r{' ' * 120}\r", end="", flush=True)  # Clear final line
 
                 # Store results
                 self.sample_videos = small_files
@@ -128,13 +124,18 @@ class VideoHealthChecker:
                     remaining_count = len(video_files) - total_bad
                     print(f"\n{Fore.YELLOW}Pre-scan results:{Style.RESET_ALL}")
                     if small_files:
-                        print(f"  {len(small_files)} small {Style.DIM}(<{self.sample_threshold_mb}MB){Style.RESET_ALL}", end='')
+                        print(
+                            f"  {len(small_files)} small {Style.DIM}(<{self.sample_threshold_mb}MB){Style.RESET_ALL}",
+                            end="",
+                        )
                         if sample_name_files:
                             print(f" {Style.DIM}({len(sample_name_files)} samples){Style.RESET_ALL}")
                         else:
                             print()
                     if self.low_res_videos:
-                        print(f"  {len(self.low_res_videos)} low-res {Style.DIM}(below {min_resolution}){Style.RESET_ALL}")
+                        print(
+                            f"  {len(self.low_res_videos)} low-res {Style.DIM}(below {min_resolution}){Style.RESET_ALL}"
+                        )
                     print(f"  {Fore.WHITE}{remaining_count}{Style.RESET_ALL} {Style.DIM}remaining{Style.RESET_ALL}\n")
 
                     # Auto-delete if --clean flag, otherwise ask
@@ -142,10 +143,10 @@ class VideoHealthChecker:
                         delete_bad_now = True
                         print(f"{Style.DIM}Deleting and continuing health check...{Style.RESET_ALL}\n")
                     else:
-                        print("Delete these and continue health check? [y/N]: ", end='')
+                        print("Delete these and continue health check? [y/N]: ", end="")
                         choice = input().strip().lower()
 
-                        if choice in ('y', 'yes'):
+                        if choice in ("y", "yes"):
                             delete_bad_now = True
                         else:
                             print(f"{Style.DIM}Keeping all files, checking everything...{Style.RESET_ALL}\n")
@@ -162,7 +163,13 @@ class VideoHealthChecker:
 
             # Check for duplicates BEFORE health check (no point checking same file twice)
             if not skip_health:
-                remaining_files = [v for v in video_files if not (delete_bad_now and (v in self.sample_videos or any(vv == v for vv, _ in self.low_res_videos)))]
+                remaining_files = [
+                    v
+                    for v in video_files
+                    if not (
+                        delete_bad_now and (v in self.sample_videos or any(vv == v for vv, _ in self.low_res_videos))
+                    )
+                ]
                 print(f"\n{Style.DIM}Checking for duplicates...{Style.RESET_ALL}")
                 self._detect_duplicates(remaining_files)
 
@@ -179,10 +186,15 @@ class VideoHealthChecker:
 
             # Now do health checks on remaining videos (if not skipping)
             if not skip_health:
-                videos_to_check = [v for v in video_files
-                                  if v.exists()
-                                  and not (delete_bad_now and (v in self.sample_videos or any(vv == v for vv, _ in self.low_res_videos)))
-                                  and v not in [vv for vv, _, _ in self.duplicate_videos]]
+                videos_to_check = [
+                    v
+                    for v in video_files
+                    if v.exists()
+                    and not (
+                        delete_bad_now and (v in self.sample_videos or any(vv == v for vv, _ in self.low_res_videos))
+                    )
+                    and v not in [vv for vv, _, _ in self.duplicate_videos]
+                ]
 
                 if not videos_to_check:
                     return
@@ -196,13 +208,14 @@ class VideoHealthChecker:
 
                 # Track timing for ETA
                 import time
+
                 start_time = time.time()
 
                 # Modern spinner frames
-                spinner_frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+                spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
                 for i, video in enumerate(videos_to_check, 1):
-                    filename = video.name[:60] + '...' if len(video.name) > 60 else video.name
+                    filename = video.name[:60] + "..." if len(video.name) > 60 else video.name
 
                     # Skip if file no longer exists
                     if not video.exists():
@@ -217,33 +230,44 @@ class VideoHealthChecker:
                         eta_seconds = avg_time_per_file * eta_remaining_files
 
                         if eta_seconds >= 3600:
-                            eta_str = f"{Style.DIM}~{eta_seconds/3600:.1f}h{Style.RESET_ALL}"
+                            eta_str = f"{Style.DIM}~{eta_seconds / 3600:.1f}h{Style.RESET_ALL}"
                         elif eta_seconds >= 60:
-                            eta_str = f"{Style.DIM}~{eta_seconds/60:.0f}m{Style.RESET_ALL}"
+                            eta_str = f"{Style.DIM}~{eta_seconds / 60:.0f}m{Style.RESET_ALL}"
                         else:
                             eta_str = f"{Style.DIM}~{eta_seconds:.0f}s{Style.RESET_ALL}"
 
                     # Check the video with animated spinner
                     import threading
+
                     stop_spinner = threading.Event()
                     spinner_idx = [0]  # Use list to allow modification in thread
 
-                    def animate_spinner():
+                    def animate_spinner(
+                        stop_event=stop_spinner,
+                        counters=lambda: (healthy_count, bad_count),
+                        spinner_state=spinner_idx,
+                        eta_label=eta_str,
+                        current_file=filename,
+                        progress_index=i,
+                    ):
                         """Update spinner while video check runs."""
-                        while not stop_spinner.is_set():
-                            counts = f"{Fore.GREEN}{healthy_count} ok{Style.RESET_ALL}"
-                            if bad_count > 0:
-                                counts += f"  {Fore.RED}{bad_count} bad{Style.RESET_ALL}"
+                        while not stop_event.is_set():
+                            healthy, bad = counters()
+                            counts = f"{Fore.GREEN}{healthy} ok{Style.RESET_ALL}"
+                            if bad > 0:
+                                counts += f"  {Fore.RED}{bad} bad{Style.RESET_ALL}"
 
-                            spinner = spinner_frames[spinner_idx[0] % len(spinner_frames)]
-                            status_line = f"  {counts}  {Style.DIM}[{i}/{len(videos_to_check)}]{Style.RESET_ALL}"
-                            if eta_str:
-                                status_line += f"  {eta_str}"
-                            status_line += f"  {Fore.CYAN}{spinner}{Style.RESET_ALL} {filename[:45]}"
+                            spinner = spinner_frames[spinner_state[0] % len(spinner_frames)]
+                            status_line = (
+                                f"  {counts}  {Style.DIM}[{progress_index}/{len(videos_to_check)}]{Style.RESET_ALL}"
+                            )
+                            if eta_label:
+                                status_line += f"  {eta_label}"
+                            status_line += f"  {Fore.CYAN}{spinner}{Style.RESET_ALL} {current_file[:45]}"
 
                             # Clear line first, then print status
-                            print(f"\r{' ' * 120}\r{status_line}", end='', flush=True)
-                            spinner_idx[0] += 1
+                            print(f"\r{' ' * 120}\r{status_line}", end="", flush=True)
+                            spinner_state[0] += 1
                             time.sleep(0.1)  # Update 10 times per second
 
                     # Start spinner animation in background thread
@@ -258,7 +282,7 @@ class VideoHealthChecker:
                     spinner_thread.join(timeout=0.2)
 
                     # Update counts after check
-                    if result == 'healthy':
+                    if result == "healthy":
                         healthy_count += 1
                     else:
                         # Problem found - just count it, show at end
@@ -266,8 +290,8 @@ class VideoHealthChecker:
                         problems.append((video, result))
 
                 # Clear line and show final summary
-                print(f"\r{' ' * 120}\r", end='', flush=True)
-                print(f"{Fore.GREEN}{healthy_count} healthy{Style.RESET_ALL}", end='')
+                print(f"\r{' ' * 120}\r", end="", flush=True)
+                print(f"{Fore.GREEN}{healthy_count} healthy{Style.RESET_ALL}", end="")
                 if bad_count > 0:
                     print(f"  |  {Fore.RED}{bad_count} corrupt{Style.RESET_ALL}\n")
                 else:
@@ -290,21 +314,21 @@ class VideoHealthChecker:
         2. Similar size + duration + hash (thorough, catches re-encodes)
         3. Filename patterns (copy, duplicate, etc.)
         4. Similar names + similar size (potential duplicates)
-        
+
         When duplicates found, keeps files starting with 'fav' prefix.
         """
         import hashlib
 
         def is_favorite(path: Path) -> bool:
             """Check if file is marked as favorite (starts with 'fav')."""
-            return path.name.lower().startswith('fav')
+            return path.name.lower().startswith("fav")
 
         def pick_keeper(file1: Path, file2: Path) -> tuple:
             """Pick which file to keep. Returns (duplicate, keeper)."""
             # Prefer files starting with 'fav'
             fav1 = is_favorite(file1)
             fav2 = is_favorite(file2)
-            
+
             if fav1 and not fav2:
                 return (file2, file1)  # Keep file1 (fav)
             elif fav2 and not fav1:
@@ -314,7 +338,9 @@ class VideoHealthChecker:
                 return (file2, file1)
 
         # Filter to only existing, healthy videos
-        valid_videos = [v for v in video_files if v.exists() and v not in self.corrupt_videos and v not in self.sample_videos]
+        valid_videos = [
+            v for v in video_files if v.exists() and v not in self.corrupt_videos and v not in self.sample_videos
+        ]
 
         # Strategy 1: Group by exact size, then hash to confirm (FAST)
         size_groups: Dict[int, List[Path]] = {}
@@ -328,16 +354,16 @@ class VideoHealthChecker:
                 continue
 
         # Check size groups for duplicates using hash
-        for size, videos in size_groups.items():
+        for _size, videos in size_groups.items():
             if len(videos) > 1:
                 # Multiple files with same size - hash first 1MB to confirm
                 hashes: Dict[str, Path] = {}
                 for video in videos:
                     try:
-                        with open(video, 'rb') as f:
+                        with open(video, "rb") as f:
                             # Hash first 1MB (fast, usually enough)
                             chunk = f.read(1024 * 1024)
-                            file_hash = hashlib.md5(chunk).hexdigest()
+                            file_hash = hashlib.md5(chunk, usedforsecurity=False).hexdigest()
 
                             if file_hash in hashes:
                                 # Confirmed duplicate (size + hash match)
@@ -385,11 +411,11 @@ class VideoHealthChecker:
         total_to_check = len(duration_candidates)
         if total_to_check > 0:
             for i, video in enumerate(duration_candidates, 1):
-                print(f"\r{Style.DIM}  {i}/{total_to_check}{Style.RESET_ALL}", end='', flush=True)
+                print(f"\r{Style.DIM}  {i}/{total_to_check}{Style.RESET_ALL}", end="", flush=True)
                 duration = self._get_duration(video)
                 if duration:
                     duration_map[video] = duration
-            print(f"\r{' ' * 20}\r", end='', flush=True)
+            print(f"\r{' ' * 20}\r", end="", flush=True)
 
         # Check for videos with same duration (within 1 second) and similar size
         duration_groups: Dict[int, List[Path]] = {}
@@ -400,15 +426,15 @@ class VideoHealthChecker:
             duration_groups[duration_key].append(video)
 
         # For each duration group, check size and hash
-        for duration, videos in duration_groups.items():
+        for _duration, videos in duration_groups.items():
             if len(videos) > 1:
                 # Hash and compare
                 duration_hashes: Dict[str, Path] = {}
                 for video in videos:
                     try:
-                        with open(video, 'rb') as f:
+                        with open(video, "rb") as f:
                             chunk = f.read(1024 * 1024)
-                            file_hash = hashlib.md5(chunk).hexdigest()
+                            file_hash = hashlib.md5(chunk, usedforsecurity=False).hexdigest()
 
                             if file_hash in duration_hashes:
                                 # Different sizes but same duration + hash = likely re-encode or duplicate
@@ -423,7 +449,7 @@ class VideoHealthChecker:
         # Strategy 3: Filename patterns indicating copies
         # Only flag as duplicate if pattern is at END of filename (before extension)
         # This avoids false positives like "weekend 1", "weekend 2" which are series, not dupes
-        copy_patterns = [' copy', ' duplicate', '(1)', '(2)', '(3)', ' - copy', '-copy']
+        copy_patterns = [" copy", " duplicate", "(1)", "(2)", "(3)", " - copy", "-copy"]
         for video in valid_videos:
             name_stem = video.stem  # Filename without extension
             name_lower = name_stem.lower()
@@ -437,7 +463,7 @@ class VideoHealthChecker:
 
             if matched_pattern:
                 # Remove the pattern to find original name
-                original_stem = name_stem[:len(name_stem) - len(matched_pattern)].strip()
+                original_stem = name_stem[: len(name_stem) - len(matched_pattern)].strip()
                 original_name = original_stem + video.suffix
 
                 # Look for original file
@@ -445,7 +471,6 @@ class VideoHealthChecker:
                 if potential_original.exists() and potential_original != video:
                     dupe, keeper = pick_keeper(video, potential_original)
                     self.duplicate_videos.append((dupe, keeper, f"Filename pattern ('{matched_pattern.strip()}')"))
-
 
         # Deduplicate the confirmed duplicates list (a file might be caught by multiple strategies)
         seen_dupes = set()
@@ -459,7 +484,7 @@ class VideoHealthChecker:
 
         # Strategy 4: Only flag files with "copy" or "duplicate" in filename
         # This is much more conservative - only obvious duplicates
-        duplicate_patterns = ['(copy)', '- copy', ' copy', '(duplicate)', ' duplicate', '- duplicate']
+        duplicate_patterns = ["(copy)", "- copy", " copy", "(duplicate)", " duplicate", "- duplicate"]
 
         for video in valid_videos:
             if video in [v for v, _, _ in self.duplicate_videos]:
@@ -474,7 +499,7 @@ class VideoHealthChecker:
                     # Try to find a matching file without the pattern
                     original_name = video.name
                     for p in duplicate_patterns:
-                        original_name = original_name.replace(p, '').replace('  ', ' ')
+                        original_name = original_name.replace(p, "").replace("  ", " ")
 
                     original_path = video.parent / original_name
 
@@ -496,11 +521,11 @@ class VideoHealthChecker:
             return True
 
         try:
-            file_attributes = getattr(path.lstat(), 'st_file_attributes', 0)
+            file_attributes = getattr(path.lstat(), "st_file_attributes", 0)
         except (OSError, PermissionError):
             return True
 
-        reparse_flag = getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0)
+        reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
         return bool(reparse_flag and file_attributes & reparse_flag)
 
     def _is_unsafe_path(self, path: Path, root: Optional[Path]) -> bool:
@@ -622,7 +647,7 @@ class VideoHealthChecker:
 
         # Video is healthy
         self.healthy_videos.append(video_file)
-        return 'healthy'
+        return "healthy"
 
     def _check_video(
         self,
@@ -682,26 +707,27 @@ class VideoHealthChecker:
         """Get video duration in seconds."""
         try:
             from utils.system_check import SystemCheck
+
             system_check = SystemCheck(self.config)
 
-            ffmpeg_cmd = system_check.get_tool_command('ffmpeg')
+            ffmpeg_cmd = system_check.get_tool_command("ffmpeg")
             if not ffmpeg_cmd:
-                ffmpeg_cmd = ['ffmpeg']
+                ffmpeg_cmd = ["ffmpeg"]
 
             success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
-                ffmpeg_cmd + ['-i', str(video_file)],
+                ffmpeg_cmd + ["-i", str(video_file)],
                 timeout=10,
                 operation=f"Duration check: {video_file.name}",
-                expected_codes=[0, 1]
+                expected_codes=[0, 1],
             )
 
             # Parse duration from ffmpeg output
             if stderr:
-                for line in stderr.split('\n'):
-                    if 'Duration:' in line:
+                for line in stderr.split("\n"):
+                    if "Duration:" in line:
                         try:
-                            duration_str = line.split('Duration:')[1].split(',')[0].strip()
-                            h, m, s = duration_str.split(':')
+                            duration_str = line.split("Duration:")[1].split(",")[0].strip()
+                            h, m, s = duration_str.split(":")
                             return int(h) * 3600 + int(m) * 60 + float(s)
                         except (ValueError, IndexError):
                             pass
@@ -713,18 +739,19 @@ class VideoHealthChecker:
         """Get video resolution (width, height)."""
         try:
             from utils.system_check import SystemCheck
+
             system_check = SystemCheck(self.config)
 
-            ffmpeg_cmd = system_check.get_tool_command('ffmpeg')
+            ffmpeg_cmd = system_check.get_tool_command("ffmpeg")
             if not ffmpeg_cmd:
-                ffmpeg_cmd = ['ffmpeg']
+                ffmpeg_cmd = ["ffmpeg"]
 
             # Use ffprobe if available, otherwise ffmpeg
             success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
-                ffmpeg_cmd + ['-i', str(video_file)],
+                ffmpeg_cmd + ["-i", str(video_file)],
                 timeout=10,
                 operation=f"Resolution check: {video_file.name}",
-                expected_codes=[0, 1]  # ffmpeg returns 1 when no output file specified
+                expected_codes=[0, 1],  # ffmpeg returns 1 when no output file specified
             )
 
             # Parse resolution from output
@@ -733,7 +760,7 @@ class VideoHealthChecker:
             import re
 
             # Try to find resolution pattern
-            match = re.search(r'(\d{3,4})x(\d{3,4})', output)
+            match = re.search(r"(\d{3,4})x(\d{3,4})", output)
             if match:
                 width = int(match.group(1))
                 height = int(match.group(2))
@@ -750,12 +777,12 @@ class VideoHealthChecker:
 
         # Map common names to pixel heights
         min_heights = {
-            '480p': 480,
-            '720p': 720,
-            '1080p': 1080,
-            '1440p': 1440,
-            '4k': 2160,
-            '2160p': 2160,
+            "480p": 480,
+            "720p": 720,
+            "1080p": 1080,
+            "1440p": 1440,
+            "4k": 2160,
+            "2160p": 2160,
         }
 
         min_height = min_heights.get(min_res.lower())
@@ -769,7 +796,13 @@ class VideoHealthChecker:
         """Print summary of results."""
         print(f"\n{Fore.CYAN}Summary{Style.RESET_ALL}\n")
 
-        total = len(self.healthy_videos) + len(self.corrupt_videos) + len(self.sample_videos) + len(self.low_res_videos) + len(self.duplicate_videos)
+        total = (
+            len(self.healthy_videos)
+            + len(self.corrupt_videos)
+            + len(self.sample_videos)
+            + len(self.low_res_videos)
+            + len(self.duplicate_videos)
+        )
 
         print(f"  {Fore.GREEN}Healthy{Style.RESET_ALL}         {len(self.healthy_videos)}")
         print(f"  {Fore.RED}Corrupt{Style.RESET_ALL}         {len(self.corrupt_videos)}")
@@ -833,7 +866,12 @@ class VideoHealthChecker:
             print()
 
         # Offer to delete bad videos (including duplicates)
-        bad_videos = self.corrupt_videos + self.sample_videos + [v for v, _ in self.low_res_videos] + [v for v, _, _ in self.duplicate_videos]
+        bad_videos = (
+            self.corrupt_videos
+            + self.sample_videos
+            + [v for v, _ in self.low_res_videos]
+            + [v for v, _, _ in self.duplicate_videos]
+        )
 
         if bad_videos:
             if auto_delete:
@@ -850,7 +888,7 @@ class VideoHealthChecker:
         print(f"Delete {len(videos)} videos? {Style.DIM}({total_size_mb:.1f}MB){Style.RESET_ALL}")
         response = input("[y/N]: ").strip().lower()
 
-        if response in ('y', 'yes'):
+        if response in ("y", "yes"):
             self._delete_videos(videos)
         else:
             print(f"{Style.DIM}Skipped{Style.RESET_ALL}")
@@ -865,7 +903,7 @@ class VideoHealthChecker:
         print(f"\n{Style.DIM}Deleting {len(videos)} files...{Style.RESET_ALL}\n")
 
         for i, video in enumerate(videos, 1):
-            filename = video.name[:55] + '...' if len(video.name) > 55 else video.name
+            filename = video.name[:55] + "..." if len(video.name) > 55 else video.name
             try:
                 if self._is_unsafe_path(video, root):
                     raise RuntimeError(f"Refusing to delete symlinked or out-of-root file: {video}")
@@ -876,7 +914,7 @@ class VideoHealthChecker:
                 status_line = f"  {Style.DIM}[{i}/{len(videos)}]{Style.RESET_ALL} {filename}  {Fore.GREEN}{deleted_count} deleted{Style.RESET_ALL}"
                 if failed_count > 0:
                     status_line += f"  {Fore.RED}{failed_count} failed{Style.RESET_ALL}"
-                print(f"\r{status_line}", end='', flush=True)
+                print(f"\r{status_line}", end="", flush=True)
 
                 video.unlink()
                 deleted_count += 1
@@ -886,17 +924,21 @@ class VideoHealthChecker:
                 status_line = f"  {Style.DIM}[{i}/{len(videos)}]{Style.RESET_ALL} {filename}  {Fore.GREEN}{deleted_count} deleted{Style.RESET_ALL}"
                 if failed_count > 0:
                     status_line += f"  {Fore.RED}{failed_count} failed{Style.RESET_ALL}"
-                print(f"\r{status_line}", end='', flush=True)
+                print(f"\r{status_line}", end="", flush=True)
             except Exception as e:
                 failed_count += 1
                 logging.warning(f"Skipping unsafe or undeletable video in vhealth: {video} ({e})")
                 # Show failure and keep it visible
-                print(f"\r{' ' * 120}\r", end='', flush=True)
-                print(f"  {Style.DIM}[{i}/{len(videos)}]{Style.RESET_ALL} {filename[:50]}... {Fore.RED}failed{Style.RESET_ALL}")
+                print(f"\r{' ' * 120}\r", end="", flush=True)
+                print(
+                    f"  {Style.DIM}[{i}/{len(videos)}]{Style.RESET_ALL} {filename[:50]}... {Fore.RED}failed{Style.RESET_ALL}"
+                )
 
         # Clear line and show final summary
-        print(f"\r{' ' * 120}\r", end='', flush=True)
-        print(f"{Fore.GREEN}{deleted_count} deleted{Style.RESET_ALL} {Style.DIM}({total_freed_mb:.1f}MB freed){Style.RESET_ALL}")
+        print(f"\r{' ' * 120}\r", end="", flush=True)
+        print(
+            f"{Fore.GREEN}{deleted_count} deleted{Style.RESET_ALL} {Style.DIM}({total_freed_mb:.1f}MB freed){Style.RESET_ALL}"
+        )
 
         if failed_count > 0:
             print(f"{Fore.YELLOW}{failed_count} failed{Style.RESET_ALL}")
@@ -907,43 +949,45 @@ def main():
     parser = argparse.ArgumentParser(
         description="Check videos for corruption, find duplicates, detect samples and low-res files",
         epilog="Examples:\n"
-               "  vhealth \"C:\\Videos\"\n"
-               "  vhealth \"C:\\Videos\\movie.mkv\"\n"
-               "  vhealth \"C:\\Videos\" --delete-bad\n"
-               "  vhealth \"C:\\Videos\" --min-resolution 720p",
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        '  vhealth "C:\\Videos"\n'
+        '  vhealth "C:\\Videos\\movie.mkv"\n'
+        '  vhealth "C:\\Videos" --delete-bad\n'
+        '  vhealth "C:\\Videos" --min-resolution 720p',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    parser.add_argument('path', help='Video file or folder to check')
-    parser.add_argument('--clean', action='store_true',
-                       help='Auto-delete small/sample files without prompting, then health check remaining')
-    parser.add_argument('--delete-bad', action='store_true',
-                       help='Automatically delete all unhealthy videos at the end')
-    parser.add_argument('--min-resolution', metavar='RES',
-                       help='Flag videos below this resolution (480p, 720p, 1080p, 4k)')
-    parser.add_argument('--skip-samples', action='store_true',
-                       help='Skip sample detection, go straight to health check')
-    parser.add_argument('--config', help='Path to custom config file')
-    parser.add_argument('-v', '--verbose', action='store_true',
-                       help='Show verbose output (ffmpeg messages, etc.)')
+    parser.add_argument("path", help="Video file or folder to check")
+    parser.add_argument(
+        "--clean",
+        action="store_true",
+        help="Auto-delete small/sample files without prompting, then health check remaining",
+    )
+    parser.add_argument(
+        "--delete-bad", action="store_true", help="Automatically delete all unhealthy videos at the end"
+    )
+    parser.add_argument(
+        "--min-resolution", metavar="RES", help="Flag videos below this resolution (480p, 720p, 1080p, 4k)"
+    )
+    parser.add_argument(
+        "--skip-samples", action="store_true", help="Skip sample detection, go straight to health check"
+    )
+    parser.add_argument("--config", help="Path to custom config file")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Show verbose output (ffmpeg messages, etc.)")
 
     args = parser.parse_args()
 
     # Setup logging
     if args.verbose:
-        logging.basicConfig(level=logging.DEBUG, format='%(message)s')
+        logging.basicConfig(level=logging.DEBUG, format="%(message)s")
     else:
-        logging.basicConfig(level=logging.CRITICAL, format='%(message)s')  # Suppress all but critical
+        logging.basicConfig(level=logging.CRITICAL, format="%(message)s")  # Suppress all but critical
 
     # Print header
     print(f"\n{Fore.CYAN}vhealth{Style.RESET_ALL} {Style.DIM}v1.3.0{Style.RESET_ALL}")
     print(f"{Style.DIM}Check videos for corruption, duplicates, samples{Style.RESET_ALL}\n")
 
     # Load config
-    if args.config:
-        config = Config(Path(args.config))
-    else:
-        config = Config()
+    config = Config(Path(args.config)) if args.config else Config()
 
     # Validate path
     path = Path(args.path)
@@ -976,10 +1020,11 @@ def main():
     # Countdown
     if auto_delete:
         import time
+
         for i in range(5, 0, -1):
-            print(f"\r{Style.DIM}Starting delete-enabled scan in {i}...{Style.RESET_ALL}", end='', flush=True)
+            print(f"\r{Style.DIM}Starting delete-enabled scan in {i}...{Style.RESET_ALL}", end="", flush=True)
             time.sleep(1)
-        print(f"\r{' ' * 45}\r", end='', flush=True)  # Clear countdown line
+        print(f"\r{' ' * 45}\r", end="", flush=True)  # Clear countdown line
     else:
         print(f"{Style.DIM}Starting read-only scan...{Style.RESET_ALL}")
 
@@ -990,7 +1035,7 @@ def main():
             min_resolution=args.min_resolution,
             skip_samples=args.skip_samples,
             skip_health=args.clean,  # --clean flag enables skip_health for auto-delete
-            delete_bad=auto_delete
+            delete_bad=auto_delete,
         )
         checker.print_summary(auto_delete=auto_delete)
     except KeyboardInterrupt:
@@ -1004,5 +1049,5 @@ def main():
     print()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

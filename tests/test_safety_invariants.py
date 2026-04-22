@@ -21,7 +21,7 @@ from core.safety_invariants import (
     OperationType,
     ValidationDecision,
     ValidationResult,
-    ValidationCache
+    ValidationCache,
 )
 
 
@@ -97,12 +97,7 @@ class TestInvariantI2VideoProtection:
         video.write_text("test")
 
         # Mark as validated and healthy
-        result = ValidationResult(
-            path=video,
-            decision=ValidationDecision.PASS,
-            timestamp=None,
-            metadata={}
-        )
+        result = ValidationResult(path=video, decision=ValidationDecision.PASS, timestamp=None, metadata={})
         ValidationCache.set(video, result)
 
         operation = FileOperation(OperationType.DELETE, video)
@@ -114,12 +109,7 @@ class TestInvariantI2VideoProtection:
         video.write_text("test")
 
         # Mark as validated but corrupt
-        result = ValidationResult(
-            path=video,
-            decision=ValidationDecision.FAIL_CORRUPT,
-            timestamp=None,
-            metadata={}
-        )
+        result = ValidationResult(path=video, decision=ValidationDecision.FAIL_CORRUPT, timestamp=None, metadata={})
         ValidationCache.set(video, result)
 
         operation = FileOperation(OperationType.DELETE, video)
@@ -148,20 +138,14 @@ class TestInvariantI3ArchiveSafety:
         archive = Path("test.rar")
         operation = FileOperation(OperationType.DELETE, archive)
 
-        assert invariants.never_delete_archives_before_validation(
-            operation,
-            extraction_verified=True
-        ) is True
+        assert invariants.never_delete_archives_before_validation(operation, extraction_verified=True) is True
 
     def test_delete_archive_before_verification_blocked(self, invariants):
         """Test deleting archive before verification is blocked."""
         archive = Path("test.rar")
         operation = FileOperation(OperationType.DELETE, archive)
 
-        assert invariants.never_delete_archives_before_validation(
-            operation,
-            extraction_verified=False
-        ) is False
+        assert invariants.never_delete_archives_before_validation(operation, extraction_verified=False) is False
 
     def test_delete_non_archive_not_affected(self, invariants):
         """Test deleting non-archives isn't affected."""
@@ -169,10 +153,7 @@ class TestInvariantI3ArchiveSafety:
         operation = FileOperation(OperationType.DELETE, video)
 
         # Non-archive files don't trigger this invariant
-        assert invariants.never_delete_archives_before_validation(
-            operation,
-            extraction_verified=False
-        ) is True
+        assert invariants.never_delete_archives_before_validation(operation, extraction_verified=False) is True
 
 
 class TestInvariantI4LoopBounds:
@@ -235,9 +216,7 @@ class TestInvariantI5DiskSpace:
         required = 100 * 1024 * 1024  # 100MB
         available = 180 * 1024 * 1024  # 180MB
         # With 2.0x buffer, needs 200MB, only have 180MB
-        assert invariants.never_operate_without_disk_space(
-            required, available, buffer_ratio=2.0
-        ) is False
+        assert invariants.never_operate_without_disk_space(required, available, buffer_ratio=2.0) is False
 
 
 class TestInvariantI6FilenameSafety:
@@ -297,36 +276,25 @@ class TestInvariantI7StateTransitions:
     def test_legal_transition_allowed(self, invariants):
         """Test legal state transition is allowed."""
         allowed = {
-            'DISCOVERED': {'SCANNING', 'ERROR'},
-            'SCANNING': {'CLASSIFYING', 'ERROR'},
-            'CLASSIFYING': {'PROCESSING', 'ERROR'}
+            "DISCOVERED": {"SCANNING", "ERROR"},
+            "SCANNING": {"CLASSIFYING", "ERROR"},
+            "CLASSIFYING": {"PROCESSING", "ERROR"},
         }
 
-        assert invariants.is_legal_state_transition(
-            'DISCOVERED', 'SCANNING', allowed
-        ) is True
+        assert invariants.is_legal_state_transition("DISCOVERED", "SCANNING", allowed) is True
 
     def test_illegal_transition_blocked(self, invariants):
         """Test illegal state transition is blocked."""
-        allowed = {
-            'DISCOVERED': {'SCANNING', 'ERROR'},
-            'SCANNING': {'CLASSIFYING', 'ERROR'}
-        }
+        allowed = {"DISCOVERED": {"SCANNING", "ERROR"}, "SCANNING": {"CLASSIFYING", "ERROR"}}
 
         # Can't go directly from DISCOVERED to CLASSIFYING
-        assert invariants.is_legal_state_transition(
-            'DISCOVERED', 'CLASSIFYING', allowed
-        ) is False
+        assert invariants.is_legal_state_transition("DISCOVERED", "CLASSIFYING", allowed) is False
 
     def test_unknown_state_blocked(self, invariants):
         """Test unknown state is blocked."""
-        allowed = {
-            'DISCOVERED': {'SCANNING'}
-        }
+        allowed = {"DISCOVERED": {"SCANNING"}}
 
-        assert invariants.is_legal_state_transition(
-            'UNKNOWN_STATE', 'SCANNING', allowed
-        ) is False
+        assert invariants.is_legal_state_transition("UNKNOWN_STATE", "SCANNING", allowed) is False
 
 
 class TestInvariantI8TimeoutBounds:
@@ -434,12 +402,7 @@ class TestInvariantEnforcer:
         video.write_text("test")
 
         # Mark as validated
-        result = ValidationResult(
-            path=video,
-            decision=ValidationDecision.PASS,
-            timestamp=None,
-            metadata={}
-        )
+        result = ValidationResult(path=video, decision=ValidationDecision.PASS, timestamp=None, metadata={})
         ValidationCache.set(video, result)
 
         with pytest.raises(SafetyViolationError, match="Cannot delete"):
@@ -453,12 +416,7 @@ class TestInvariantEnforcer:
         video.write_text("test")
 
         # Mark as validated
-        result = ValidationResult(
-            path=video,
-            decision=ValidationDecision.PASS,
-            timestamp=None,
-            metadata={}
-        )
+        result = ValidationResult(path=video, decision=ValidationDecision.PASS, timestamp=None, metadata={})
         ValidationCache.set(video, result)
 
         # Should return False but not raise
@@ -529,5 +487,5 @@ class TestCheckBeforeOperation:
         assert len(violations) >= 2  # At least I1 and I6
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

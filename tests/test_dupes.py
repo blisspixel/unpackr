@@ -12,7 +12,7 @@ from vhealth import VideoHealthChecker
 def test_find_videos_handles_unreadable_paths(monkeypatch, tmp_path):
     """Discovery should continue when one directory walk hits OSError."""
     config = Config()
-    config.set('video_extensions', ['.mkv', '.mp4'])
+    config.set("video_extensions", [".mkv", ".mp4"])
     checker = VideoHealthChecker(config)
 
     readable_video = tmp_path / "ok.mp4"
@@ -35,7 +35,7 @@ def test_find_videos_handles_unreadable_paths(monkeypatch, tmp_path):
 def test_find_videos_sorts_by_size_desc(tmp_path):
     """Discovery returns largest files first."""
     config = Config()
-    config.set('video_extensions', ['.mp4'])
+    config.set("video_extensions", [".mp4"])
     checker = VideoHealthChecker(config)
 
     large = tmp_path / "large.mp4"

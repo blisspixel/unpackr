@@ -4,6 +4,7 @@ import io
 import shutil
 
 import unpackr
+from utils import cli_prompts
 from utils import cli_runtime
 
 
@@ -50,7 +51,7 @@ def test_quick_preflight_handles_eof_as_abort(monkeypatch, tmp_path):
 
 
 def test_countdown_prompt_returns_true_when_sleep_succeeds(monkeypatch):
-    monkeypatch.setattr(unpackr.time, "sleep", lambda *_: None)
+    monkeypatch.setattr(cli_prompts.time, "sleep", lambda *_: None)
     assert unpackr.countdown_prompt(1, operation_label="test-run") is True
 
 
@@ -58,7 +59,7 @@ def test_countdown_prompt_returns_false_on_keyboard_interrupt(monkeypatch):
     def raise_interrupt(*_):
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(unpackr.time, "sleep", raise_interrupt)
+    monkeypatch.setattr(cli_prompts.time, "sleep", raise_interrupt)
     assert unpackr.countdown_prompt(1) is False
 
 

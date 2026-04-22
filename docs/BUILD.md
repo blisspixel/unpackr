@@ -17,6 +17,16 @@ This provides console entry points:
 - `unpackr-doctor`
 - `vhealth`
 
+For contributor installs:
+
+```powershell
+pip install -e .[dev]
+pre-commit install
+pre-commit run --all-files
+```
+
+If your default `python` on Windows is older than `3.11`, prefer `py -3.13 -m ...` when running the quality gate locally.
+
 ## Batch Wrapper Mode
 
 You can also run via the included wrappers:

@@ -6,14 +6,15 @@ import sys
 import os
 
 # Set UTF-8 encoding for Windows console
-if sys.platform == 'win32':
+if sys.platform == "win32":
     try:
-        if hasattr(sys.stdout, 'reconfigure'):
-            sys.stdout.reconfigure(encoding='utf-8')
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8")
         else:
             import codecs
-            sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
-        os.system('chcp 65001 >nul 2>&1')
+
+            sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer, "strict")
+        os.system("chcp 65001 >nul 2>&1")
     except Exception:
         pass
 
@@ -21,6 +22,7 @@ from colorama import init, Fore, Back, Style
 
 # Initialize colorama for Windows color support
 init()
+
 
 def show_legendary_variations():
     """Show different legendary effect options."""
@@ -48,7 +50,9 @@ def show_legendary_variations():
     print(f"  {Style.DIM}|{Style.RESET_ALL} {Fore.YELLOW}{Style.BRIGHT}>>> {sample_text} <<<{Style.RESET_ALL}")
 
     print("\nOption 5 - Block with stars:")
-    print(f"  {Style.DIM}|{Style.RESET_ALL} {Fore.BLACK}{Back.YELLOW}{Style.BRIGHT} ★ {sample_text} ★ {Style.RESET_ALL}")
+    print(
+        f"  {Style.DIM}|{Style.RESET_ALL} {Fore.BLACK}{Back.YELLOW}{Style.BRIGHT} ★ {sample_text} ★ {Style.RESET_ALL}"
+    )
 
     print("\nOption 6 - Cyan on Black (reversed):")
     print(f"  {Style.DIM}|{Style.RESET_ALL} {Fore.CYAN}{Back.BLACK}{Style.BRIGHT} {sample_text} {Style.RESET_ALL}")
@@ -62,5 +66,6 @@ def show_legendary_variations():
 
     print(f"\n{Style.DIM}Which effect looks coolest to you?{Style.RESET_ALL}\n")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     show_legendary_variations()

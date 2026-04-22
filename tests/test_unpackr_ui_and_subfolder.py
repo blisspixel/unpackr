@@ -124,10 +124,21 @@ def test_process_subfolder_dry_and_live_paths(tmp_path):
 
     app_dry = types.SimpleNamespace(
         recursion_guard=types.SimpleNamespace(enter=lambda: True, exit=lambda: None),
-        stats={"safety_stops": 0, "videos_found": 0, "videos_moved": 0, "par2s_repaired": 0, "rars_extracted": 0, "videos_healthy": 0, "videos_corrupt": 0, "videos_failed": 0},
+        stats={
+            "safety_stops": 0,
+            "videos_found": 0,
+            "videos_moved": 0,
+            "par2s_repaired": 0,
+            "rars_extracted": 0,
+            "videos_healthy": 0,
+            "videos_corrupt": 0,
+            "videos_failed": 0,
+        },
         dry_run=True,
         archive_processor=types.SimpleNamespace(process_par2_files=lambda *_: True, process_rar_files=lambda *_: True),
-        file_handler=types.SimpleNamespace(find_video_files=lambda _s: [v1], is_folder_empty_or_removable=lambda *_a, **_k: True),
+        file_handler=types.SimpleNamespace(
+            find_video_files=lambda _s: [v1], is_folder_empty_or_removable=lambda *_a, **_k: True
+        ),
         video_processor=types.SimpleNamespace(check_video_health=lambda *_: True),
         _process_subfolder=lambda *_a, **_k: None,
         failed_deletions=[],
@@ -139,7 +150,16 @@ def test_process_subfolder_dry_and_live_paths(tmp_path):
     deleted = {"n": 0}
     app_live = types.SimpleNamespace(
         recursion_guard=types.SimpleNamespace(enter=lambda: True, exit=lambda: None),
-        stats={"safety_stops": 0, "videos_found": 0, "videos_moved": 0, "par2s_repaired": 0, "rars_extracted": 0, "videos_healthy": 0, "videos_corrupt": 0, "videos_failed": 0},
+        stats={
+            "safety_stops": 0,
+            "videos_found": 0,
+            "videos_moved": 0,
+            "par2s_repaired": 0,
+            "rars_extracted": 0,
+            "videos_healthy": 0,
+            "videos_corrupt": 0,
+            "videos_failed": 0,
+        },
         dry_run=False,
         archive_processor=types.SimpleNamespace(process_par2_files=lambda *_: True, process_rar_files=lambda *_: True),
         file_handler=types.SimpleNamespace(

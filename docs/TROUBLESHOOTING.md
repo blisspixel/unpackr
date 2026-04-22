@@ -57,6 +57,8 @@ From other directories: ensure your Python `Scripts` directory is in `PATH` (exa
 C:\Users\<you>\AppData\Roaming\Python\Python311\Scripts\
 ```
 
+If `python` resolves to an older interpreter on Windows, run tools explicitly with `py -3.13 -m ...` or another installed `3.11+` launcher target.
+
 ## Diagnostics
 
 Run the diagnostic tool:
@@ -93,3 +95,4 @@ Search for:
 2. Check logs for specific errors
 3. Try `--dry-run` to see what would happen
 4. Test on a single folder first
+5. If contributing, run `pre-commit run --all-files` before opening a change

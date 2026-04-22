@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from unpackr import UnpackrApp
 from core import Config
 
+
 def test_comment_display():
     """Test comment display as it would happen during processing."""
 
@@ -18,9 +19,9 @@ def test_comment_display():
     config = Config()
     unpackr = UnpackrApp(config)
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("Testing comment display during simulated processing")
-    print("="*60)
+    print("=" * 60)
 
     # Check if comments loaded
     print(f"\nComments loaded: {unpackr.comments is not None}")
@@ -45,10 +46,13 @@ def test_comment_display():
             print(f"Folder {folder_num:3d}: No comment")
 
         # Show internal state
-        print(f"              last_comment_folder={unpackr.last_comment_folder}, "
-              f"current_comment_display={'SET' if unpackr.current_comment_display else 'None'}")
+        print(
+            f"              last_comment_folder={unpackr.last_comment_folder}, "
+            f"current_comment_display={'SET' if unpackr.current_comment_display else 'None'}"
+        )
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     test_comment_display()

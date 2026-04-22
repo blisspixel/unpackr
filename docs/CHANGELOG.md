@@ -4,8 +4,16 @@ Release dates are included where recorded.
 
 ## Unreleased
 
-- Raised CI coverage gate to `80%` and aligned docs/quality commands.
-- Expanded regression suite substantially (`390` tests total, 80%+ coverage baseline).
+- Raised and enforced the quality gate through local `pre-commit` and CI.
+- Current full-suite baseline is `482` passing tests and `86.24%` total coverage.
+- Expanded stricter Pyright coverage to `core/config.py`, `core/file_handler.py`, and `core/safety_invariants.py`.
+- Extracted CLI prompt/presentation helpers into `utils/cli_prompts.py` to reduce `unpackr.py` surface area.
+- Pushed targeted module coverage higher:
+  - `core/config.py` to `98%`
+  - `core/file_handler.py` to `92%`
+  - `core/video_processor.py` to `91%`
+  - `unpackr.py` to `82%`
+- Updated docs to use the current Windows quality workflow (`py -3.13 -m ...` where appropriate).
 - Enforced external tool version policy:
   - `7z >= 22.0` (blocking)
   - `par2 >= 0.8.1` (warning)

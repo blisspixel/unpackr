@@ -10,6 +10,8 @@ This roadmap is reliability-first: safety, correctness, observability, then perf
 ## Quality Baseline
 
 - CI quality gate is `80%` coverage minimum.
+- Current measured repo-wide coverage is `86.24%`.
+- Full regression suite currently passes at `482` tests.
 - Dependency/version policy is enforced by `unpackr-doctor` and runtime preflight.
 - Python support floor is `3.11+`.
 - Active documentation stays under `docs/`; superseded content belongs in `docs/archive/`.
@@ -45,7 +47,7 @@ Acceptance criteria:
 - Structured outputs include timestamps, status, and actionable remediation hints.
 
 Status:
-- In progress. `doctor --json` is documented; next target is structured `unpackr` run summaries.
+- In progress. `doctor --json` is documented; next target is structured `unpackr` run summaries and richer machine-readable run output.
 
 ### Next: Correctness And Recovery Hardening
 
@@ -57,7 +59,7 @@ Acceptance criteria:
 - Preservation heuristics have documented limits and examples.
 
 Status:
-- In progress. Continue integration scenarios for interrupted and partial runs.
+- In progress. Integration scenarios and destructive-path regression coverage continue to expand, with `core/file_handler.py` and `unpackr.py` receiving the current focus.
 
 ### Later: Performance With Evidence
 

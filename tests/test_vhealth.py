@@ -70,7 +70,7 @@ class TestVideoHealthChecker:
         videos = checker._find_videos(temp_dir)
 
         assert len(videos) == 4
-        assert all(v.suffix in ['.mp4', '.mkv', '.avi'] for v in videos)
+        assert all(v.suffix in [".mp4", ".mkv", ".avi"] for v in videos)
 
     def test_sample_detection_by_size(self, checker, temp_dir, mock_video_files):
         """Test sample video detection based on file size (<50MB)."""
@@ -88,8 +88,8 @@ class TestVideoHealthChecker:
 
         tiny = temp_dir / "tiny.mp4"
         large = temp_dir / "large.mp4"
-        tiny.write_bytes(b"x" * (200 * 1024))           # 0.2MB -> sample at 1MB threshold
-        large.write_bytes(b"x" * (2 * 1024 * 1024))     # 2MB -> not sample at 1MB threshold
+        tiny.write_bytes(b"x" * (200 * 1024))  # 0.2MB -> sample at 1MB threshold
+        large.write_bytes(b"x" * (2 * 1024 * 1024))  # 2MB -> not sample at 1MB threshold
 
         with patch("builtins.input", return_value="n"):
             checker.check_path(temp_dir, skip_health=True)
@@ -145,7 +145,8 @@ class TestVideoHealthChecker:
         # This would normally parse ffmpeg output
         # Testing the pattern matching logic
         import re
-        pattern = r'(\d{3,4})x(\d{3,4})'
+
+        pattern = r"(\d{3,4})x(\d{3,4})"
         match = re.search(pattern, mock_output)
 
         assert match is not None
@@ -164,26 +165,26 @@ class TestVideoHealthChecker:
         # 720p should meet 720p requirement (exact match)
         assert checker._meets_min_resolution((1280, 720), "720p")
 
-    @patch('vhealth.VideoHealthChecker._check_video_silent')
+    @patch("vhealth.VideoHealthChecker._check_video_silent")
     def test_check_path_single_file(self, mock_check, checker, temp_dir):
         """Test checking a single video file."""
         video = temp_dir / "test.mp4"
         video.write_bytes(b"test video")
 
-        mock_check.return_value = 'healthy'
+        mock_check.return_value = "healthy"
 
         # This would normally check the video
         # Testing that the method is called correctly
         result = mock_check(video)
-        assert result == 'healthy'
+        assert result == "healthy"
 
     def test_filename_truncation(self, checker):
         """Test that long filenames are truncated for display."""
         long_name = "a" * 100 + ".mp4"
-        truncated = long_name[:65] + '...' if len(long_name) > 65 else long_name
+        truncated = long_name[:65] + "..." if len(long_name) > 65 else long_name
 
         assert len(truncated) <= 68  # 65 chars + '...'
-        assert truncated.endswith('...')
+        assert truncated.endswith("...")
 
     def test_delete_videos_nonexistent(self, checker, temp_dir):
         """Test that deleting nonexistent files doesn't crash."""
@@ -213,7 +214,7 @@ class TestVideoHealthChecker:
 
     def test_spinner_frames(self):
         """Test spinner animation frames."""
-        spinner_frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+        spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
         assert len(spinner_frames) == 10
         assert all(isinstance(frame, str) for frame in spinner_frames)
@@ -297,8 +298,10 @@ class TestDuplicateDetectionConservative:
 
         # The duplicate should be the non-fav file, keeper should be fav
         dupe, keeper, reason = checker.duplicate_videos[0]
-        assert keeper.name.lower().startswith('fav'), f"Expected fav file to be kept, but keeper is {keeper.name}"
-        assert not dupe.name.lower().startswith('fav'), f"Expected non-fav file to be duplicate, but dupe is {dupe.name}"
+        assert keeper.name.lower().startswith("fav"), f"Expected fav file to be kept, but keeper is {keeper.name}"
+        assert not dupe.name.lower().startswith("fav"), (
+            f"Expected non-fav file to be duplicate, but dupe is {dupe.name}"
+        )
 
     def test_fav_prefix_with_copy_pattern(self, checker, temp_dir):
         """Test that fav prefix is preferred even with copy pattern in filename."""
@@ -317,9 +320,11 @@ class TestDuplicateDetectionConservative:
 
         # The fav file should be kept even though it has (copy) in name
         for dupe, keeper, reason in checker.duplicate_videos:
-            if keeper.name.lower().startswith('fav') or dupe.name.lower().startswith('fav'):
+            if keeper.name.lower().startswith("fav") or dupe.name.lower().startswith("fav"):
                 # If fav is involved, it should be the keeper
-                assert keeper.name.lower().startswith('fav'), f"Expected fav file to be kept, but keeper is {keeper.name}"
+                assert keeper.name.lower().startswith("fav"), (
+                    f"Expected fav file to be kept, but keeper is {keeper.name}"
+                )
 
 
 class TestIntegrationVhealth:
@@ -397,10 +402,11 @@ class TestIntegrationVhealth:
         # Each file should only appear once across all deletion calls
         # (files that were already deleted won't exist, so they shouldn't be in subsequent calls)
         from collections import Counter
+
         counts = Counter(all_deleted)
         duplicates = {f: c for f, c in counts.items() if c > 1}
         assert len(duplicates) == 0, f"Files deleted multiple times: {duplicates}"
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

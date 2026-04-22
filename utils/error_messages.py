@@ -16,11 +16,7 @@ from typing import Optional
 
 
 def format_error(
-    what_failed: str,
-    reason: str,
-    action: str,
-    location: Optional[Path] = None,
-    details: Optional[str] = None
+    what_failed: str, reason: str, action: str, location: Optional[Path] = None, details: Optional[str] = None
 ) -> str:
     """
     Format a clear, actionable error message.
@@ -49,11 +45,7 @@ def format_error(
 
 
 def log_error(
-    what_failed: str,
-    reason: str,
-    action: str,
-    location: Optional[Path] = None,
-    details: Optional[str] = None
+    what_failed: str, reason: str, action: str, location: Optional[Path] = None, details: Optional[str] = None
 ):
     """
     Log a clear, actionable error message.
@@ -73,7 +65,7 @@ def format_disk_space_error(path: Path, needed_mb: int, available_mb: int) -> st
         what_failed="Insufficient disk space",
         reason=f"Need {needed_mb}MB ({needed_gb:.2f}GB), have {available_mb}MB ({available_gb:.2f}GB)",
         action="Free up space or skip this operation",
-        location=path
+        location=path,
     )
 
 
@@ -89,7 +81,7 @@ def format_extraction_error(archive: Path, reason: str, stderr: Optional[str] = 
         reason=reason,
         action="Check if archive is corrupted or password-protected",
         location=archive.parent,
-        details=details
+        details=details,
     )
 
 
@@ -99,11 +91,15 @@ def format_validation_error(file: Path, reason: str) -> str:
         what_failed=f"File validation failed: {file.name}",
         reason=reason,
         action="File may be corrupted or incomplete",
-        location=file.parent
+        location=file.parent,
     )
 
 
-def format_timeout_error(operation: str, timeout_seconds: int, file_size_mb: float = None) -> str:
+def format_timeout_error(
+    operation: str,
+    timeout_seconds: int,
+    file_size_mb: Optional[float] = None,
+) -> str:
     """Format timeout error."""
     reason = f"Operation exceeded {timeout_seconds}s timeout"
     if file_size_mb:
@@ -112,5 +108,5 @@ def format_timeout_error(operation: str, timeout_seconds: int, file_size_mb: flo
     return format_error(
         what_failed=f"Timeout during {operation}",
         reason=reason,
-        action="File may be extremely large or disk is very slow. Check system resources."
+        action="File may be extremely large or disk is very slow. Check system resources.",
     )

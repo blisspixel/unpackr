@@ -6,22 +6,26 @@ Handles RAR extraction and PAR2 repair operations.
 import logging
 import time
 from pathlib import Path
+from typing import Any, Callable
 
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils.safety import SubprocessSafety, SafetyLimits, LoopSafety
-from utils.defensive import StateValidator
-from utils.system_check import SystemCheck
-from utils.error_messages import log_error
 from core.safety_invariants import InvariantEnforcer
+from utils.defensive import StateValidator
+from utils.error_messages import log_error
+from utils.safety import LoopSafety, ProcessTracker, SafetyLimits, SubprocessSafety
+from utils.system_check import SystemCheck
 
 
 class ArchiveProcessor:
     """Handles archive extraction and repair operations."""
 
-    def __init__(self, config=None, destination_root=None, process_tracker=None):
+    def __init__(
+        self,
+        config: Any = None,
+        destination_root: Path | None = None,
+        process_tracker: ProcessTracker | None = None,
+    ) -> None:
         """Initialize the archive processor.
-        
+
         Args:
             config: Configuration object
             destination_root: Root destination for safety invariants
@@ -33,8 +37,12 @@ class ArchiveProcessor:
         self.enforcer = None
         if destination_root:
             self.enforcer = InvariantEnforcer(destination_root, config)
-    
-    def process_rar_files(self, folder: Path, progress_callback=None) -> bool:
+
+    def process_rar_files(
+        self,
+        folder: Path,
+        progress_callback: Callable[[int, int, str], None] | None = None,
+    ) -> bool:
         """
         Extract RAR files in the given folder.
 
@@ -47,32 +55,36 @@ class ArchiveProcessor:
         """
         try:
             # Find RAR files - only process .part001.rar or .rar (not .part002+)
-            all_rar_files = list(folder.glob('*.rar'))
+            all_rar_files = list(folder.glob("*.rar"))
             rar_files = []
             for rar in all_rar_files:
                 name_lower = rar.name.lower()
                 # Skip .part002 and higher - only extract .part001 or non-part RARs
-                if '.part' in name_lower:
-                    if '.part001.' in name_lower or '.part01.' in name_lower or '.part1.' in name_lower:
+                if ".part" in name_lower:
+                    if ".part001." in name_lower or ".part01." in name_lower or ".part1." in name_lower:
                         rar_files.append(rar)
                 else:
                     rar_files.append(rar)
 
             # Find 7z files - only .7z or .7z.001 (7z auto-handles .7z.002+)
-            sevenz_files = list(folder.glob('*.7z')) + list(folder.glob('*.7z.001'))
+            sevenz_files = list(folder.glob("*.7z")) + list(folder.glob("*.7z.001"))
 
             # Check for incomplete 7z archives starting at higher part numbers (e.g., .7z.100)
             # These indicate an incomplete download and should be warned about
-            all_7z_parts = list(folder.glob('*.7z.*'))
+            all_7z_parts = list(folder.glob("*.7z.*"))
             for file in all_7z_parts:
                 filename_lower = file.name.lower()
                 # Look for pattern like .7z.XXX where XXX > 1
-                if '.7z.' in filename_lower:
-                    parts = filename_lower.split('.7z.')
+                if ".7z." in filename_lower:
+                    parts = filename_lower.split(".7z.")
                     if len(parts) == 2 and parts[1].isdigit():
                         part_num = int(parts[1])
-                        if part_num > 1 and not any('.7z.001' in f.name.lower() or f.name.lower().endswith('.7z') for f in all_7z_parts):
-                            logging.warning(f"Incomplete 7z archive detected in {folder}: {file.name} (missing parts 1-{part_num-1})")
+                        if part_num > 1 and not any(
+                            ".7z.001" in f.name.lower() or f.name.lower().endswith(".7z") for f in all_7z_parts
+                        ):
+                            logging.warning(
+                                f"Incomplete 7z archive detected in {folder}: {file.name} (missing parts 1-{part_num - 1})"
+                            )
                             break  # Only warn once per folder
 
             archive_files = rar_files + sevenz_files
@@ -81,7 +93,7 @@ class ArchiveProcessor:
                 return True  # No archive files to process
 
             # Safety: limit number of archive files
-            loop_limit = getattr(self.config, 'archive_extraction_loop_limit', 100)
+            loop_limit = getattr(self.config, "archive_extraction_loop_limit", 100)
             loop_guard = LoopSafety(loop_limit, "Archive extraction loop")
             success_count = 0
             total_count = len(archive_files)
@@ -97,7 +109,7 @@ class ArchiveProcessor:
 
                 try:
                     # Get 7z command from config
-                    sevenzip_cmd = self.system_check.get_tool_command('7z')
+                    sevenzip_cmd = self.system_check.get_tool_command("7z")
                     if not sevenzip_cmd:
                         logging.error("7-Zip executable unavailable or configured with an unsafe relative path")
                         continue
@@ -118,12 +130,13 @@ class ArchiveProcessor:
                     required_space_mb = int(file_size_mb * 3)
                     if not StateValidator.check_disk_space(folder, required_mb=required_space_mb):
                         import shutil
+
                         available = shutil.disk_usage(folder).free / (1024 * 1024)
                         log_error(
                             what_failed=f"Cannot extract {archive_file.name}",
                             reason=f"Disk full (need {required_space_mb}MB, have {int(available)}MB)",
                             action="Free up space or skip this file",
-                            location=folder
+                            location=folder,
                         )
                         continue  # Skip this archive
 
@@ -133,23 +146,25 @@ class ArchiveProcessor:
                             what_failed=f"SECURITY: Blocked {archive_file.name}",
                             reason="Archive contains unsafe paths (path traversal attempt)",
                             action="Do not extract this archive - it may be malicious",
-                            location=archive_file.parent
+                            location=archive_file.parent,
                         )
                         continue  # Skip this malicious archive
 
                     # PERFORMANCE: Calculate dynamic timeout based on file size (handles 50GB+ archives)
                     extraction_timeout = SafetyLimits.calculate_rar_timeout(file_size_bytes)
                     if extraction_timeout > SafetyLimits.RAR_EXTRACTION_TIMEOUT:
-                        logging.info(f"Using extended timeout {extraction_timeout}s for large archive ({file_size_mb:.1f}MB)")
+                        logging.info(
+                            f"Using extended timeout {extraction_timeout}s for large archive ({file_size_mb:.1f}MB)"
+                        )
 
                     # Use safe subprocess with dynamic timeout
                     success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
-                        sevenzip_cmd + ['x', str(archive_file), f'-o{folder}', '-aoa'],
+                        sevenzip_cmd + ["x", str(archive_file), f"-o{folder}", "-aoa"],
                         timeout=extraction_timeout,
                         cwd=folder,
                         operation=f"Archive extraction: {archive_file.name}",
                         use_temp_files=True,
-                        process_tracker=self.process_tracker
+                        process_tracker=self.process_tracker,
                     )
 
                     elapsed = time.time() - start_time
@@ -157,7 +172,9 @@ class ArchiveProcessor:
                     if success:
                         success_count += 1
                         speed_mbps = file_size_mb / elapsed if elapsed > 0 else 0
-                        logging.info(f"Extracted {archive_file.name} ({file_size_mb:.1f}MB in {elapsed:.1f}s, {speed_mbps:.1f}MB/s)")
+                        logging.info(
+                            f"Extracted {archive_file.name} ({file_size_mb:.1f}MB in {elapsed:.1f}s, {speed_mbps:.1f}MB/s)"
+                        )
                     else:
                         # Determine reason from stderr
                         reason = "Unknown error"
@@ -177,7 +194,7 @@ class ArchiveProcessor:
                             reason=reason,
                             action="Check if archive is complete, not password-protected, and not corrupted",
                             location=archive_file.parent,
-                            details=stderr[:300] if stderr else None
+                            details=stderr[:300] if stderr else None,
                         )
 
                 except Exception as e:
@@ -185,7 +202,7 @@ class ArchiveProcessor:
                         what_failed=f"Unexpected error extracting {archive_file.name}",
                         reason=str(e),
                         action="Check archive file is accessible and not locked by another process",
-                        location=archive_file.parent
+                        location=archive_file.parent,
                     )
 
             # Delete RAR files after extraction attempt
@@ -201,16 +218,16 @@ class ArchiveProcessor:
             else:
                 logging.info(f"All {total_count} archives extracted successfully in {folder}")
                 return True
-            
+
         except Exception as e:
             log_error(
                 what_failed="Archive processing failed",
                 reason=str(e),
                 action="Check folder permissions and disk space",
-                location=folder
+                location=folder,
             )
             return False
-    
+
     def process_par2_files(self, folder: Path) -> bool:
         """
         Verify and repair files using PAR2 in the given folder.
@@ -230,7 +247,7 @@ class ArchiveProcessor:
             False if repair failed (archives corrupted beyond repair)
         """
         try:
-            par2_files = list(folder.glob('*.par2'))
+            par2_files = list(folder.glob("*.par2"))
 
             if not par2_files:
                 return True  # No PAR2 files to process
@@ -239,7 +256,7 @@ class ArchiveProcessor:
             par2_file = par2_files[0]
 
             # Get par2 command from config
-            par2_cmd = self.system_check.get_tool_command('par2')
+            par2_cmd = self.system_check.get_tool_command("par2")
             if not par2_cmd:
                 logging.warning("PAR2 executable unavailable or configured with an unsafe relative path")
                 return False
@@ -259,26 +276,26 @@ class ArchiveProcessor:
 
             start_time = time.time()
             success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
-                par2_cmd + ['r', str(par2_file)],
+                par2_cmd + ["r", str(par2_file)],
                 timeout=par2_timeout,
                 cwd=folder,
                 operation=f"PAR2 repair: {par2_file.name}",
                 use_temp_files=True,  # PAR2 can output large amounts of data, use temp files
-                process_tracker=self.process_tracker
+                process_tracker=self.process_tracker,
             )
             elapsed = time.time() - start_time
 
             # Check for failure indicators FIRST (par2 can return 0 even on failure sometimes)
             combined_output = (stdout + stderr).lower()
             failure_keywords = [
-                'repair failed',
-                'repair is impossible',
-                'cannot repair',
-                'repair is not possible',
-                'insufficient',
-                'damaged beyond repair',
-                'fatal error',
-                'could not repair'
+                "repair failed",
+                "repair is impossible",
+                "cannot repair",
+                "repair is not possible",
+                "insufficient",
+                "damaged beyond repair",
+                "fatal error",
+                "could not repair",
             ]
 
             # Check if repair explicitly failed
@@ -291,11 +308,11 @@ class ArchiveProcessor:
                     reason=f"Archives are corrupted beyond repair (completed in {elapsed:.1f}s)",
                     action="Download missing PAR2 files or re-download archives",
                     location=folder,
-                    details=f"Exit code: {code}\nStdout: {stdout[:300]}\nStderr: {stderr[:300]}"
+                    details=f"Exit code: {code}\nStdout: {stdout[:300]}\nStderr: {stderr[:300]}",
                 )
 
                 # Delete PAR2 files
-                self._delete_files_by_extension(folder, '.par2')
+                self._delete_files_by_extension(folder, ".par2")
 
                 # Delete archive files (they're corrupted)
                 self._delete_archive_files(folder)
@@ -303,7 +320,7 @@ class ArchiveProcessor:
                 return False
 
             # Check for success indicators
-            if success or code == 0:
+            if success:
                 # Check if repair was actually done by looking for "repaired" in output
                 if "repaired successfully" in combined_output or "repair complete" in combined_output:
                     logging.info(f"PAR2 repair completed successfully in {elapsed:.1f}s for {folder}")
@@ -313,7 +330,7 @@ class ArchiveProcessor:
                     # Success exit code but unclear output - assume OK
                     logging.info(f"PAR2 verification/repair finished in {elapsed:.1f}s for {folder}")
 
-                self._delete_files_by_extension(folder, '.par2')
+                self._delete_files_by_extension(folder, ".par2")
                 return True
 
             # Timeout or unknown error
@@ -321,7 +338,7 @@ class ArchiveProcessor:
                 what_failed="PAR2 operation failed",
                 reason="Operation timed out or returned unexpected error",
                 action="Check if PAR2 files are valid and archives are accessible",
-                location=folder
+                location=folder,
             )
             return False
 
@@ -330,29 +347,29 @@ class ArchiveProcessor:
                 what_failed="PAR2 processing failed",
                 reason=str(e),
                 action="Check folder permissions and PAR2 file validity",
-                location=folder
+                location=folder,
             )
             return False
-    
-    def _delete_archive_files(self, folder: Path):
+
+    def _delete_archive_files(self, folder: Path) -> None:
         """Delete RAR, 7z and related archive files."""
         # Delete .rar files
-        self._delete_files_by_extension(folder, '.rar')
+        self._delete_files_by_extension(folder, ".rar")
 
         # Delete split RAR files (.r00, .r01, etc.)
         for i in range(100):
-            ext = f'.r{str(i).zfill(2)}'
+            ext = f".r{str(i).zfill(2)}"
             self._delete_files_by_extension(folder, ext)
 
         # Delete .7z files
-        self._delete_files_by_extension(folder, '.7z')
+        self._delete_files_by_extension(folder, ".7z")
 
         # Delete split 7z files (.7z.001, .7z.002, etc.)
         for i in range(1, 100):
-            ext = f'.7z.{str(i).zfill(3)}'
+            ext = f".7z.{str(i).zfill(3)}"
             self._delete_files_by_extension(folder, ext)
-    
-    def _delete_files_by_extension(self, folder: Path, extension: str):
+
+    def _delete_files_by_extension(self, folder: Path, extension: str) -> None:
         """
         Delete all files with the given extension in the folder with retry logic.
 
@@ -360,7 +377,7 @@ class ArchiveProcessor:
             folder: Path to folder
             extension: File extension to delete (e.g., '.rar')
         """
-        for file in folder.glob('*' + extension):
+        for file in folder.glob("*" + extension):
             # Safety check: enforce invariants before deletion if enforcer is configured
             if self.enforcer:
                 try:
@@ -414,10 +431,10 @@ class ArchiveProcessor:
             # List archive contents without extracting (7z l = list)
             # Use temp files to avoid buffer overflow on large archives
             success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
-                sevenzip_cmd + ['l', str(archive_file)],
+                sevenzip_cmd + ["l", str(archive_file)],
                 timeout=30,  # Listing should be fast
                 operation=f"Archive path validation: {archive_file.name}",
-                use_temp_files=True  # Prevent buffer overflow on large archives (50GB+)
+                use_temp_files=True,  # Prevent buffer overflow on large archives (50GB+)
             )
 
             if not success or code != 0:
@@ -427,12 +444,12 @@ class ArchiveProcessor:
             # Parse file list from 7z output
             # 7z list format has lines like:
             # 2024-12-24 14:30:22 ....A         1234         5678  path/to/file.txt
-            lines = stdout.split('\n')
+            lines = stdout.split("\n")
             target_folder_resolved = target_folder.resolve()
 
             for line in lines:
                 # Skip header/footer lines
-                if not line.strip() or '---' in line or 'Date' in line or 'Path' in line:
+                if not line.strip() or "---" in line or "Date" in line or "Path" in line:
                     continue
 
                 # Extract file path (last column after multiple spaces)
@@ -441,7 +458,7 @@ class ArchiveProcessor:
                     continue
 
                 # Path is everything after the 5th column
-                file_path = ' '.join(parts[5:])
+                file_path = " ".join(parts[5:])
 
                 if not file_path:
                     continue
@@ -453,7 +470,7 @@ class ArchiveProcessor:
                     return False
 
                 # 2. Check for parent directory traversal (..)
-                if '..' in Path(file_path).parts:
+                if ".." in Path(file_path).parts:
                     logging.error(f"SECURITY: Archive contains parent directory reference: {file_path}")
                     return False
 
@@ -467,7 +484,9 @@ class ArchiveProcessor:
                         would_extract_to.relative_to(target_folder_resolved)
                     except ValueError:
                         # relative_to() raises ValueError if not a subpath
-                        logging.error(f"SECURITY: Archive would extract outside target: {file_path} -> {would_extract_to}")
+                        logging.error(
+                            f"SECURITY: Archive would extract outside target: {file_path} -> {would_extract_to}"
+                        )
                         return False
                 except Exception as e:
                     logging.warning(f"Could not validate path {file_path}: {e}")

@@ -13,7 +13,9 @@ def test_run_handles_missing_or_empty_work_plan(capsys, tmp_path):
 
     app2 = types.SimpleNamespace(
         destination_dir=None,
-        work_plan=types.SimpleNamespace(video_folders=[], content_folders=[], total_videos=0, loose_videos=[], junk_folders=[]),
+        work_plan=types.SimpleNamespace(
+            video_folders=[], content_folders=[], total_videos=0, loose_videos=[], junk_folders=[]
+        ),
     )
     unpackr.UnpackrApp.run(app2, tmp_path, tmp_path)
     out = capsys.readouterr().out
@@ -59,7 +61,9 @@ def test_run_dry_run_loose_and_junk_paths(tmp_path):
         dry_run=True,
         dry_run_plan=types.SimpleNamespace(print_summary=lambda: None),
         video_processor=types.SimpleNamespace(check_video_health=lambda *_: True),
-        file_handler=types.SimpleNamespace(is_folder_empty_or_removable=lambda *_a, **_k: True, safe_delete_folder=lambda *_a, **_k: True),
+        file_handler=types.SimpleNamespace(
+            is_folder_empty_or_removable=lambda *_a, **_k: True, safe_delete_folder=lambda *_a, **_k: True
+        ),
         _stop_spinner_thread=lambda: None,
     )
 

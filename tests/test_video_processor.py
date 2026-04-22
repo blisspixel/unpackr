@@ -46,7 +46,14 @@ class TestVideoHealthBasics:
         result = processor.check_video_health(tiny_file)
         assert result is False
 
-    @patch('core.video_processor.SubprocessSafety.run_with_timeout')
+    def test_file_too_small_returns_quality_tuple(self, processor, temp_dir):
+        tiny_file = temp_dir / "tiny.mp4"
+        tiny_file.write_bytes(b"x" * 100)
+
+        result = processor.check_video_health(tiny_file, check_quality=True)
+        assert result == (False, False, None, None)
+
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
     def test_healthy_video(self, mock_subprocess, processor, temp_dir):
         """Test successful health check for healthy video."""
         video = temp_dir / "healthy.mp4"
@@ -59,14 +66,14 @@ class TestVideoHealthBasics:
         Stream #0:0: Video: h264, yuv420p, 1920x1080, 24 fps
         """
         mock_subprocess.side_effect = [
-            (True, '', metadata_stderr, 1),  # Metadata check (ffmpeg returns 1 for -i without output)
-            (True, '', '', 0)  # Decode test
+            (True, "", metadata_stderr, 1),  # Metadata check (ffmpeg returns 1 for -i without output)
+            (True, "", "", 0),  # Decode test
         ]
 
         result = processor.check_video_health(video)
         assert result is True
 
-    @patch('core.video_processor.SubprocessSafety.run_with_timeout')
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
     def test_missing_duration(self, mock_subprocess, processor, temp_dir):
         """Test rejection of video with missing/invalid duration."""
         video = temp_dir / "no_duration.mp4"
@@ -74,12 +81,41 @@ class TestVideoHealthBasics:
 
         # Mock metadata with missing duration
         metadata_stderr = "Stream #0:0: Video: h264"
-        mock_subprocess.return_value = (True, '', metadata_stderr, 1)
+        mock_subprocess.return_value = (True, "", metadata_stderr, 1)
 
         result = processor.check_video_health(video)
         assert result is False
 
-    @patch('core.video_processor.SubprocessSafety.run_with_timeout')
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
+    def test_malformed_duration_line_is_rejected(self, mock_subprocess, processor, temp_dir):
+        video = temp_dir / "bad_duration.mp4"
+        video.write_bytes(b"x" * (20 * 1024 * 1024))
+
+        metadata_stderr = """
+        Duration: not-a-time, bitrate: 2500 kb/s
+        Stream #0:0: Video: h264, yuv420p, 1920x1080
+        """
+        mock_subprocess.return_value = (True, "", metadata_stderr, 1)
+
+        assert processor.check_video_health(video) is False
+
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
+    def test_malformed_bitrate_still_allows_healthy_video(self, mock_subprocess, processor, temp_dir):
+        video = temp_dir / "bad_bitrate.mp4"
+        video.write_bytes(b"x" * (200 * 1024 * 1024))
+
+        metadata_stderr = """
+        Duration: 00:10:00.00, bitrate: not-a-number
+        Stream #0:0: Video: h264, yuv420p, 1920x1080
+        """
+        mock_subprocess.side_effect = [
+            (True, "", metadata_stderr, 1),
+            (True, "", "", 0),
+        ]
+
+        assert processor.check_video_health(video) is True
+
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
     def test_truncated_video(self, mock_subprocess, processor, temp_dir):
         """Test detection of truncated video (size too small for duration/bitrate)."""
         video = temp_dir / "truncated.mp4"
@@ -93,12 +129,26 @@ class TestVideoHealthBasics:
         # Expected size: 5000 kb/s * 3600s / 8 / 1024 = ~2197 MB
         # Actual: 10 MB (ratio ~0.005, much less than 0.70 threshold)
 
-        mock_subprocess.return_value = (True, '', metadata_stderr, 1)
+        mock_subprocess.return_value = (True, "", metadata_stderr, 1)
 
         result = processor.check_video_health(video)
         assert result is False
 
-    @patch('core.video_processor.SubprocessSafety.run_with_timeout')
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
+    def test_truncated_video_returns_quality_tuple(self, mock_subprocess, processor, temp_dir):
+        video = temp_dir / "truncated_quality.mp4"
+        video.write_bytes(b"x" * (10 * 1024 * 1024))
+
+        metadata_stderr = """
+        Duration: 01:00:00.00, bitrate: 5000 kb/s
+        Stream #0:0: Video: h264, yuv420p, 1920x1080
+        """
+        mock_subprocess.return_value = (True, "", metadata_stderr, 1)
+
+        result = processor.check_video_health(video, check_quality=True)
+        assert result == (False, False, None, (1920, 1080))
+
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
     def test_corrupted_video(self, mock_subprocess, processor, temp_dir):
         """Test detection of corrupted video with decode errors."""
         video = temp_dir / "corrupt.mp4"
@@ -112,14 +162,14 @@ class TestVideoHealthBasics:
         decode_stderr = "Error while decoding stream #0:0: Invalid data found"
 
         mock_subprocess.side_effect = [
-            (True, '', metadata_stderr, 1),  # Metadata OK
-            (True, '', decode_stderr, 0)  # Decode has errors
+            (True, "", metadata_stderr, 1),  # Metadata OK
+            (True, "", decode_stderr, 0),  # Decode has errors
         ]
 
         result = processor.check_video_health(video)
         assert result is False
 
-    @patch('core.video_processor.SubprocessSafety.run_with_timeout')
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
     def test_decode_timeout(self, mock_subprocess, processor, temp_dir):
         """Test handling of decode timeout."""
         video = temp_dir / "timeout.mp4"
@@ -131,12 +181,29 @@ class TestVideoHealthBasics:
         """
 
         mock_subprocess.side_effect = [
-            (True, '', metadata_stderr, 1),  # Metadata OK
-            (False, '', 'Timeout', -1)  # Decode timeout
+            (True, "", metadata_stderr, 1),  # Metadata OK
+            (False, "", "Timeout", -1),  # Decode timeout
         ]
 
         result = processor.check_video_health(video)
         assert result is False
+
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
+    def test_decode_nonzero_exit_returns_quality_tuple(self, mock_subprocess, processor, temp_dir):
+        video = temp_dir / "decode_error.mp4"
+        video.write_bytes(b"x" * (190 * 1024 * 1024))
+
+        metadata_stderr = """
+        Duration: 00:10:00.00, bitrate: 2500 kb/s
+        Stream #0:0: Video: h264, yuv420p, 1920x1080
+        """
+        mock_subprocess.side_effect = [
+            (True, "", metadata_stderr, 1),
+            (True, "", "", 2),
+        ]
+
+        result = processor.check_video_health(video, check_quality=True)
+        assert result == (False, False, None, (1920, 1080))
 
 
 class TestQualityChecking:
@@ -155,7 +222,7 @@ class TestQualityChecking:
         yield Path(temp)
         shutil.rmtree(temp, ignore_errors=True)
 
-    @patch('core.video_processor.SubprocessSafety.run_with_timeout')
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
     def test_low_resolution_detected(self, mock_subprocess, processor, temp_dir):
         """Test detection of low resolution video."""
         video = temp_dir / "low_res.mp4"
@@ -169,8 +236,8 @@ class TestQualityChecking:
         """
 
         mock_subprocess.side_effect = [
-            (True, '', metadata_stderr, 1),  # Metadata
-            (True, '', '', 0)  # Decode OK
+            (True, "", metadata_stderr, 1),  # Metadata
+            (True, "", "", 0),  # Decode OK
         ]
 
         is_healthy, is_low_quality, reason, resolution = processor.check_video_health(video, check_quality=True)
@@ -180,7 +247,7 @@ class TestQualityChecking:
         assert "Low resolution" in reason
         assert resolution == (640, 480)
 
-    @patch('core.video_processor.SubprocessSafety.run_with_timeout')
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
     def test_low_bitrate_detected(self, mock_subprocess, processor, temp_dir):
         """Test detection of low bitrate video."""
         video = temp_dir / "low_bitrate.mp4"
@@ -193,10 +260,7 @@ class TestQualityChecking:
         Stream #0:0: Video: h264, yuv420p, 1920x1080
         """
 
-        mock_subprocess.side_effect = [
-            (True, '', metadata_stderr, 1),
-            (True, '', '', 0)
-        ]
+        mock_subprocess.side_effect = [(True, "", metadata_stderr, 1), (True, "", "", 0)]
 
         is_healthy, is_low_quality, reason, resolution = processor.check_video_health(video, check_quality=True)
 
@@ -204,7 +268,7 @@ class TestQualityChecking:
         assert is_low_quality is True
         assert "Low bitrate" in reason
 
-    @patch('core.video_processor.SubprocessSafety.run_with_timeout')
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
     def test_low_bitrate_for_1080p(self, mock_subprocess, processor, temp_dir):
         """Test detection of insufficient bitrate for 1080p."""
         video = temp_dir / "1080p_low_bitrate.mp4"
@@ -217,10 +281,7 @@ class TestQualityChecking:
         Stream #0:0: Video: h264, yuv420p, 1920x1080
         """
 
-        mock_subprocess.side_effect = [
-            (True, '', metadata_stderr, 1),
-            (True, '', '', 0)
-        ]
+        mock_subprocess.side_effect = [(True, "", metadata_stderr, 1), (True, "", "", 0)]
 
         is_healthy, is_low_quality, reason, resolution = processor.check_video_health(video, check_quality=True)
 
@@ -228,7 +289,26 @@ class TestQualityChecking:
         assert is_low_quality is True
         assert "1080p" in reason
 
-    @patch('core.video_processor.SubprocessSafety.run_with_timeout')
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
+    def test_low_bitrate_for_720p(self, mock_subprocess, processor, temp_dir):
+        video = temp_dir / "720p_low_bitrate.mp4"
+        video.write_bytes(b"x" * (110 * 1024 * 1024))
+
+        metadata_stderr = """
+        Duration: 00:10:00.00, bitrate: 1200 kb/s
+        Stream #0:0: Video: h264, yuv420p, 1280x720
+        """
+
+        mock_subprocess.side_effect = [(True, "", metadata_stderr, 1), (True, "", "", 0)]
+
+        is_healthy, is_low_quality, reason, resolution = processor.check_video_health(video, check_quality=True)
+
+        assert is_healthy is True
+        assert is_low_quality is True
+        assert "720p" in reason
+        assert resolution == (1280, 720)
+
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
     def test_high_quality_video(self, mock_subprocess, processor, temp_dir):
         """Test high quality video not flagged as low quality."""
         video = temp_dir / "hq.mp4"
@@ -241,10 +321,7 @@ class TestQualityChecking:
         Stream #0:0: Video: h264, yuv420p, 1920x1080
         """
 
-        mock_subprocess.side_effect = [
-            (True, '', metadata_stderr, 1),
-            (True, '', '', 0)
-        ]
+        mock_subprocess.side_effect = [(True, "", metadata_stderr, 1), (True, "", "", 0)]
 
         is_healthy, is_low_quality, reason, resolution = processor.check_video_health(video, check_quality=True)
 
@@ -269,7 +346,7 @@ class TestMetadataParsing:
         yield Path(temp)
         shutil.rmtree(temp, ignore_errors=True)
 
-    @patch('core.video_processor.SubprocessSafety.run_with_timeout')
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
     def test_parse_duration(self, mock_subprocess, processor, temp_dir):
         """Test parsing duration from ffmpeg output."""
         video = temp_dir / "video.mp4"
@@ -283,16 +360,13 @@ class TestMetadataParsing:
         Stream #0:0: Video: h264, yuv420p, 1920x1080
         """
 
-        mock_subprocess.side_effect = [
-            (True, '', metadata_stderr, 1),
-            (True, '', '', 0)
-        ]
+        mock_subprocess.side_effect = [(True, "", metadata_stderr, 1), (True, "", "", 0)]
 
         # Duration should be parsed as: 1h * 3600 + 23m * 60 + 45.67s = 5025.67s
         result = processor.check_video_health(video)
         assert result is True
 
-    @patch('core.video_processor.SubprocessSafety.run_with_timeout')
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
     def test_parse_resolution(self, mock_subprocess, processor, temp_dir):
         """Test parsing resolution from ffmpeg output."""
         video = temp_dir / "video.mp4"
@@ -303,16 +377,13 @@ class TestMetadataParsing:
         Stream #0:0: Video: h264, yuv420p, 3840x2160, 30 fps
         """
 
-        mock_subprocess.side_effect = [
-            (True, '', metadata_stderr, 1),
-            (True, '', '', 0)
-        ]
+        mock_subprocess.side_effect = [(True, "", metadata_stderr, 1), (True, "", "", 0)]
 
         is_healthy, is_low_quality, reason, resolution = processor.check_video_health(video, check_quality=True)
 
         assert resolution == (3840, 2160)
 
-    @patch('core.video_processor.SubprocessSafety.run_with_timeout')
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
     def test_parse_bitrate(self, mock_subprocess, processor, temp_dir):
         """Test parsing bitrate from ffmpeg output."""
         video = temp_dir / "video.mp4"
@@ -323,10 +394,7 @@ class TestMetadataParsing:
         Stream #0:0: Video: h264, yuv420p, 3840x2160
         """
 
-        mock_subprocess.side_effect = [
-            (True, '', metadata_stderr, 1),
-            (True, '', '', 0)
-        ]
+        mock_subprocess.side_effect = [(True, "", metadata_stderr, 1), (True, "", "", 0)]
 
         # Bitrate parsing is verified indirectly through size validation
         result = processor.check_video_health(video)
@@ -404,7 +472,7 @@ class TestErrorHandling:
         yield Path(temp)
         shutil.rmtree(temp, ignore_errors=True)
 
-    @patch('core.video_processor.SubprocessSafety.run_with_timeout')
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
     def test_ffmpeg_not_installed(self, mock_subprocess, processor, temp_dir):
         """Test graceful handling when ffmpeg not installed."""
         video = temp_dir / "video.mp4"
@@ -416,7 +484,16 @@ class TestErrorHandling:
         result = processor.check_video_health(video)
         assert result is True
 
-    @patch('core.video_processor.SubprocessSafety.run_with_timeout')
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
+    def test_ffmpeg_not_installed_quality_mode_returns_tuple(self, mock_subprocess, processor, temp_dir):
+        video = temp_dir / "video.mp4"
+        video.write_bytes(b"x" * (10 * 1024 * 1024))
+
+        mock_subprocess.side_effect = FileNotFoundError("ffmpeg not found")
+
+        assert processor.check_video_health(video, check_quality=True) == (True, False, None, None)
+
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
     def test_unexpected_exception(self, mock_subprocess, processor, temp_dir):
         """Test handling of unexpected exceptions."""
         video = temp_dir / "video.mp4"
@@ -427,6 +504,15 @@ class TestErrorHandling:
         result = processor.check_video_health(video)
         assert result is False
 
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
+    def test_unexpected_exception_quality_mode_returns_tuple(self, mock_subprocess, processor, temp_dir):
+        video = temp_dir / "video.mp4"
+        video.write_bytes(b"x" * (10 * 1024 * 1024))
+
+        mock_subprocess.side_effect = Exception("Unexpected error")
+
+        assert processor.check_video_health(video, check_quality=True) == (False, False, None, None)
+
     def test_file_stat_error(self, processor, temp_dir):
         """Test handling of file stat errors."""
         video = temp_dir / "video.mp4"
@@ -434,12 +520,12 @@ class TestErrorHandling:
         # Create file then make it inaccessible by mocking stat
         video.write_bytes(b"x" * (10 * 1024 * 1024))
 
-        with patch.object(Path, 'stat', side_effect=OSError("Access denied")):
+        with patch.object(Path, "stat", side_effect=OSError("Access denied")):
             # Should raise exception or handle gracefully
             with pytest.raises(Exception):
                 processor.check_video_health(video)
 
-    @patch('core.video_processor.SubprocessSafety.run_with_timeout')
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
     def test_malformed_metadata(self, mock_subprocess, processor, temp_dir):
         """Test handling of malformed ffmpeg metadata output."""
         video = temp_dir / "video.mp4"
@@ -448,11 +534,30 @@ class TestErrorHandling:
         # Malformed metadata (corrupted format)
         metadata_stderr = "Some random text without proper format"
 
-        mock_subprocess.return_value = (True, '', metadata_stderr, 1)
+        mock_subprocess.return_value = (True, "", metadata_stderr, 1)
 
         # Should fail due to missing duration
         result = processor.check_video_health(video)
         assert result is False
+
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
+    def test_uses_default_ffmpeg_command_when_tool_lookup_returns_none(self, mock_subprocess, processor, temp_dir):
+        video = temp_dir / "video.mp4"
+        video.write_bytes(b"x" * (200 * 1024 * 1024))
+        processor.system_check.get_tool_command = lambda *_: None
+
+        metadata_stderr = """
+        Duration: 00:10:00.00, bitrate: 2500 kb/s
+        Stream #0:0: Video: h264, yuv420p, 1920x1080
+        """
+        mock_subprocess.side_effect = [
+            (True, "", metadata_stderr, 1),
+            (True, "", "", 0),
+        ]
+
+        assert processor.check_video_health(video) is True
+        first_call = mock_subprocess.call_args_list[0]
+        assert first_call.args[0][0] == "ffmpeg"
 
 
 class TestCorruptionKeywords:
@@ -471,7 +576,7 @@ class TestCorruptionKeywords:
         yield Path(temp)
         shutil.rmtree(temp, ignore_errors=True)
 
-    @patch('core.video_processor.SubprocessSafety.run_with_timeout')
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
     def test_detect_invalid_data(self, mock_subprocess, processor, temp_dir):
         """Test detection of 'Invalid data' keyword."""
         video = temp_dir / "video.mp4"
@@ -483,14 +588,14 @@ class TestCorruptionKeywords:
         """
 
         mock_subprocess.side_effect = [
-            (True, '', metadata_stderr, 1),
-            (True, '', "Invalid data found when processing input", 0)
+            (True, "", metadata_stderr, 1),
+            (True, "", "Invalid data found when processing input", 0),
         ]
 
         result = processor.check_video_health(video)
         assert result is False
 
-    @patch('core.video_processor.SubprocessSafety.run_with_timeout')
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
     def test_detect_moov_atom_missing(self, mock_subprocess, processor, temp_dir):
         """Test detection of 'moov atom not found' error."""
         video = temp_dir / "video.mp4"
@@ -501,13 +606,27 @@ class TestCorruptionKeywords:
         Stream #0:0: Video: h264, yuv420p, 1920x1080
         """
 
-        mock_subprocess.side_effect = [
-            (True, '', metadata_stderr, 1),
-            (True, '', "moov atom not found", 0)
-        ]
+        mock_subprocess.side_effect = [(True, "", metadata_stderr, 1), (True, "", "moov atom not found", 0)]
 
         result = processor.check_video_health(video)
         assert result is False
+
+    @patch("core.video_processor.SubprocessSafety.run_with_timeout")
+    def test_corruption_keyword_quality_mode_returns_tuple(self, mock_subprocess, processor, temp_dir):
+        video = temp_dir / "video.mp4"
+        video.write_bytes(b"x" * (190 * 1024 * 1024))
+
+        metadata_stderr = """
+        Duration: 00:10:00.00, bitrate: 2500 kb/s
+        Stream #0:0: Video: h264, yuv420p, 1920x1080
+        """
+
+        mock_subprocess.side_effect = [
+            (True, "", metadata_stderr, 1),
+            (True, "", "Premature end of file", 0),
+        ]
+
+        assert processor.check_video_health(video, check_quality=True) == (False, False, None, (1920, 1080))
 
 
 class TestConfigIntegration:
@@ -524,6 +643,11 @@ class TestConfigIntegration:
         processor = VideoProcessor(config=config)
         assert processor.config == config
 
+    def test_init_preserves_process_tracker(self):
+        tracker = object()
+        processor = VideoProcessor(config=Config(), process_tracker=tracker)
+        assert processor.process_tracker is tracker
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

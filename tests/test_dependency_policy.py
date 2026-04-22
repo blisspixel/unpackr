@@ -50,9 +50,9 @@ def test_doctor_versions_old_7z_blocks_old_par2_ffmpeg_warn(monkeypatch):
 
     def fake_get_version(tool_name, tool_path):
         versions = {
-            "7z": (21, 7, 0),      # too old -> issue
-            "par2": (0, 7, 0),     # too old -> warning
-            "ffmpeg": (4, 3, 0),   # too old -> warning
+            "7z": (21, 7, 0),  # too old -> issue
+            "par2": (0, 7, 0),  # too old -> warning
+            "ffmpeg": (4, 3, 0),  # too old -> warning
         }
         return versions.get(tool_name)
 

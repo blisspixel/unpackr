@@ -72,14 +72,18 @@ def test_duration_and_resolution_error_branches(tmp_path, monkeypatch, capsys):
     assert checker._get_duration(video) is None
 
     # Duration outer exception
-    monkeypatch.setattr(vhealth.SubprocessSafety, "run_with_timeout", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
+    monkeypatch.setattr(
+        vhealth.SubprocessSafety, "run_with_timeout", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x"))
+    )
     assert checker._get_duration(video) is None
 
     # Resolution no match + exception branch.
     monkeypatch.setattr(vhealth.SubprocessSafety, "run_with_timeout", lambda *a, **k: (True, "nores", "", 1))
     assert checker._get_resolution(video) is None
 
-    monkeypatch.setattr(vhealth.SubprocessSafety, "run_with_timeout", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
+    monkeypatch.setattr(
+        vhealth.SubprocessSafety, "run_with_timeout", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x"))
+    )
     assert checker._get_resolution(video) is None
 
     # Unknown min resolution warning branch.

@@ -13,7 +13,7 @@ import pytest
 import tempfile
 import shutil
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -34,15 +34,15 @@ class TestFilenameSanitization:
     def test_sanitize_forbidden_windows_chars(self, handler):
         """Test replacement of Windows forbidden characters."""
         test_cases = [
-            ('file<name>.mp4', 'file(name).mp4'),
-            ('file>name.mp4', 'file)name.mp4'),
-            ('file:name.mp4', 'file-name.mp4'),
+            ("file<name>.mp4", "file(name).mp4"),
+            ("file>name.mp4", "file)name.mp4"),
+            ("file:name.mp4", "file-name.mp4"),
             ('file"name.mp4', "file'name.mp4"),
             # Note: / and \ are path separators, so Path() splits them
             # 'file/name.mp4' becomes 'name.mp4' (only filename after split)
-            ('file|name.mp4', 'file-name.mp4'),
-            ('file?name.mp4', 'filename.mp4'),
-            ('file*name.mp4', 'filename.mp4'),
+            ("file|name.mp4", "file-name.mp4"),
+            ("file?name.mp4", "filename.mp4"),
+            ("file*name.mp4", "filename.mp4"),
         ]
 
         for input_name, expected in test_cases:
@@ -52,10 +52,10 @@ class TestFilenameSanitization:
     def test_sanitize_misnamed_video_extensions(self, handler):
         """Test fixing misnamed video files like .mp4.1, .mkv.bak."""
         test_cases = [
-            ('video.mp4.1', 'video.mp4'),
-            ('video.mkv.bak', 'video.mkv'),
-            ('video.avi.tmp', 'video.avi'),
-            ('movie.MP4.001', 'movie.mp4'),  # Case insensitive
+            ("video.mp4.1", "video.mp4"),
+            ("video.mkv.bak", "video.mkv"),
+            ("video.avi.tmp", "video.avi"),
+            ("movie.MP4.001", "movie.mp4"),  # Case insensitive
         ]
 
         for input_name, expected in test_cases:
@@ -65,10 +65,10 @@ class TestFilenameSanitization:
     def test_sanitize_unicode_transliteration(self, handler):
         """Test transliteration of Unicode characters to ASCII."""
         test_cases = [
-            ('файл.mp4', 'fayl.mp4'),  # Cyrillic
-            ('café.mp4', 'cafe.mp4'),  # Accented
-            ('naïve.mp4', 'naive.mp4'),
-            ('Москва.mp4', 'Moskva.mp4'),  # Russian city name
+            ("файл.mp4", "fayl.mp4"),  # Cyrillic
+            ("café.mp4", "cafe.mp4"),  # Accented
+            ("naïve.mp4", "naive.mp4"),
+            ("Москва.mp4", "Moskva.mp4"),  # Russian city name
         ]
 
         for input_name, expected in test_cases:
@@ -77,19 +77,19 @@ class TestFilenameSanitization:
 
     def test_sanitize_reserved_windows_names(self, handler):
         """Test handling of Windows reserved names."""
-        reserved_names = ['CON', 'PRN', 'AUX', 'NUL', 'COM1', 'LPT1']
+        reserved_names = ["CON", "PRN", "AUX", "NUL", "COM1", "LPT1"]
 
         for reserved in reserved_names:
-            result = handler.sanitize_filename(f'{reserved}.mp4')
-            assert result == f'{reserved}_.mp4', f"Failed for reserved name {reserved}"
+            result = handler.sanitize_filename(f"{reserved}.mp4")
+            assert result == f"{reserved}_.mp4", f"Failed for reserved name {reserved}"
 
     def test_sanitize_multiple_separators(self, handler):
         """Test normalization of multiple dots, dashes, spaces."""
         test_cases = [
-            ('file..name.mp4', 'file.name.mp4'),
-            ('file--name.mp4', 'file-name.mp4'),
-            ('file__name.mp4', 'file_name.mp4'),
-            ('file  name.mp4', 'file name.mp4'),
+            ("file..name.mp4", "file.name.mp4"),
+            ("file--name.mp4", "file-name.mp4"),
+            ("file__name.mp4", "file_name.mp4"),
+            ("file  name.mp4", "file name.mp4"),
         ]
 
         for input_name, expected in test_cases:
@@ -99,11 +99,11 @@ class TestFilenameSanitization:
     def test_sanitize_leading_trailing_chars(self, handler):
         """Test removal of leading/trailing problematic characters."""
         test_cases = [
-            ('.file.mp4', 'file.mp4'),
-            ('file_.mp4', 'file.mp4'),
-            ('_file.mp4', 'file.mp4'),
-            (' file .mp4', 'file.mp4'),
-            ('..file...mp4', 'file.mp4'),
+            (".file.mp4", "file.mp4"),
+            ("file_.mp4", "file.mp4"),
+            ("_file.mp4", "file.mp4"),
+            (" file .mp4", "file.mp4"),
+            ("..file...mp4", "file.mp4"),
         ]
 
         for input_name, expected in test_cases:
@@ -112,13 +112,13 @@ class TestFilenameSanitization:
 
     def test_sanitize_empty_name_fallback(self, handler):
         """Test that empty names after sanitization get timestamp fallback."""
-        result = handler.sanitize_filename('?.mp4')  # All chars removed
-        assert result.startswith('file_')
-        assert result.endswith('.mp4')
+        result = handler.sanitize_filename("?.mp4")  # All chars removed
+        assert result.startswith("file_")
+        assert result.endswith(".mp4")
 
     def test_sanitize_length_limit(self, handler):
         """Test filename length limiting."""
-        long_name = 'a' * 250 + '.mp4'
+        long_name = "a" * 250 + ".mp4"
         result = handler.sanitize_filename(long_name)
         assert len(result) <= 204  # 200 chars + '.mp4'
 
@@ -150,7 +150,7 @@ class TestVideoFileDetection:
         videos = handler.find_video_files(temp_dir)
 
         assert len(videos) == 3
-        assert all(v.suffix in ['.mp4', '.mkv', '.avi'] for v in videos)
+        assert all(v.suffix in [".mp4", ".mkv", ".avi"] for v in videos)
 
     def test_find_video_files_non_recursive(self, handler, temp_dir):
         """Test that find_video_files doesn't recurse into subdirectories."""
@@ -361,12 +361,14 @@ class TestEdgeCases:
     def test_init_with_none_config(self):
         """Test that initialization with None config raises error."""
         from utils.defensive import ValidationError
+
         with pytest.raises(ValidationError):
             FileHandler(None)
 
     def test_init_with_invalid_config(self):
         """Test that initialization with invalid config raises error."""
         from utils.defensive import ValidationError
+
         config = Mock(spec=[])  # Mock with no attributes
         # Config missing required attributes (video_extensions, removable_extensions)
         with pytest.raises(ValidationError, match="missing required attribute"):
@@ -376,16 +378,16 @@ class TestEdgeCases:
         """Test removal of control characters from filenames."""
         filename = "file\x00name\x01.mp4"  # Null and SOH control chars
         result = handler.sanitize_filename(filename)
-        assert '\x00' not in result
-        assert '\x01' not in result
+        assert "\x00" not in result
+        assert "\x01" not in result
 
     def test_sanitize_very_long_unicode_name(self, handler):
         """Test handling of very long Unicode filename."""
-        long_unicode = 'фи' * 150 + '.mp4'  # Cyrillic chars
+        long_unicode = "фи" * 150 + ".mp4"  # Cyrillic chars
         result = handler.sanitize_filename(long_unicode)
         # Should be transliterated and length-limited
         assert len(result) <= 204
-        assert result.endswith('.mp4')
+        assert result.endswith(".mp4")
 
     def test_find_videos_with_permission_error(self, handler):
         """Test graceful handling of permission errors."""
@@ -418,6 +420,148 @@ class TestEdgeCases:
         assert not handler.is_folder_empty_or_removable(mock_path)
 
 
+class TestDeleteAndRetryBehavior:
+    """Tests for retry and locked-file handling helpers."""
+
+    @pytest.fixture
+    def temp_dir(self):
+        temp = tempfile.mkdtemp()
+        yield Path(temp)
+        shutil.rmtree(temp, ignore_errors=True)
+
+    @pytest.fixture
+    def handler(self):
+        config = Config()
+        return FileHandler(config)
+
+    def test_safe_delete_folder_returns_false_for_linklike_root(self, handler, temp_dir, monkeypatch):
+        monkeypatch.setattr(handler, "_is_linklike_path", lambda path: path == temp_dir)
+        assert handler.safe_delete_folder(temp_dir) is False
+
+    def test_safe_delete_folder_uses_powershell_fallback_after_retries(self, handler, temp_dir):
+        target = temp_dir / "cleanup"
+        target.mkdir()
+        (target / "junk.txt").write_text("test")
+
+        with patch.object(handler, "is_folder_empty_or_removable", return_value=True):
+            with patch.object(handler, "_delete_tree_safely", side_effect=PermissionError("locked")):
+                with patch.object(handler, "_tree_contains_linklike_entries", return_value=False):
+                    with patch("subprocess.run") as mock_run:
+                        mock_run.side_effect = lambda *args, **kwargs: (shutil.rmtree(target), Mock())[1]
+                        assert handler.safe_delete_folder(target, max_attempts=2) is True
+
+    def test_safe_delete_folder_refuses_powershell_fallback_for_linklike_tree(self, handler, temp_dir):
+        target = temp_dir / "cleanup"
+        target.mkdir()
+
+        with patch.object(handler, "is_folder_empty_or_removable", return_value=True):
+            with patch.object(handler, "_delete_tree_safely", side_effect=PermissionError("locked")):
+                with patch.object(handler, "_tree_contains_linklike_entries", return_value=True):
+                    with patch("subprocess.run") as mock_run:
+                        assert handler.safe_delete_folder(target, max_attempts=1) is False
+        assert not mock_run.called
+
+    def test_delete_video_file_with_retry_retries_then_succeeds(self, handler, temp_dir):
+        video = temp_dir / "video.mp4"
+        video.write_text("test")
+
+        with patch.object(handler, "_terminate_related_processes") as mock_terminate:
+            with patch("core.file_handler.time.sleep") as mock_sleep:
+                with patch.object(Path, "unlink", side_effect=[PermissionError("locked"), None]) as mock_unlink:
+                    assert handler.delete_video_file_with_retry(video, max_attempts=2, retry_delay=3) is True
+
+        assert mock_terminate.call_count == 2
+        assert mock_unlink.call_count == 2
+        mock_sleep.assert_called_once_with(3)
+
+    def test_wait_for_file_release_returns_false_when_file_stays_locked(self, handler):
+        locked_file = "C:\\temp\\video.mp4"
+        proc = Mock()
+        proc.open_files.return_value = [Mock(path=locked_file)]
+
+        with patch("core.file_handler.psutil.process_iter", return_value=[proc]):
+            with patch("core.file_handler.time.sleep") as mock_sleep:
+                assert handler.wait_for_file_release(locked_file, max_attempts=2, delay=1) is False
+
+        assert mock_sleep.call_count == 2
+
+    def test_terminate_related_processes_only_targets_allowed_processes(self, handler):
+        target_name = "video.mp4"
+        ffmpeg_proc = Mock()
+        ffmpeg_proc.name.return_value = "ffmpeg"
+        ffmpeg_proc.pid = 1
+        ffmpeg_proc.cmdline.return_value = ["ffmpeg", target_name]
+        sevenzip_proc = Mock()
+        sevenzip_proc.name.return_value = "7z"
+        sevenzip_proc.pid = 2
+        sevenzip_proc.cmdline.return_value = ["7z", target_name]
+        other_proc = Mock()
+        other_proc.name.return_value = "python"
+        other_proc.pid = 3
+        other_proc.cmdline.return_value = ["python", target_name]
+
+        with patch("core.file_handler.psutil.process_iter", return_value=[ffmpeg_proc, sevenzip_proc, other_proc]):
+            handler._terminate_related_processes(target_name)
+
+        ffmpeg_proc.terminate.assert_called_once()
+        sevenzip_proc.terminate.assert_called_once()
+        assert not other_proc.terminate.called
+
+
+class TestMoveFileGuards:
+    """Tests for move_file error handling and safety gates."""
+
+    @pytest.fixture
+    def temp_dir(self):
+        temp = tempfile.mkdtemp()
+        yield Path(temp)
+        shutil.rmtree(temp, ignore_errors=True)
+
+    @pytest.fixture
+    def handler(self):
+        config = Config()
+        stats = {"files_sanitized": 0}
+        return FileHandler(config, stats=stats)
+
+    def test_move_file_returns_false_when_destination_not_writable(self, handler, temp_dir):
+        source = temp_dir / "video.mp4"
+        source.write_text("test")
+        dest = temp_dir / "dest"
+        dest.mkdir()
+
+        with patch("core.file_handler.StateValidator.check_file_accessible", return_value=True):
+            with patch("core.file_handler.StateValidator.check_dir_writable", return_value=False):
+                assert handler.move_file(source, dest) is False
+
+    def test_move_file_uses_unique_name_when_destination_exists(self, handler, temp_dir):
+        source = temp_dir / "bad:name.mp4"
+        source.write_text("test")
+        dest = temp_dir / "dest"
+        dest.mkdir()
+        (dest / "bad-name.mp4").write_text("existing")
+
+        with patch("core.file_handler.StateValidator.check_file_accessible", return_value=True):
+            with patch("core.file_handler.StateValidator.check_dir_writable", return_value=True):
+                with patch("core.file_handler.StateValidator.check_disk_space", return_value=True):
+                    with patch("core.file_handler.ErrorRecovery.safe_move", return_value=True) as mock_move:
+                        assert handler.move_file(source, dest) is True
+
+        assert mock_move.call_args[0][1].name == "bad-name_1.mp4"
+        assert handler.stats["files_sanitized"] == 1
+
+    def test_move_file_returns_false_when_safe_move_returns_false(self, handler, temp_dir):
+        source = temp_dir / "video.mp4"
+        source.write_text("test")
+        dest = temp_dir / "dest"
+        dest.mkdir()
+
+        with patch("core.file_handler.StateValidator.check_file_accessible", return_value=True):
+            with patch("core.file_handler.StateValidator.check_dir_writable", return_value=True):
+                with patch("core.file_handler.StateValidator.check_disk_space", return_value=True):
+                    with patch("core.file_handler.ErrorRecovery.safe_move", return_value=False):
+                        assert handler.move_file(source, dest) is False
+
+
 class TestStatsTracking:
     """Tests for optional stats tracking."""
 
@@ -425,15 +569,15 @@ class TestStatsTracking:
     def handler_with_stats(self):
         """Create FileHandler with stats tracking."""
         config = Config()
-        stats = {'sanitized': 0}
+        stats = {"sanitized": 0}
         return FileHandler(config, stats=stats)
 
     def test_stats_tracking_optional(self, handler_with_stats):
         """Test that stats tracking is optional and works when provided."""
         # Stats object is passed and accessible
         assert handler_with_stats.stats is not None
-        assert 'sanitized' in handler_with_stats.stats
+        assert "sanitized" in handler_with_stats.stats
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

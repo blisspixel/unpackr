@@ -5,9 +5,9 @@ User Experience Layer: Improved Dry-Run Output
 Collects planned operations and displays them in a structured, readable format.
 """
 
-from pathlib import Path
-from typing import List, Dict, Tuple
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Dict, List, Tuple
 
 
 @dataclass
@@ -164,7 +164,9 @@ class DryRunPlan:
         print("\n" + "-" * 80)
         print("SUMMARY:")
         print(f"  Archives: {len(self.archives_to_extract)} extract, {len(self.archives_to_skip)} skip")
-        print(f"  Videos: {len(self.videos_to_move)} move, {len(self.videos_to_delete)} delete, {len(self.videos_to_skip)} skip")
+        print(
+            f"  Videos: {len(self.videos_to_move)} move, {len(self.videos_to_delete)} delete, {len(self.videos_to_skip)} skip"
+        )
         print(f"  Cleanup: {len(self.junk_files)} junk files, {len(self.folders_to_delete)} folders")
         print(f"  Protected: {len(self.folders_to_keep)} content folders kept")
         print("=" * 80 + "\n")
