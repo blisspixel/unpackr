@@ -3,31 +3,31 @@ repos:
     hooks:
       - id: ruff-format
         name: ruff-format
-        entry: py -3.13 -m ruff format --check .
+        entry: python -m ruff format --check .
         language: system
         pass_filenames: false
       - id: ruff-check
         name: ruff-check
-        entry: py -3.13 -m ruff check .
+        entry: python -m ruff check .
         language: system
         pass_filenames: false
       - id: mypy
         name: mypy
-        entry: py -3.13 -m mypy
+        entry: python -m mypy
         language: system
         pass_filenames: false
       - id: pyright
         name: pyright
-        entry: py -3.13 -m pyright
+        entry: python -m pyright
         language: system
         pass_filenames: false
       - id: bandit
         name: bandit
-        entry: py -3.13 -m bandit -c pyproject.toml -r core utils doctor.py unpackr.py vhealth.py
+        entry: python -m bandit -c pyproject.toml -r core utils doctor.py unpackr.py vhealth.py
         language: system
         pass_filenames: false
       - id: pytest-smoke
         name: pytest-smoke
-        entry: py -3.13 -m pytest -q tests/test_cli_render.py tests/test_runtime_helpers.py
+        entry: python -m pytest -q tests/test_cli_render.py tests/test_runtime_helpers.py
         language: system
         pass_filenames: false

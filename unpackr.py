@@ -1601,6 +1601,8 @@ class UnpackrApp:
             print(
                 f"\n  {Style.DIM}Tip: Run 'vhealth \"{self.destination_dir}\"' to check for duplicates, samples, and corruption{Style.RESET_ALL}"
             )
+
+
 def main():
     """Main entry point with defensive error handling."""
     init()  # Initialize colorama with default settings; may be refined after args/config.
