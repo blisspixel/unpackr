@@ -53,6 +53,7 @@ class SafetyLimits:
     MAX_VIDEOS_PER_FOLDER = 100  # Safety limit
     MAX_SUBFOLDERS_DEPTH = 10  # Prevent infinite recursion
     MAX_TOTAL_PROCESSING_TIME = 3600 * 4  # 4 hours total
+    MAX_SUBPROCESS_CAPTURE_BYTES = 64 * 1024  # Bound stdout/stderr returned from temp files
 
     @staticmethod
     def calculate_rar_timeout(file_size_bytes: int) -> int:
@@ -167,6 +168,33 @@ class SubprocessSafety:
     """Safe subprocess execution with timeout and monitoring."""
 
     @staticmethod
+    def _read_bounded_text(path: Path, max_bytes: int | None = None) -> str:
+        """
+        Read a bounded sample from subprocess output.
+
+        Large archive tools can produce one line per file. Keep enough context for
+        diagnostics without loading attacker-controlled output fully into memory.
+        """
+        if max_bytes is None:
+            max_bytes = SafetyLimits.MAX_SUBPROCESS_CAPTURE_BYTES
+
+        size = path.stat().st_size
+        if size <= max_bytes:
+            return path.read_text(encoding="utf-8", errors="replace")
+
+        head_bytes = max_bytes // 2
+        tail_bytes = max_bytes - head_bytes
+        with path.open("rb") as output_file:
+            head = output_file.read(head_bytes)
+            output_file.seek(max(0, size - tail_bytes))
+            tail = output_file.read(tail_bytes)
+
+        omitted = max(0, size - len(head) - len(tail))
+        head_text = head.decode("utf-8", errors="replace")
+        tail_text = tail.decode("utf-8", errors="replace")
+        return f"{head_text}\n... [truncated {omitted} bytes of subprocess output] ...\n{tail_text}"
+
+    @staticmethod
     def run_with_timeout(
         cmd: list[str],
         timeout: int,
@@ -225,9 +253,9 @@ class SubprocessSafety:
                             process.wait(timeout=timeout)
                             success = process.returncode == 0
 
-                            # Read output from temp files
-                            stdout = stdout_path.read_text(encoding="utf-8", errors="replace")
-                            stderr = stderr_path.read_text(encoding="utf-8", errors="replace")
+                            # Read bounded output samples from temp files.
+                            stdout = SubprocessSafety._read_bounded_text(stdout_path)
+                            stderr = SubprocessSafety._read_bounded_text(stderr_path)
 
                             # Only log warning if code is unexpected
                             if not success and (expected_codes is None or process.returncode not in expected_codes):
@@ -243,8 +271,8 @@ class SubprocessSafety:
 
                             # Read partial output
                             try:
-                                stdout = stdout_path.read_text(encoding="utf-8", errors="replace")
-                                stderr = stderr_path.read_text(encoding="utf-8", errors="replace")
+                                stdout = SubprocessSafety._read_bounded_text(stdout_path)
+                                stderr = SubprocessSafety._read_bounded_text(stderr_path)
                             except OSError:
                                 stdout, stderr = "", "Process killed after timeout"
                             return False, stdout, stderr, -1

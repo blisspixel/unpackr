@@ -40,7 +40,8 @@ def quick_preflight(config: object, source_dir: Path, destination_dir: Path) -> 
     Quick pre-flight check before processing starts.
     Silent if everything is OK; only shows output if issues are found.
     """
-    warnings: list[str] = []
+    advisories: list[str] = []
+    confirmation_warnings: list[str] = []
 
     try:
         import shutil
@@ -48,24 +49,26 @@ def quick_preflight(config: object, source_dir: Path, destination_dir: Path) -> 
         _total, _used, free = shutil.disk_usage(destination_dir)
         free_gb = free // (2**30)
         if free_gb < 5:
-            warnings.append(f"Very low disk space: {free_gb}GB available (may run out)")
+            confirmation_warnings.append(f"Very low disk space: {free_gb}GB available (may run out)")
         elif free_gb < 10:
-            warnings.append(f"Low disk space: {free_gb}GB available")
+            advisories.append(f"Low disk space: {free_gb}GB available")
     except OSError:
         pass
 
     try:
         dir_list = list(source_dir.iterdir())
         if not dir_list:
-            warnings.append("Source directory is empty - nothing to process")
+            confirmation_warnings.append("Source directory is empty - nothing to process")
     except Exception as e:
-        warnings.append(f"Cannot read source directory: {e}")
+        confirmation_warnings.append(f"Cannot read source directory: {e}")
 
+    warnings = confirmation_warnings + advisories
     if warnings:
         print(f"\n{Fore.YELLOW}Pre-flight Check:{Style.RESET_ALL}")
         for warning in warnings:
             print(f"  {Fore.YELLOW}⚠{Style.RESET_ALL} {warning}")
 
+    if confirmation_warnings:
         print(f"\n{Fore.YELLOW}Continue anyway?{Style.RESET_ALL} {Style.DIM}[y/N]{Style.RESET_ALL}: ", end="")
         try:
             response = input().strip().lower()
@@ -85,13 +88,17 @@ def quick_preflight(config: object, source_dir: Path, destination_dir: Path) -> 
 def countdown_prompt(seconds: int = 10, operation_label: str = "processing") -> bool:
     """Display a short countdown before starting work."""
     try:
+        inline_output = sys.stdout.isatty()
         for i in range(seconds, 0, -1):
-            sys.stdout.write(
-                f"\r{Fore.GREEN}Starting {operation_label} in {i} seconds... (Press Ctrl+C to cancel) {Style.RESET_ALL}"
-            )
+            message = f"{Fore.GREEN}Starting {operation_label} in {i} seconds... (Press Ctrl+C to cancel) {Style.RESET_ALL}"
+            if inline_output:
+                sys.stdout.write(f"\r{message}")
+            else:
+                sys.stdout.write(f"{message}\n")
             sys.stdout.flush()
             time.sleep(1)
-        sys.stdout.write("\r" + " " * 60 + "\r")
+        if inline_output:
+            sys.stdout.write("\r" + " " * 60 + "\r")
         return True
     except KeyboardInterrupt:
         print(Fore.RED + "\n\nOperation cancelled by user." + Style.RESET_ALL)

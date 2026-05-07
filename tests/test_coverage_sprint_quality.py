@@ -186,8 +186,8 @@ def test_defensive_input_validator_and_state_edges(tmp_path, monkeypatch):
     base.mkdir()
     outside = tmp_path / "outside.txt"
     outside.write_text("x", encoding="utf-8")
-    resolved = InputValidator.validate_path(outside, must_exist=True, base_dir=base)
-    assert resolved == outside.resolve()
+    with pytest.raises(ValidationError):
+        InputValidator.validate_path(outside, must_exist=True, base_dir=base)
 
     with pytest.raises(ValidationError):
         InputValidator.validate_string(None)
@@ -220,7 +220,7 @@ def test_defensive_input_validator_and_state_edges(tmp_path, monkeypatch):
     assert StateValidator.validate_config_dict({"a": 1}, ["a", "b"]) is False
 
     monkeypatch.setattr("shutil.disk_usage", Mock(side_effect=RuntimeError("boom")))
-    assert StateValidator.check_disk_space(tmp_path, required_mb=100) is True
+    assert StateValidator.check_disk_space(tmp_path, required_mb=100) is False
 
 
 def test_defensive_error_recovery_and_wrapper_edges(tmp_path, monkeypatch):

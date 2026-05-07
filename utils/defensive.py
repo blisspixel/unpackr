@@ -4,6 +4,7 @@ Input validation, state verification, and error recovery.
 """
 
 import logging
+import uuid
 from contextlib import suppress
 from pathlib import Path
 from typing import Any, List, Optional, Union
@@ -98,6 +99,8 @@ class InputValidator:
                     raise ValidationError(f"Path {resolved_path} escapes base directory {base_resolved}") from None
 
             return resolved_path
+        except ValidationError:
+            raise
         except Exception as e:
             logging.warning(f"Path security check warning: {e}")
             return path_obj
@@ -309,7 +312,7 @@ class StateValidator:
             return True
         except Exception as e:
             logging.error(f"Cannot check disk space: {e}")
-            return True  # Assume OK if can't check
+            return False
 
     @staticmethod
     def validate_config_dict(config: dict, required_keys: List[str]) -> bool:
@@ -411,7 +414,7 @@ class ErrorRecovery:
                 if atomic:
                     # Atomic move: first move to temp file, then rename to final destination
                     # This ensures destination is never partially written
-                    temp_dst = dst.parent / f".tmp_{dst.name}_{int(time.time())}"
+                    temp_dst = dst.parent / f".tmp_{dst.name}_{uuid.uuid4().hex}"
 
                     # Use shutil.move to temp location
                     shutil.move(str(src), str(temp_dst))
@@ -458,8 +461,17 @@ class ErrorRecovery:
 
                 # Cleanup temp file if it exists
                 if temp_dst and temp_dst.exists():
-                    with suppress(OSError):
-                        temp_dst.unlink()
+                    if not src.exists():
+                        try:
+                            temp_dst.replace(src)
+                            logging.warning(f"Restored source after failed move attempt: {src}")
+                        except Exception as restore_error:
+                            logging.error(
+                                f"Failed to restore source {src} from temporary move file {temp_dst}: {restore_error}"
+                            )
+                    else:
+                        with suppress(OSError):
+                            temp_dst.unlink()
 
                 if attempt < max_attempts - 1:
                     time.sleep(1)

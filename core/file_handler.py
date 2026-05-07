@@ -631,29 +631,43 @@ class FileHandler:
 
         folder.rmdir()
 
-    def _kill_processes_using_folder(self, folder: Path) -> None:
+    def _kill_processes_using_folder(self, folder: Path, allowed_processes: Optional[List[str]] = None) -> None:
         """
-        Kill processes that have files open in the given folder.
+        Kill known helper processes that have files open in the given folder.
 
         Args:
             folder: Path to folder
+            allowed_processes: Process names that may be terminated
         """
+        if allowed_processes is None:
+            allowed_processes = ["ffmpeg", "7z", "par2"]
+        allowed_processes_normalized = {name.lower() for name in allowed_processes}
+
         try:
             import psutil
 
-            folder_str = str(folder)
+            folder_resolved = folder.resolve(strict=False)
             killed_pids: set[int] = set()
 
             for proc in psutil.process_iter(["pid", "name"]):
                 try:
+                    process_name = proc.name().lower()
+                    process_key = process_name.removesuffix(".exe")
+                    if process_name not in allowed_processes_normalized and process_key not in allowed_processes_normalized:
+                        continue
+
                     # Check if process has any files open in this folder
                     for file in proc.open_files():
-                        if folder_str in file.path:
-                            if proc.pid not in killed_pids:
-                                logging.info(f"Killing process {proc.name()} (PID {proc.pid}) using {folder}")
-                                proc.kill()
-                                killed_pids.add(proc.pid)
-                            break
+                        try:
+                            Path(file.path).resolve(strict=False).relative_to(folder_resolved)
+                        except (OSError, ValueError):
+                            continue
+
+                        if proc.pid not in killed_pids:
+                            logging.info(f"Killing process {proc.name()} (PID {proc.pid}) using {folder}")
+                            proc.kill()
+                            killed_pids.add(proc.pid)
+                        break
                 except (psutil.AccessDenied, psutil.NoSuchProcess):
                     continue
 

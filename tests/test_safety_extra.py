@@ -7,6 +7,7 @@ from utils.safety import (
     LoopSafety,
     OperationTimer,
     RecursionSafety,
+    SafetyLimits,
     StuckDetector,
     SubprocessSafety,
     TimeoutException,
@@ -138,6 +139,36 @@ def test_subprocess_safety_temp_file_modes(monkeypatch):
     ok, out, err, code = SubprocessSafety.run_with_timeout(["x"], timeout=1)
     assert ok is False
     assert code == -1
+
+
+def test_subprocess_safety_temp_file_output_is_bounded(monkeypatch):
+    monkeypatch.setattr(SafetyLimits, "MAX_SUBPROCESS_CAPTURE_BYTES", 32)
+
+    class ProcHugeOutput:
+        def __init__(self, cmd, stdout, stderr, cwd=None, text=None, encoding=None, errors=None):
+            self.returncode = 0
+            stdout.write("A" * 120 + "OUT_END")
+            stderr.write("B" * 120 + "ERR_END")
+            stdout.flush()
+            stderr.flush()
+
+        def wait(self, timeout=None):
+            return 0
+
+        def kill(self):
+            pass
+
+    monkeypatch.setattr("utils.safety.subprocess.Popen", ProcHugeOutput)
+    ok, out, err, code = SubprocessSafety.run_with_timeout(["x"], timeout=1, use_temp_files=True)
+
+    assert ok is True
+    assert code == 0
+    assert "truncated" in out
+    assert "truncated" in err
+    assert "OUT_END" in out
+    assert "ERR_END" in err
+    assert len(out) < 120
+    assert len(err) < 120
 
 
 def test_subprocess_safety_temp_tracker_warning_and_partial_read_fallback(monkeypatch):

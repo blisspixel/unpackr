@@ -20,6 +20,13 @@ Release dates are included where recorded.
   - `ffmpeg >= 4.4` (warning)
 - Refreshed core docs (`README`, `ROADMAP`, `TECHNICAL`, `BUILD`, `TROUBLESHOOTING`) for current behavior and support matrix.
 - Archived superseded UX doc to `docs/archive/UX_DESIGN.md` and added `docs/archive/README.md`.
+- Bounded captured subprocess output for temp-file archive operations to avoid unbounded 7z/par2 memory use.
+- Fixed `InputValidator.validate_path(base_dir=...)` to raise when a path escapes the trusted base directory.
+- Kept low-disk preflight advisories non-blocking while preserving confirmation for very-low-disk and empty-source runs.
+- Made countdown output line-based when stdout is captured so non-interactive logs show each countdown value.
+- Hardened atomic file moves so a failed final rename restores the source instead of deleting the temporary move file.
+- Changed disk-space check failures to fail closed instead of assuming enough free space.
+- Restricted locked-folder process termination to known helper processes and true child paths, avoiding broad substring matches.
 
 ## v1.3.0 (2026-01-07)
 

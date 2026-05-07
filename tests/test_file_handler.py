@@ -461,6 +461,36 @@ class TestDeleteAndRetryBehavior:
                         assert handler.safe_delete_folder(target, max_attempts=1) is False
         assert not mock_run.called
 
+    def test_kill_processes_using_folder_limits_to_allowed_contained_paths(self, handler, temp_dir):
+        target = temp_dir / "cleanup"
+        target.mkdir()
+        adjacent = temp_dir / "cleanup-other"
+        adjacent.mkdir()
+
+        allowed_inside = Mock()
+        allowed_inside.name.return_value = "7z.exe"
+        allowed_inside.pid = 1
+        allowed_inside.open_files.return_value = [Mock(path=str(target / "archive.rar"))]
+
+        allowed_adjacent = Mock()
+        allowed_adjacent.name.return_value = "ffmpeg"
+        allowed_adjacent.pid = 2
+        allowed_adjacent.open_files.return_value = [Mock(path=str(adjacent / "video.mkv"))]
+
+        disallowed_inside = Mock()
+        disallowed_inside.name.return_value = "python"
+        disallowed_inside.pid = 3
+        disallowed_inside.open_files.return_value = [Mock(path=str(target / "script.py"))]
+
+        with patch("core.file_handler.psutil.process_iter", return_value=[allowed_inside, allowed_adjacent, disallowed_inside]):
+            with patch("core.file_handler.time.sleep"):
+                handler._kill_processes_using_folder(target)
+
+        allowed_inside.kill.assert_called_once()
+        assert not allowed_adjacent.kill.called
+        assert not disallowed_inside.kill.called
+        assert not disallowed_inside.open_files.called
+
     def test_delete_video_file_with_retry_retries_then_succeeds(self, handler, temp_dir):
         video = temp_dir / "video.mp4"
         video.write_text("test")

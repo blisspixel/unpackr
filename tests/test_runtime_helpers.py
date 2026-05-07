@@ -34,6 +34,19 @@ def test_quick_preflight_aborts_on_warning_and_no_confirmation(monkeypatch, tmp_
     assert unpackr.quick_preflight(object(), source, dest) is False
 
 
+def test_quick_preflight_low_disk_advisory_does_not_require_confirmation(monkeypatch, tmp_path):
+    source = tmp_path / "source"
+    dest = tmp_path / "dest"
+    source.mkdir()
+    dest.mkdir()
+    (source / "file.txt").write_text("x", encoding="utf-8")
+
+    monkeypatch.setattr(shutil, "disk_usage", lambda *_: (100, 10, 6 * (2**30)))
+    monkeypatch.setattr("builtins.input", lambda: (_ for _ in ()).throw(AssertionError("unexpected prompt")))
+
+    assert unpackr.quick_preflight(object(), source, dest) is True
+
+
 def test_quick_preflight_handles_eof_as_abort(monkeypatch, tmp_path):
     source = tmp_path / "source"
     dest = tmp_path / "dest"

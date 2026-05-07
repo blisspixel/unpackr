@@ -14,11 +14,10 @@ def test_validate_path_relative_and_null_byte(tmp_path):
     assert p == tmp_path.resolve()
 
 
-def test_validate_path_base_dir_escape_returns_path_object(tmp_path):
+def test_validate_path_base_dir_escape_raises(tmp_path):
     outside = tmp_path.parent / "outside_target"
-    result = InputValidator.validate_path(outside, base_dir=tmp_path)
-    # Current implementation fail-opens by returning original path on security-check exception.
-    assert isinstance(result, Path)
+    with pytest.raises(ValidationError):
+        InputValidator.validate_path(outside, base_dir=tmp_path)
 
 
 def test_validate_string_int_list_extra_branches():
@@ -45,9 +44,9 @@ def test_state_validator_branches(tmp_path, monkeypatch):
     monkeypatch.setattr("shutil.disk_usage", lambda *_: DU())
     assert StateValidator.check_disk_space(tmp_path, required_mb=100) is False
 
-    # Exception branch should fail-open.
+    # Exception branch should fail closed.
     monkeypatch.setattr("shutil.disk_usage", lambda *_: (_ for _ in ()).throw(RuntimeError("nope")))
-    assert StateValidator.check_disk_space(tmp_path, required_mb=100) is True
+    assert StateValidator.check_disk_space(tmp_path, required_mb=100) is False
 
     assert StateValidator.validate_config_dict("notdict", ["a"]) is False
     assert StateValidator.validate_config_dict({"a": 1}, ["a", "b"]) is False
@@ -108,6 +107,26 @@ def test_error_recovery_safe_move_branches(tmp_path, monkeypatch):
 
     monkeypatch.setattr("shutil.move", bad_move)
     assert ErrorRecovery.safe_move(src2, dst2, atomic=True, verify_integrity=True) is False
+
+
+def test_safe_move_restores_source_when_final_atomic_replace_fails(tmp_path, monkeypatch):
+    src = tmp_path / "source.txt"
+    dst = tmp_path / "dest.txt"
+    src.write_text("payload", encoding="utf-8")
+
+    original_replace = Path.replace
+
+    def fail_final_replace_once(self, target):
+        if Path(target) == dst:
+            raise OSError("destination locked")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", fail_final_replace_once)
+
+    assert ErrorRecovery.safe_move(src, dst, max_attempts=1) is False
+    assert src.read_text(encoding="utf-8") == "payload"
+    assert not dst.exists()
+    assert not list(tmp_path.glob(".tmp_dest.txt_*"))
 
 
 def test_defensive_wrapper_default_paths():
