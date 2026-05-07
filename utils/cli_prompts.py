@@ -90,7 +90,9 @@ def countdown_prompt(seconds: int = 10, operation_label: str = "processing") -> 
     try:
         inline_output = sys.stdout.isatty()
         for i in range(seconds, 0, -1):
-            message = f"{Fore.GREEN}Starting {operation_label} in {i} seconds... (Press Ctrl+C to cancel) {Style.RESET_ALL}"
+            message = (
+                f"{Fore.GREEN}Starting {operation_label} in {i} seconds... (Press Ctrl+C to cancel) {Style.RESET_ALL}"
+            )
             if inline_output:
                 sys.stdout.write(f"\r{message}")
             else:

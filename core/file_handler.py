@@ -653,7 +653,10 @@ class FileHandler:
                 try:
                     process_name = proc.name().lower()
                     process_key = process_name.removesuffix(".exe")
-                    if process_name not in allowed_processes_normalized and process_key not in allowed_processes_normalized:
+                    if (
+                        process_name not in allowed_processes_normalized
+                        and process_key not in allowed_processes_normalized
+                    ):
                         continue
 
                     # Check if process has any files open in this folder
