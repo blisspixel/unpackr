@@ -428,71 +428,66 @@ class ArchiveProcessor:
             True if archive is safe to extract, False if malicious paths detected
         """
         try:
-            # List archive contents without extracting (7z l = list)
-            # Use temp files to avoid buffer overflow on large archives
-            success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
+            # SECURITY: Stream the full 7z listing line-by-line so we cannot miss
+            # entries hidden in the middle of a multi-megabyte listing. The previous
+            # implementation relied on a 64 KiB head/tail sample, which an attacker
+            # could exploit by inflating the listing to hide an unsafe entry in the
+            # truncated middle (see _read_bounded_text in utils/safety.py).
+            target_folder_resolved = target_folder.resolve()
+            unsafe: dict[str, str] = {}
+
+            def check_line(line: str) -> bool:
+                # Skip blank/header/footer lines.
+                stripped = line.strip()
+                if not stripped or "---" in line or "Date" in line or "Path" in line:
+                    return True
+
+                # 7z list format: Date Time Attr Size CompSize Path
+                parts = line.split()
+                if len(parts) < 6:
+                    return True
+
+                file_path = " ".join(parts[5:])
+                if not file_path:
+                    return True
+
+                if Path(file_path).is_absolute():
+                    unsafe["reason"] = f"absolute path: {file_path}"
+                    return False
+
+                if ".." in Path(file_path).parts:
+                    unsafe["reason"] = f"parent directory reference: {file_path}"
+                    return False
+
+                try:
+                    would_extract_to = (target_folder / file_path).resolve()
+                    try:
+                        would_extract_to.relative_to(target_folder_resolved)
+                    except ValueError:
+                        unsafe["reason"] = f"would extract outside target: {file_path} -> {would_extract_to}"
+                        return False
+                except Exception as e:
+                    unsafe["reason"] = f"path validation error for {file_path}: {e}"
+                    return False
+
+                return True
+
+            success, _, code = SubprocessSafety.run_with_line_handler(
                 sevenzip_cmd + ["l", str(archive_file)],
                 timeout=30,  # Listing should be fast
+                line_handler=check_line,
                 operation=f"Archive path validation: {archive_file.name}",
-                use_temp_files=True,  # Prevent buffer overflow on large archives (50GB+)
             )
+
+            if unsafe:
+                logging.error(f"SECURITY: Archive contains {unsafe['reason']}")
+                return False
 
             if not success or code != 0:
                 logging.warning(f"Could not list archive contents for {archive_file.name} - assuming unsafe")
                 return False
 
-            # Parse file list from 7z output
-            # 7z list format has lines like:
-            # 2024-12-24 14:30:22 ....A         1234         5678  path/to/file.txt
-            lines = stdout.split("\n")
-            target_folder_resolved = target_folder.resolve()
-
-            for line in lines:
-                # Skip header/footer lines
-                if not line.strip() or "---" in line or "Date" in line or "Path" in line:
-                    continue
-
-                # Extract file path (last column after multiple spaces)
-                parts = line.split()
-                if len(parts) < 6:  # Date Time Attr Size CompSize Path
-                    continue
-
-                # Path is everything after the 5th column
-                file_path = " ".join(parts[5:])
-
-                if not file_path:
-                    continue
-
-                # SECURITY CHECKS
-                # 1. Check for absolute paths
-                if Path(file_path).is_absolute():
-                    logging.error(f"SECURITY: Archive contains absolute path: {file_path}")
-                    return False
-
-                # 2. Check for parent directory traversal (..)
-                if ".." in Path(file_path).parts:
-                    logging.error(f"SECURITY: Archive contains parent directory reference: {file_path}")
-                    return False
-
-                # 3. Check that resolved path stays within target
-                try:
-                    # Simulate where file would be extracted
-                    would_extract_to = (target_folder / file_path).resolve()
-
-                    # Verify it's a child of target folder
-                    try:
-                        would_extract_to.relative_to(target_folder_resolved)
-                    except ValueError:
-                        # relative_to() raises ValueError if not a subpath
-                        logging.error(
-                            f"SECURITY: Archive would extract outside target: {file_path} -> {would_extract_to}"
-                        )
-                        return False
-                except Exception as e:
-                    logging.warning(f"Could not validate path {file_path}: {e}")
-                    return False  # Fail closed on validation errors
-
-            # All paths validated successfully
+            # Every line in the full (untruncated) listing passed validation.
             return True
 
         except Exception as e:

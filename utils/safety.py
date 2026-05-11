@@ -5,6 +5,7 @@ Prevents infinite loops, deadlocks, and runaway processes.
 
 import logging
 import subprocess
+import tempfile
 import threading
 import time
 from contextlib import suppress
@@ -219,8 +220,6 @@ class SubprocessSafety:
         Returns:
             Tuple of (success: bool, stdout: str, stderr: str, returncode: int)
         """
-        import tempfile
-
         try:
             logging.debug(f"[SAFETY] Starting {operation} with {timeout}s timeout")
 
@@ -333,6 +332,118 @@ class SubprocessSafety:
         except Exception as e:
             logging.error(f"[SAFETY] {operation} exception: {e}")
             return False, "", str(e), -1
+
+    @staticmethod
+    def run_with_line_handler(
+        cmd: list[str],
+        timeout: int,
+        line_handler: Callable[[str], bool],
+        cwd: Optional[Path] = None,
+        operation: str = "Subprocess",
+        expected_codes: Optional[list[int]] = None,
+        process_tracker: Optional[ProcessTracker] = None,
+    ) -> tuple[bool, str, int]:
+        """
+        Run subprocess and stream the full stdout line-by-line through ``line_handler``.
+
+        SECURITY: Unlike ``run_with_timeout(use_temp_files=True)``, this method does
+        NOT truncate stdout. Security-sensitive consumers (e.g. archive path
+        validation) must see every line, so we iterate the temp file directly
+        rather than returning a bounded head/tail sample.
+
+        Args:
+            cmd: Command and arguments.
+            timeout: Timeout in seconds.
+            line_handler: Callable invoked for each stdout line (without trailing
+                newline). Return ``False`` to stop iteration early; the call still
+                returns ``success=True`` when the process itself succeeded.
+            cwd: Working directory.
+            operation: Operation description for logging.
+            expected_codes: Exit codes that should not log a warning.
+            process_tracker: Object with ``active_process`` attribute for cancellation.
+
+        Returns:
+            Tuple ``(success, stderr_sample, returncode)``. ``stderr_sample`` is a
+            bounded sample suitable for diagnostics only.
+        """
+        try:
+            logging.debug(f"[SAFETY] Starting streaming {operation} with {timeout}s timeout")
+
+            with (
+                tempfile.NamedTemporaryFile(mode="w+", delete=False, encoding="utf-8") as stdout_file,
+                tempfile.NamedTemporaryFile(mode="w+", delete=False, encoding="utf-8") as stderr_file,
+            ):
+                stdout_path = Path(stdout_file.name)
+                stderr_path = Path(stderr_file.name)
+
+                try:
+                    process = subprocess.Popen(
+                        cmd,
+                        stdout=stdout_file,
+                        stderr=stderr_file,
+                        cwd=cwd,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                    )
+
+                    if process_tracker:
+                        process_tracker.active_process = process
+
+                    try:
+                        try:
+                            process.wait(timeout=timeout)
+                            timed_out = False
+                        except subprocess.TimeoutExpired:
+                            logging.warning(f"[SAFETY] {operation} TIMEOUT - killing process")
+                            process.kill()
+                            with suppress(subprocess.TimeoutExpired, OSError):
+                                process.wait(timeout=5)
+                            timed_out = True
+
+                        returncode = -1 if timed_out else process.returncode
+                        success = (not timed_out) and returncode == 0
+
+                        if (
+                            not success
+                            and not timed_out
+                            and (expected_codes is None or returncode not in expected_codes)
+                        ):
+                            logging.warning(f"[SAFETY] {operation} failed with code {returncode}")
+
+                        # Stream the full stdout file (no truncation) through the handler.
+                        try:
+                            with stdout_path.open("r", encoding="utf-8", errors="replace") as stdout_stream:
+                                for raw_line in stdout_stream:
+                                    if line_handler(raw_line.rstrip("\n")) is False:
+                                        break
+                        except OSError as read_err:
+                            logging.warning(f"[SAFETY] {operation} could not read stdout: {read_err}")
+                            return False, "", -1
+
+                        try:
+                            stderr_sample = SubprocessSafety._read_bounded_text(stderr_path)
+                        except OSError:
+                            stderr_sample = ""
+
+                        if timed_out:
+                            return False, stderr_sample, -1
+                        return success, stderr_sample, returncode
+
+                    finally:
+                        if process_tracker:
+                            process_tracker.active_process = None
+
+                finally:
+                    try:
+                        stdout_path.unlink(missing_ok=True)
+                        stderr_path.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+
+        except Exception as e:
+            logging.error(f"[SAFETY] {operation} exception: {e}")
+            return False, str(e), -1
 
 
 class LoopSafety:

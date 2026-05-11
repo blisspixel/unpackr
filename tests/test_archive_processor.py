@@ -487,11 +487,25 @@ class TestArchivePathValidation:
         yield Path(temp)
         shutil.rmtree(temp, ignore_errors=True)
 
+    @staticmethod
+    def _fake_listing(stdout: str, *, success: bool = True, code: int = 0):
+        """Build a fake run_with_line_handler that streams ``stdout`` line-by-line."""
+
+        def fake(*_args, **kwargs):
+            handler = kwargs["line_handler"]
+            for line in stdout.split("\n"):
+                if handler(line) is False:
+                    break
+            return success, "", code
+
+        return fake
+
     def test_validate_archive_paths_returns_false_when_listing_fails(self, processor, temp_dir):
         archive = temp_dir / "archive.rar"
         archive.write_text("test")
 
-        with patch("core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(False, "", "", 2)):
+        fake = self._fake_listing("", success=False, code=2)
+        with patch("core.archive_processor.SubprocessSafety.run_with_line_handler", side_effect=fake):
             assert processor._validate_archive_paths(archive, temp_dir, ["7z"]) is False
 
     def test_validate_archive_paths_rejects_absolute_paths(self, processor, temp_dir):
@@ -499,7 +513,10 @@ class TestArchivePathValidation:
         archive.write_text("test")
         stdout = "2024-01-01 00:00:00 ....A 1 1 C:\\evil.txt\n"
 
-        with patch("core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, stdout, "", 0)):
+        with patch(
+            "core.archive_processor.SubprocessSafety.run_with_line_handler",
+            side_effect=self._fake_listing(stdout),
+        ):
             assert processor._validate_archive_paths(archive, temp_dir, ["7z"]) is False
 
     def test_validate_archive_paths_rejects_parent_traversal(self, processor, temp_dir):
@@ -507,7 +524,10 @@ class TestArchivePathValidation:
         archive.write_text("test")
         stdout = "2024-01-01 00:00:00 ....A 1 1 ..\\evil.txt\n"
 
-        with patch("core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, stdout, "", 0)):
+        with patch(
+            "core.archive_processor.SubprocessSafety.run_with_line_handler",
+            side_effect=self._fake_listing(stdout),
+        ):
             assert processor._validate_archive_paths(archive, temp_dir, ["7z"]) is False
 
     def test_validate_archive_paths_accepts_safe_relative_paths(self, processor, temp_dir):
@@ -515,7 +535,10 @@ class TestArchivePathValidation:
         archive.write_text("test")
         stdout = "2024-01-01 00:00:00 ....A 1 1 subdir\\video.mkv\n"
 
-        with patch("core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, stdout, "", 0)):
+        with patch(
+            "core.archive_processor.SubprocessSafety.run_with_line_handler",
+            side_effect=self._fake_listing(stdout),
+        ):
             assert processor._validate_archive_paths(archive, temp_dir, ["7z"]) is True
 
     def test_validate_archive_paths_returns_false_on_validation_exception(self, processor, temp_dir):
@@ -523,9 +546,52 @@ class TestArchivePathValidation:
         archive.write_text("test")
         stdout = "2024-01-01 00:00:00 ....A 1 1 safe.txt\n"
 
-        with patch("core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, stdout, "", 0)):
+        with patch(
+            "core.archive_processor.SubprocessSafety.run_with_line_handler",
+            side_effect=self._fake_listing(stdout),
+        ):
             with patch.object(Path, "resolve", side_effect=RuntimeError("boom")):
                 assert processor._validate_archive_paths(archive, temp_dir, ["7z"]) is False
+
+    def test_validate_archive_paths_streams_full_listing_no_truncation_bypass(self, processor, temp_dir):
+        """
+        Regression: a previous version read a 64 KiB head/tail sample from the
+        7z listing temp file. An attacker could craft an archive whose listing
+        exceeds the cap and place an unsafe entry in the truncated middle, then
+        validation would pass while extraction still saw the entry. The fix
+        streams the full listing line-by-line, so unsafe entries are rejected
+        regardless of where they appear.
+        """
+        archive = temp_dir / "archive.rar"
+        archive.write_text("test")
+
+        safe_line = "2024-01-01 00:00:00 ....A 1 1 safe_file_{i}.txt"
+        unsafe_line = "2024-01-01 00:00:00 ....A 1 1 ../outside_pwned.txt"
+        # Build a listing larger than the bounded-capture cap, with the unsafe
+        # entry buried in the middle.
+        head_lines = [safe_line.format(i=i) for i in range(4000)]
+        tail_lines = [safe_line.format(i=i) for i in range(4000, 8000)]
+        full_listing = "\n".join(head_lines + [unsafe_line] + tail_lines) + "\n"
+
+        with patch(
+            "core.archive_processor.SubprocessSafety.run_with_line_handler",
+            side_effect=self._fake_listing(full_listing),
+        ):
+            assert processor._validate_archive_paths(archive, temp_dir, ["7z"]) is False
+
+    def test_validate_archive_paths_accepts_large_safe_listing(self, processor, temp_dir):
+        """Control case: a multi-megabyte listing of only safe entries is accepted."""
+        archive = temp_dir / "archive.rar"
+        archive.write_text("test")
+
+        safe_line = "2024-01-01 00:00:00 ....A 1 1 sub/file_{i}.txt"
+        full_listing = "\n".join(safe_line.format(i=i) for i in range(20000)) + "\n"
+
+        with patch(
+            "core.archive_processor.SubprocessSafety.run_with_line_handler",
+            side_effect=self._fake_listing(full_listing),
+        ):
+            assert processor._validate_archive_paths(archive, temp_dir, ["7z"]) is True
 
 
 class TestPar2ErrorHandling:
