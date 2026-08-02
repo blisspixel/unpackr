@@ -51,6 +51,8 @@ Why:
   - PATH-first tool candidate lists (plus Windows absolute fallbacks / Homebrew prefixes)
   - helper-process detection and termination
   - force-delete fallbacks (encoded PowerShell on Windows; guarded `rmtree` on POSIX)
+  - package-manager install hints for doctor remediation
+- Operator install recipes and launcher notes: `docs/PLATFORMS.md`
 - Filename sanitization remains conservative so outputs stay portable across filesystems
 - CLI presentation already degrades safely on non-Windows terminals (`docs/CLI_PRESENTATION.md`)
 

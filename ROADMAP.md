@@ -57,9 +57,9 @@ Acceptance criteria:
 - Filename sanitization stays conservative for shared/network volumes (Windows-hostile characters remain scrubbed).
 
 Status:
-- In progress. Platform helper module, PATH-first defaults, POSIX force-delete, and doctor process parity are landing first.
+- Complete enough for `1.4.0` foundations. Follow-on parity work continues below.
 
-### Next: Cross-Platform Parity Hardening (`1.4.x`)
+### Now: Cross-Platform Parity Hardening (`1.4.x`)
 
 Goal: make Linux/macOS behavior as boringly reliable as Windows for real operator workloads.
 
@@ -75,7 +75,7 @@ Acceptance criteria:
 - Explicit matrix of filesystem quirks: case-sensitive volumes, APFS/ZFS, bind mounts, SMB/NFS.
 
 Status:
-- Planned immediately after foundations.
+- In progress. Full Linux CI suite, expanded macOS suite, optional real-tool tests, POSIX launchers, doctor package-manager hints, and `docs/PLATFORMS.md` are landing now. Filesystem quirk matrix remains for Phase C.
 
 ### Next: Observability And Automation
 
@@ -115,18 +115,22 @@ Status:
 
 ## Cross-Platform Implementation Plan
 
-### Phase A — Foundations (this train)
+### Phase A — Foundations
 1. Introduce `utils/platform_support.py` for OS detection, tool candidates, process helpers, force-delete.
 2. Route `SystemCheck`, `doctor`, and `FileHandler` through those helpers.
 3. Make default `tool_paths` PATH-first and multi-OS aware.
 4. Expand Linux CI beyond smoke tests.
 5. Rewrite product docs to stop saying “Windows-only.”
 
-### Phase B — Parity
+Status: done.
+
+### Phase B — Parity (active)
 1. Run the full suite on Linux CI; widen macOS coverage.
 2. Add package-manager install docs and doctor remediation text per OS.
 3. Validate real archive extraction/video health on non-Windows runners when tools are present.
 4. Add POSIX launcher scripts and packaging notes.
+
+Status: largely implemented in-tree; confirm green CI matrix.
 
 ### Phase C — Exceptional polish
 1. Filesystem quirk matrix and tests (case sensitivity, symlink farms, non-ASCII paths).

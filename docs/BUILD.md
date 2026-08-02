@@ -37,13 +37,25 @@ Use the same Python `3.11+` interpreter for installation and command execution. 
 - **Linux / macOS:** install tools from the platform package manager and keep `7z`/`7zz`, `par2`, and `ffmpeg` on `PATH`. Platform helpers also probe common Homebrew prefixes on macOS.
 - Cross-platform process detection and force-delete fallbacks live in `utils/platform_support.py`.
 
-## Batch Wrapper Mode (Windows)
+## Source Launchers
 
-You can also run via the included wrappers:
+Windows wrappers:
 - `unpackr.bat`
 - `vhealth.bat`
 
+POSIX wrappers (Linux/macOS source checkouts):
+- `./unpackr.sh`
+- `./unpackr-doctor.sh`
+- `./vhealth.sh`
+
+```bash
+chmod +x unpackr.sh unpackr-doctor.sh vhealth.sh
+./unpackr.sh --help
+```
+
 If needed, place wrappers in a directory that is already on your `PATH`.
+
+Platform package recipes and filesystem notes: [PLATFORMS.md](PLATFORMS.md).
 
 ## Standalone EXE
 

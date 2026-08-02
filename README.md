@@ -143,6 +143,7 @@ Detailed documentation is in [`docs/`](docs/README.md).
 
 - [Docs Index](docs/README.md)
 - [Roadmap](ROADMAP.md)
+- [Platforms (Windows / Linux / macOS)](docs/PLATFORMS.md)
 - [Configuration](docs/CONFIGURATION.md)
 - [Safety](docs/SAFETY.md)
 - [CLI Presentation](docs/CLI_PRESENTATION.md)

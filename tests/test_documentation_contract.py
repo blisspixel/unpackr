@@ -59,3 +59,9 @@ def test_safety_docs_match_current_default_limits():
     safety = (ROOT / "docs" / "SAFETY.md").read_text(encoding="utf-8")
     assert "default `20` levels" in safety
     assert "default `48` hours" in safety
+
+
+def test_platforms_doc_covers_all_target_operating_systems():
+    platforms = (ROOT / "docs" / "PLATFORMS.md").read_text(encoding="utf-8")
+    for needle in ("Windows", "Linux", "macOS", "p7zip", "brew install", "unpackr.sh"):
+        assert needle in platforms

@@ -6,7 +6,9 @@ Most failures are environment or dependency related. Start with `unpackr-doctor`
 
 ### 7-Zip Not Found
 
-Install [7-Zip](https://www.7-zip.org/) or add the path in your active config:
+Install a package-manager build or vendor binary so `7z`/`7zz` is on PATH. See [PLATFORMS.md](PLATFORMS.md).
+
+Windows absolute-path example:
 
 ```json
 {
@@ -16,17 +18,27 @@ Install [7-Zip](https://www.7-zip.org/) or add the path in your active config:
 }
 ```
 
+Linux/macOS usually only need PATH names:
+
+```json
+{
+  "tool_paths": {
+    "7z": ["7z", "7zz"]
+  }
+}
+```
+
 ### `par2cmdline` Not Found
 
-Optional but recommended. Install [par2cmdline](https://github.com/Parchive/par2cmdline) or add the path in your active config.
+Optional but recommended. Install via your OS package manager (`par2` / `par2cmdline`) or set an absolute path in config.
 
 Without par2, corrupted archives cannot be repaired.
 
 ### `ffmpeg` Not Found
 
-Optional. Install [ffmpeg](https://ffmpeg.org/) for video validation.
+Optional. Install [ffmpeg](https://ffmpeg.org/) for video validation (`brew`/`apt`/`dnf` recipes in [PLATFORMS.md](PLATFORMS.md)).
 
-Without ffmpeg, health-check reliability is reduced. Install ffmpeg for expected video validation behavior.
+Without ffmpeg, health-check reliability is reduced.
 
 ### Videos Not Moving To Destination
 

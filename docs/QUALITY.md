@@ -63,5 +63,6 @@ Required state:
 - Every CI matrix lane launches all three installed console entry points with `--help`.
 - Linux `3.11` runs the full pre-commit quality gate.
 - Windows runs the full regression suite and coverage gate.
-- Linux runs an expanded cross-platform suite (platform helpers, safety, config, doctor, file handling).
-- macOS runs platform/safety-focused suites while full parity expansion continues.
+- Linux runs the full regression suite (coverage gate on Python `3.11`) and installs `p7zip`/`par2`/`ffmpeg` for optional real-tool checks.
+- macOS runs an expanded platform/safety/doctor/archive suite plus optional real-tool checks when Homebrew tools install cleanly.
+- Optional tool tests live in `tests/test_external_tools_optional.py` and skip when tools are absent.

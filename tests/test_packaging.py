@@ -22,5 +22,7 @@ def test_setup_includes_cli_modules_and_bundled_config(monkeypatch):
     assert setup_kwargs["version"] == "1.3.1"
     assert setup_kwargs["url"] == "https://github.com/blisspixel/unpackr"
     assert "Programming Language :: Python :: 3.14" in setup_kwargs["classifiers"]
+    assert "Operating System :: POSIX :: Linux" in setup_kwargs["classifiers"]
+    assert "Operating System :: MacOS" in setup_kwargs["classifiers"]
     assert "setuptools>=68" in setup_kwargs["extras_require"]["dev"]
     assert (Path(__file__).parents[1] / "LICENSE").is_file()

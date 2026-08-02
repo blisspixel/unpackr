@@ -49,6 +49,35 @@ def platform_label() -> str:
     return sys.platform
 
 
+def package_manager_install_hint() -> str:
+    """Return a short install recipe for required/recommended external tools."""
+    if is_windows():
+        return (
+            "Install 7-Zip from https://www.7-zip.org/ and put par2/ffmpeg on PATH "
+            "(or set absolute paths in config tool_paths)."
+        )
+    if is_macos():
+        return "brew install p7zip par2 ffmpeg"
+    if is_linux():
+        return (
+            "Debian/Ubuntu: sudo apt install p7zip-full par2 ffmpeg | "
+            "Fedora/RHEL: sudo dnf install p7zip par2cmdline ffmpeg"
+        )
+    return "Install 7z/7zz, par2, and ffmpeg via your platform package manager and ensure they are on PATH."
+
+
+def tool_missing_hint(tool_key: str) -> str:
+    """Return a platform-specific remediation line for a missing tool."""
+    key = (tool_key or "").strip().lower()
+    names = {
+        "7z": "7-Zip / p7zip (`7z` or `7zz`)",
+        "par2": "par2cmdline (`par2`)",
+        "ffmpeg": "ffmpeg",
+    }
+    label = names.get(key, key or "the required tool")
+    return f"Install {label}. {package_manager_install_hint()}"
+
+
 def default_tool_candidates(tool_key: str) -> List[str]:
     """
     Return ordered executable candidates for a tool on the current platform.
@@ -111,6 +140,30 @@ def merge_tool_candidates(configured: Sequence[str] | str | None, tool_key: str)
         if item not in merged:
             merged.append(item)
     return merged
+
+
+def resolve_first_available_tool(tool_key: str, configured: Sequence[str] | str | None = None) -> str:
+    """
+    Resolve the first usable executable for a tool key.
+
+    Returns an empty string when nothing is found.
+    """
+    for candidate in merge_tool_candidates(configured, tool_key):
+        candidate = (candidate or "").strip()
+        if not candidate:
+            continue
+        path = Path(candidate)
+        if path.is_absolute():
+            if path.is_file():
+                return str(path)
+            continue
+        # Reject relative filesystem paths for safety (same policy as SystemCheck).
+        if os.sep in candidate or "/" in candidate or candidate.startswith("."):
+            continue
+        found = shutil.which(candidate)
+        if found:
+            return found
+    return ""
 
 
 def helper_process_names() -> dict[str, List[str]]:
@@ -211,7 +264,7 @@ def force_delete_directory(folder: Path) -> bool:
     Last-resort directory delete that stays platform-appropriate.
 
     Windows uses an encoded PowerShell Remove-Item that refuses reparse points.
-    POSIX retries with shutil.rmtree(onexc=...) without following symlinks at the root.
+    POSIX retries with shutil.rmtree(onerror=...) without following symlinks at the root.
     """
     folder = Path(folder)
     if not folder.exists():

@@ -96,3 +96,45 @@ def test_example_paths_are_non_empty():
     assert platform_support.example_source_path()
     assert platform_support.example_destination_path()
     assert platform_support.platform_label()
+
+
+def test_package_manager_hints_are_platform_specific(monkeypatch):
+    monkeypatch.setattr(platform_support, "is_windows", lambda: True)
+    monkeypatch.setattr(platform_support, "is_macos", lambda: False)
+    monkeypatch.setattr(platform_support, "is_linux", lambda: False)
+    assert "7-Zip" in platform_support.package_manager_install_hint()
+
+    monkeypatch.setattr(platform_support, "is_windows", lambda: False)
+    monkeypatch.setattr(platform_support, "is_macos", lambda: True)
+    assert "brew install" in platform_support.package_manager_install_hint()
+
+    monkeypatch.setattr(platform_support, "is_macos", lambda: False)
+    monkeypatch.setattr(platform_support, "is_linux", lambda: True)
+    hint = platform_support.package_manager_install_hint()
+    assert "apt" in hint and "dnf" in hint
+
+
+def test_tool_missing_hint_mentions_tool_and_recipe(monkeypatch):
+    monkeypatch.setattr(platform_support, "is_windows", lambda: False)
+    monkeypatch.setattr(platform_support, "is_macos", lambda: False)
+    monkeypatch.setattr(platform_support, "is_linux", lambda: True)
+    hint = platform_support.tool_missing_hint("7z")
+    assert "7z" in hint.lower() or "p7zip" in hint.lower()
+    assert "apt" in hint
+
+
+def test_resolve_first_available_tool_prefers_existing_absolute(tmp_path):
+    tool = tmp_path / "7z-custom"
+    tool.write_text("", encoding="utf-8")
+    # On Windows executables often need .exe; we only require is_file().
+    found = platform_support.resolve_first_available_tool("7z", [str(tool), "7z"])
+    assert found == str(tool)
+
+
+def test_shell_launchers_exist_and_are_posix_scripts():
+    root = Path(__file__).parents[1]
+    for name in ("unpackr.sh", "unpackr-doctor.sh", "vhealth.sh"):
+        path = root / name
+        text = path.read_text(encoding="utf-8")
+        assert text.startswith("#!/usr/bin/env bash")
+        assert "python3" in text

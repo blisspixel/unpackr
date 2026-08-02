@@ -18,7 +18,13 @@ from typing import Optional
 from colorama import Fore, Style, init
 
 from utils.cli_runtime import existing_file_path
-from utils.platform_support import detect_running_helpers, merge_tool_candidates, platform_label
+from utils.platform_support import (
+    detect_running_helpers,
+    merge_tool_candidates,
+    package_manager_install_hint,
+    platform_label,
+    tool_missing_hint,
+)
 
 init(autoreset=True)
 
@@ -58,13 +64,11 @@ class UnpackrDoctor:
         if "python version too old" in issue_text:
             actions.append("Install Python 3.11+ and run doctor again.")
         if "7-zip not found" in issue_text:
-            actions.append("Install 7-Zip and ensure `7z` is on PATH (or set tool path in config).")
+            actions.append(tool_missing_hint("7z"))
         if "7-zip version too old" in issue_text:
-            actions.append("Upgrade 7-Zip to a supported version (22.0+).")
-        if "par2cmdline not found" in issue_text:
-            actions.append("Install par2cmdline and ensure `par2` is on PATH (or set tool path in config).")
-        if "par2cmdline not found" in warning_text:
-            actions.append("Install par2cmdline for repair capability on damaged archive sets.")
+            actions.append("Upgrade 7-Zip/p7zip to a supported version (22.0+).")
+        if "par2cmdline not found" in issue_text or "par2cmdline not found" in warning_text:
+            actions.append(tool_missing_hint("par2"))
         if "par2cmdline version too old" in warning_text:
             actions.append("Upgrade par2cmdline to 0.8.1+ for stable repair behavior.")
         if "missing packages:" in issue_text:
@@ -76,9 +80,16 @@ class UnpackrDoctor:
         if "disk space" in issue_text or "gb free" in issue_text:
             actions.append("Free disk space before processing large archives.")
         if "ffmpeg not found" in warning_text:
-            actions.append("Install ffmpeg if you want full video health validation.")
+            actions.append(tool_missing_hint("ffmpeg"))
         if "ffmpeg version too old" in warning_text:
             actions.append("Upgrade ffmpeg to 4.4+ for expected validation support.")
+
+        # Platform recipe once when any external tool is missing/outdated.
+        if any(
+            token in issue_text or token in warning_text
+            for token in ("7-zip not found", "par2cmdline not found", "ffmpeg not found")
+        ):
+            actions.append(f"{platform_label()} package hint: {package_manager_install_hint()}")
 
         # Always include a deterministic final step
         actions.append("Re-run `unpackr-doctor` and confirm zero issues before live run.")
@@ -264,7 +275,7 @@ class UnpackrDoctor:
         else:
             print(f"{Fore.RED}✗ Not found (CRITICAL){Style.RESET_ALL}")
             self.issues.append("7-Zip not found - required for archive extraction")
-            print(f"    {Style.DIM}Install 7-Zip / p7zip and ensure `7z` is on PATH{Style.RESET_ALL}")
+            print(f"    {Style.DIM}{tool_missing_hint('7z')}{Style.RESET_ALL}")
 
         # Check par2
         print(f"  {Style.DIM}par2cmdline:{Style.RESET_ALL} ", end="")
@@ -278,7 +289,7 @@ class UnpackrDoctor:
         else:
             print(f"{Fore.YELLOW}⚠ Not found (recommended - repair capability reduced){Style.RESET_ALL}")
             self.warnings.append("par2cmdline not found - repair capability reduced")
-            print(f"    {Style.DIM}Install for better recovery on damaged downloads{Style.RESET_ALL}")
+            print(f"    {Style.DIM}{tool_missing_hint('par2')}{Style.RESET_ALL}")
 
         # Check ffmpeg
         print(f"  {Style.DIM}ffmpeg:{Style.RESET_ALL} ", end="")
@@ -292,6 +303,7 @@ class UnpackrDoctor:
         else:
             print(f"{Fore.YELLOW}⚠ Not found (optional - video validation disabled){Style.RESET_ALL}")
             self.warnings.append("ffmpeg not found - video validation will be skipped")
+            print(f"    {Style.DIM}{tool_missing_hint('ffmpeg')}{Style.RESET_ALL}")
 
     def check_write_permissions(self):
         """Check write permissions in current directory."""
