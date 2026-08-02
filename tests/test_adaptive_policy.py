@@ -102,7 +102,8 @@ class TestEnvironmentProfiler:
         speed = profiler._measure_sequential_read(temp_dir)
 
         assert speed > 0  # Should measure some speed
-        assert speed < 10000  # Sanity check (10 GB/s is unrealistic)
+        # Fast CI runners/tmpfs can exceed 10 GB/s; keep a high but finite bound.
+        assert speed < 100000
 
     def test_random_read_measurement(self, temp_dir, cache_file):
         """Test random read speed measurement."""
@@ -110,7 +111,7 @@ class TestEnvironmentProfiler:
         speed = profiler._measure_random_read(temp_dir)
 
         assert speed > 0
-        assert speed < 10000
+        assert speed < 100000
 
     def test_cpu_speed_measurement(self, cache_file):
         """Test CPU speed measurement."""
