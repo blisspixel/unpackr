@@ -55,6 +55,7 @@ setup(
             "pytest>=8.3",
             "pytest-cov>=5.0",
             "ruff>=0.8.0",
+            "setuptools>=68",
         ],
     },
     entry_points={
