@@ -55,6 +55,22 @@ def test_system_check_prefers_path_resolution_for_default_command(monkeypatch):
     assert checker.get_tool_command("par2") == [r"C:\tools\par2.exe"]
 
 
+def test_system_check_tolerates_malformed_tool_paths(monkeypatch):
+    """Malformed tool_paths shapes must not crash discovery."""
+    resolved = r"C:\tools\7z.exe"
+    monkeypatch.setattr("utils.system_check.shutil.which", lambda cmd: resolved if cmd == "7z" else None)
+    monkeypatch.setattr("utils.system_check.subprocess.run", lambda *args, **kwargs: object())
+
+    for bad in (123, True, {"nested": "value"}, [7, None, "7z"]):
+        checker = SystemCheck(config={"tool_paths": {"7z": bad}})
+        assert checker.check_tool("7z") is True
+        assert checker.get_tool_command("7z") == [resolved]
+
+    checker = SystemCheck(config={"tool_paths": "not-a-dict"})
+    assert checker.check_tool("7z") is True
+    assert checker.get_tool_command("7z") == [resolved]
+
+
 def test_system_check_rejects_relative_7z_command_for_extraction(monkeypatch):
     checker = SystemCheck(config={"tool_paths": {"7z": [r".\7z.exe", "7z"]}})
 

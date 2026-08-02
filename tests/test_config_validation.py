@@ -40,6 +40,7 @@ class TestConfigValidation:
         config = Config(temp_config_file)
         assert config.get("min_sample_size_mb") == 100
         assert config.get("min_music_files") == 20
+        assert config.is_valid is True
 
     def test_invalid_type_shows_clear_error(self, temp_config_file, capsys):
         """Test that wrong type shows clear error with example."""
@@ -54,6 +55,7 @@ class TestConfigValidation:
 
         # Should fall back to default
         assert config.get("min_sample_size_mb") == 50  # Default value
+        assert config.is_valid is False
 
         # Check error message
         captured = capsys.readouterr()
@@ -62,6 +64,17 @@ class TestConfigValidation:
         assert "Value: 'fifty' (str)" in captured.out
         assert "Expected: number (integer)" in captured.out
         assert "Example: 50" in captured.out
+
+    def test_boolean_is_not_accepted_as_numeric_setting(self, temp_config_file, capsys):
+        temp_config_file.write_text('{"min_sample_size_mb": true}', encoding="utf-8")
+
+        config = Config(temp_config_file)
+
+        assert config.get("min_sample_size_mb") == 50
+        assert "Expected: number (integer)" in capsys.readouterr().out
+
+        config.set("max_runtime_hours", True)
+        assert config.max_runtime_hours == 48
 
     def test_out_of_range_shows_clear_error(self, temp_config_file, capsys):
         """Test that out-of-range value shows clear error."""
@@ -166,7 +179,7 @@ class TestConfigValidation:
         with patch("builtins.open", side_effect=OSError("boom")):
             config = Config(temp_config_file)
 
-        assert config.get("max_log_files") == 5
+        assert config.get("max_log_files") == 3
         captured = capsys.readouterr()
         assert "ERROR: Could not load config file" in captured.out
         assert "boom" in captured.out
@@ -209,7 +222,18 @@ class TestConfigValidation:
         assert is_valid is False
         assert "tool_paths['ffmpeg'] must be a list of paths" in errors
         assert "tool_paths['par2'] must contain only strings" in errors
-        assert "log_folder must be a string" in errors[-1]
+        assert any("log_folder must be a string" in error for error in errors)
+
+    def test_log_folder_rejects_empty_and_null_bytes(self):
+        config = Config()
+
+        empty_ok, empty_errors = config._validate_config({"log_folder": "   "})
+        null_ok, null_errors = config._validate_config({"log_folder": "logs\x00evil"})
+
+        assert empty_ok is False
+        assert any("non-empty" in error for error in empty_errors)
+        assert null_ok is False
+        assert any("null bytes" in error for error in null_errors)
 
     def test_validate_tool_paths_requires_dictionary(self):
         config = Config()
@@ -266,10 +290,43 @@ class TestConfigValidation:
         config.set("stuck_timeout_hours", [])
 
         assert config.video_extensions == Config.DEFAULT_CONFIG["video_extensions"]
-        assert config.max_runtime_hours == 12
-        assert config.max_videos_per_folder == 200
-        assert config.max_subfolder_depth == 15
+        assert config.max_runtime_hours == 48
+        assert config.max_videos_per_folder == 500
+        assert config.max_subfolder_depth == 20
         assert config.stuck_timeout_hours == 3
+
+    def test_default_collections_are_not_shared_between_instances(self):
+        first = Config(None)
+        second = Config(None)
+
+        first.video_extensions.append(".custom")
+
+        assert ".custom" not in second.video_extensions
+        assert ".custom" not in Config.DEFAULT_CONFIG["video_extensions"]
+
+    def test_missing_explicit_config_is_invalid(self, tmp_path):
+        config = Config(tmp_path / "missing.json")
+
+        assert config.is_valid is False
+        assert config.get("min_sample_size_mb") == 50
+
+    def test_retry_and_loop_settings_are_exposed(self):
+        config = Config(None)
+        config.set("file_delete_max_attempts", 7)
+        config.set("file_delete_retry_delay", 2)
+        config.set("folder_delete_max_attempts", 4)
+        config.set("folder_delete_retry_delay", 8)
+        config.set("file_lock_wait_attempts", 12)
+        config.set("file_lock_wait_delay", 3)
+        config.set("archive_extraction_loop_limit", 250)
+
+        assert config.file_delete_max_attempts == 7
+        assert config.file_delete_retry_delay == 2
+        assert config.folder_delete_max_attempts == 4
+        assert config.folder_delete_retry_delay == 8
+        assert config.file_lock_wait_attempts == 12
+        assert config.file_lock_wait_delay == 3
+        assert config.archive_extraction_loop_limit == 250
 
 
 if __name__ == "__main__":

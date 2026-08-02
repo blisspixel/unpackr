@@ -12,6 +12,9 @@ def test_doctor_json_mode_ready(monkeypatch, capsys):
     monkeypatch.setattr(doctor.sys, "argv", ["unpackr-doctor", "--json"])
 
     class ReadyDoctor:
+        def __init__(self, config_path=None):
+            self.config_path = config_path
+
         def run(self):
             self.passed = ["Python version"]
             self.warnings = []
@@ -47,6 +50,9 @@ def test_doctor_json_mode_blocked(monkeypatch, capsys):
     monkeypatch.setattr(doctor.sys, "argv", ["unpackr-doctor", "--json"])
 
     class BlockedDoctor:
+        def __init__(self, config_path=None):
+            self.config_path = config_path
+
         def run(self):
             self.passed = []
             self.warnings = []
@@ -75,3 +81,25 @@ def test_doctor_json_mode_blocked(monkeypatch, capsys):
     assert exc.value.code == 1
     assert payload["status"] == "blocked"
     assert payload["counts"]["issues"] == 1
+
+
+def test_doctor_main_passes_explicit_config(monkeypatch, tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{}", encoding="utf-8")
+    seen = {}
+    monkeypatch.setattr(doctor.sys, "argv", ["unpackr-doctor", "--config", str(config_path)])
+
+    class ConfigDoctor:
+        def __init__(self, selected_config_path=None):
+            seen["config_path"] = selected_config_path
+
+        def run(self):
+            return 0
+
+    monkeypatch.setattr(doctor, "UnpackrDoctor", ConfigDoctor)
+
+    with pytest.raises(SystemExit) as exc:
+        doctor.main()
+
+    assert exc.value.code == 0
+    assert seen["config_path"] == config_path

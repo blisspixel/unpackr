@@ -2,6 +2,9 @@
 
 import io
 import shutil
+from argparse import Namespace
+
+import pytest
 
 import unpackr
 from utils import cli_prompts
@@ -87,6 +90,68 @@ def test_cli_runtime_parser_handles_named_and_flags():
     assert args.vhealth is True
     assert args.animations == "light"
     assert args.no_color is True
+
+
+def test_cli_runtime_parser_accepts_common_destination_misspelling():
+    parser = cli_runtime.build_unpackr_arg_parser()
+
+    args = parser.parse_args(["--source", "A", "--destinantion", "B"])
+
+    assert args.source == "A"
+    assert args.destination == "B"
+    assert "--destinantion" not in parser.format_help()
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        (["A", "B"], ("A", "B")),
+        (["A", "--destination", "B"], ("A", "B")),
+        (["--source", "A", "B"], ("A", "B")),
+        (["--source", "A", "--destination", "B"], ("A", "B")),
+    ],
+)
+def test_resolve_unpackr_paths_supports_unambiguous_forms(argv, expected):
+    parser = cli_runtime.build_unpackr_arg_parser()
+    args = parser.parse_args(argv)
+
+    assert cli_runtime.resolve_unpackr_paths(args, parser) == expected
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["A"],
+        ["--source", "A"],
+        ["--destination", "B"],
+        ["--source", "A", "--destination", "B", "EXTRA"],
+        ["A", "B", "--source", "OTHER"],
+    ],
+)
+def test_resolve_unpackr_paths_rejects_incomplete_or_conflicting_forms(argv):
+    parser = cli_runtime.build_unpackr_arg_parser()
+    args = parser.parse_args(argv)
+
+    with pytest.raises(SystemExit) as exc:
+        cli_runtime.resolve_unpackr_paths(args, parser)
+
+    assert exc.value.code == 2
+
+
+def test_resolve_unpackr_paths_preserves_interactive_mode():
+    args = Namespace(source=None, destination=None, source_pos=None, dest_pos=None)
+    parser = cli_runtime.build_unpackr_arg_parser()
+
+    assert cli_runtime.resolve_unpackr_paths(args, parser) == (None, None)
+
+
+def test_cli_runtime_parser_rejects_missing_config_file(tmp_path):
+    parser = cli_runtime.build_unpackr_arg_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["--config", str(tmp_path / "missing.json")])
+
+    assert exc.value.code == 2
 
 
 def test_resolve_cli_presentation_cli_precedence_over_env_and_config(monkeypatch):

@@ -51,9 +51,9 @@ No automated deletion workflow can eliminate all risk.
 
 ### Resource Limits
 - Dynamic timeouts based on file size
-- Recursion depth limits (10 levels)
+- Recursion depth limits (default `20` levels; `max_subfolder_depth`)
 - Memory-bounded failure tracking
-- Global runtime limit (4 hours)
+- Global runtime limit (default `48` hours; `max_runtime_hours`)
 
 ### Disk Space Protection
 - Checks 3x archive size available before extraction

@@ -60,6 +60,17 @@ def test_check_config_file_valid_with_missing_keys_warns(monkeypatch, doc, capsy
     assert any("Config missing keys" in w for w in doc.warnings)
 
 
+def test_check_config_file_rejects_non_object(monkeypatch, doc, capsys, tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text("[]", encoding="utf-8")
+    doc.config_path = config_path
+
+    doc.check_config_file()
+
+    assert "Config must contain a JSON object" in capsys.readouterr().out
+    assert "Config file must contain a JSON object" in doc.issues
+
+
 def test_check_external_tools_paths(monkeypatch, doc, capsys, tmp_path):
     base = tmp_path / "repo"
     cfg_dir = base / "config_files"
@@ -86,10 +97,10 @@ def test_check_external_tools_paths(monkeypatch, doc, capsys, tmp_path):
 
 
 def test_check_write_permissions_failure(monkeypatch, doc, capsys):
-    def patched_write_text(self, *args, **kwargs):
+    def fail_temp_file(*args, **kwargs):
         raise PermissionError("denied")
 
-    monkeypatch.setattr(doctor.Path, "write_text", patched_write_text)
+    monkeypatch.setattr(doctor.tempfile, "NamedTemporaryFile", fail_temp_file)
     doc.check_write_permissions()
     out = capsys.readouterr().out
     assert "Cannot write" in out
@@ -121,7 +132,7 @@ def test_check_comments_file_variants(monkeypatch, doc, capsys, tmp_path):
     monkeypatch.setattr(doctor, "__file__", str(base / "doctor.py"))
 
     doc.check_comments_file()
-    assert any("No comments.json" in w for w in doc.warnings)
+    assert any("No comments file" in w for w in doc.warnings)
 
     (cfg_dir / "comments.json").write_text(json.dumps({"comments": ["a", "b"]}), encoding="utf-8")
     doc.warnings = []

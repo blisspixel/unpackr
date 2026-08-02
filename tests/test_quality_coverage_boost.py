@@ -56,7 +56,7 @@ def test_doctor_recommended_actions_and_to_dict():
     actions = doctor._build_recommended_actions()
     assert any("Python 3.11+" in a for a in actions)
     assert any("7-Zip" in a for a in actions)
-    assert any("pip install -e ." in a for a in actions)
+    assert any("python -m pip install ." in a for a in actions)
     assert any("ffmpeg" in a for a in actions)
     assert actions[-1].startswith("Re-run `unpackr-doctor`")
 

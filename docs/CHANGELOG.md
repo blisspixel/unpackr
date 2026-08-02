@@ -4,29 +4,45 @@ Release dates are included where recorded.
 
 ## Unreleased
 
-- Raised and enforced the quality gate through local `pre-commit` and CI.
-- Current full-suite baseline is `482` passing tests and `86.24%` total coverage.
-- Expanded stricter Pyright coverage to `core/config.py`, `core/file_handler.py`, and `core/safety_invariants.py`.
-- Extracted CLI prompt/presentation helpers into `utils/cli_prompts.py` to reduce `unpackr.py` surface area.
-- Pushed targeted module coverage higher:
-  - `core/config.py` to `98%`
-  - `core/file_handler.py` to `92%`
-  - `core/video_processor.py` to `91%`
-  - `unpackr.py` to `82%`
-- Updated docs to use the current Windows quality workflow (`py -3.13 -m ...` where appropriate).
-- Enforced external tool version policy:
-  - `7z >= 22.0` (blocking)
-  - `par2 >= 0.8.1` (warning)
-  - `ffmpeg >= 4.4` (warning)
-- Refreshed core docs (`README`, `ROADMAP`, `TECHNICAL`, `BUILD`, `TROUBLESHOOTING`) for current behavior and support matrix.
-- Archived superseded UX doc to `docs/archive/UX_DESIGN.md` and added `docs/archive/README.md`.
-- Bounded captured subprocess output for temp-file archive operations to avoid unbounded 7z/par2 memory use.
+- None.
+
+## v1.3.1 (2026-08-02)
+
+Reliability, packaging, and operator-safety release for the `1.3.x` line.
+
+### Packaging And Install
+- Fixed package metadata so fresh installs include the `unpackr`, `unpackr-doctor`, and `vhealth` command modules plus bundled configuration files.
+- Prevented ignored local `comments.json` customizations from leaking into built wheels.
+- Made the default config path independent of the current working directory.
+- Restored a repository `LICENSE` matching Apache 2.0 + Commons Clause packaging metadata.
+- Added an installed CLI smoke check and wheel-contents smoke check to CI.
+- Added Python 3.14 to CI and package metadata, and updated GitHub Actions runtimes.
+
+### CLI And Configuration
+- Made incomplete or conflicting source/destination arguments fail with a clear usage error instead of silently entering interactive mode.
+- Made explicit `--config` paths fail early when the file does not exist and added matching config support to `unpackr-doctor`.
+- Made invalid or unreadable configuration block `unpackr` and `vhealth` instead of continuing with fallback settings.
+- Clarified invalid-config messaging so it no longer claims defaults will be used when startup is blocked.
+- Wired documented retry and archive-loop settings into runtime properties and removed four inert default keys.
+- Accepted the common `--destinantion` misspelling as a hidden compatibility alias while keeping `--destination` canonical.
+- Rejected empty or null-byte `log_folder` values during config validation.
+
+### Safety And Security
+- Hardened `SystemCheck` so malformed `tool_paths` values cannot crash tool discovery.
+- Aligned default safety-limit constants with the documented runtime defaults.
+- Corrected safety documentation for recursion depth and global runtime limits.
+- Restricted CI workflow token permissions to `contents: read`.
+- Bounded captured subprocess output for temp-file archive operations.
 - Fixed `InputValidator.validate_path(base_dir=...)` to raise when a path escapes the trusted base directory.
-- Kept low-disk preflight advisories non-blocking while preserving confirmation for very-low-disk and empty-source runs.
-- Made countdown output line-based when stdout is captured so non-interactive logs show each countdown value.
 - Hardened atomic file moves so a failed final rename restores the source instead of deleting the temporary move file.
 - Changed disk-space check failures to fail closed instead of assuming enough free space.
-- Restricted locked-folder process termination to known helper processes and true child paths, avoiding broad substring matches.
+- Restricted locked-folder process termination to known helper processes and true child paths.
+
+### Quality And Docs
+- Raised and enforced the quality gate through local `pre-commit` and CI.
+- Corrected the sample-threshold documentation, which previously recommended a value that would delete more small videos.
+- Refreshed core docs (`README`, `ROADMAP`, `TECHNICAL`, `BUILD`, `TROUBLESHOOTING`, `SAFETY`) for current behavior.
+- Updated docs to use interpreter-neutral `python -m ...` quality commands.
 
 ## v1.3.0 (2026-01-07)
 

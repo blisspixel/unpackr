@@ -1,12 +1,12 @@
 # Troubleshooting
 
-Most failures are environment or dependency related. Start with `unpackr-doctor`, then validate tool paths in `config_files/config.json`.
+Most failures are environment or dependency related. Start with `unpackr-doctor`, then validate `tool_paths` in the active config described in [Configuration](CONFIGURATION.md).
 
 ## Common Issues
 
 ### 7-Zip Not Found
 
-Install [7-Zip](https://www.7-zip.org/) or add the path in `config_files/config.json`:
+Install [7-Zip](https://www.7-zip.org/) or add the path in your active config:
 
 ```json
 {
@@ -18,7 +18,7 @@ Install [7-Zip](https://www.7-zip.org/) or add the path in `config_files/config.
 
 ### `par2cmdline` Not Found
 
-Optional but recommended. Install [par2cmdline](https://github.com/Parchive/par2cmdline) or add the path in `config_files/config.json`.
+Optional but recommended. Install [par2cmdline](https://github.com/Parchive/par2cmdline) or add the path in your active config.
 
 Without par2, corrupted archives cannot be repaired.
 
@@ -48,16 +48,27 @@ Without ffmpeg, health-check reliability is reduced. Install ffmpeg for expected
 - Check folder permissions
 - Files locked by other processes will be retried (3 passes with delays)
 
-### Command Not Found
+### Command Not Found Or `ModuleNotFoundError`
 
-From the project directory: ensure installation completed (`pip install -e .`) or wrapper `.bat` files are present.
+From the project directory, reinstall with the same Python interpreter that will run the command:
 
-From other directories: ensure your Python `Scripts` directory is in `PATH` (example):
+```powershell
+python -m pip install .
+unpackr --help
 ```
-C:\Users\<you>\AppData\Roaming\Python\Python311\Scripts\
+
+If an old launcher is still being selected, remove and reinstall it:
+
+```powershell
+python -m pip uninstall unpackr
+python -m pip install .
 ```
 
-If `python` resolves to an older interpreter on Windows, run tools explicitly with `py -3.13 -m ...` or another installed `3.11+` launcher target.
+As a checkout-only fallback, use `python -m unpackr --help` or run `unpackr.bat` explicitly.
+
+From other directories, ensure the Scripts directory for the installation interpreter is in `PATH`. Locate it with `python -c "import sysconfig; print(sysconfig.get_path('scripts'))"`.
+
+If `python` resolves to an older interpreter on Windows, run tools explicitly with `py -3.14 -m ...` or another installed `3.11+` launcher target.
 
 ## Diagnostics
 

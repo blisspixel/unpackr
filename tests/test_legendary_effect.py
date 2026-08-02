@@ -2,8 +2,10 @@
 Quick test to preview the legendary comment effect.
 """
 
-import sys
 import os
+import sys
+
+from colorama import Fore, Style, init
 
 # Set UTF-8 encoding for Windows console
 if sys.platform == "win32":
@@ -17,8 +19,6 @@ if sys.platform == "win32":
         os.system("chcp 65001 >nul 2>&1")
     except Exception:
         pass
-
-from colorama import init, Fore, Style
 
 # Initialize colorama for Windows color support
 init()
@@ -42,13 +42,13 @@ def show_effect_comparison():
     # Epic (4%) - magenta bright
     print(f"EPIC (4%):       {Style.DIM}|{Style.RESET_ALL} {Fore.MAGENTA}{Style.BRIGHT}{sample_text}{Style.RESET_ALL}")
 
-    # Legendary (1%) - ROCKETS + GOLD/YELLOW + BRIGHT
+    # Legendary (1%) - MARKERS + GOLD/YELLOW + BRIGHT
     print(
-        f"LEGENDARY (1%):  {Style.DIM}|{Style.RESET_ALL} {Fore.YELLOW}{Style.BRIGHT}🚀 {sample_text} 🚀{Style.RESET_ALL}"
+        f"LEGENDARY (1%):  {Style.DIM}|{Style.RESET_ALL} {Fore.YELLOW}{Style.BRIGHT}[!] {sample_text} [!]{Style.RESET_ALL}"
     )
 
     print(
-        f"\n{Style.DIM}The legendary drop has rockets and gold/yellow bright text for maximum hype!{Style.RESET_ALL}\n"
+        f"\n{Style.DIM}The legendary drop has markers and gold/yellow bright text for maximum emphasis.{Style.RESET_ALL}\n"
     )
 
 

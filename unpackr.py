@@ -29,7 +29,7 @@ from core.file_handler import FileHandler
 from core.video_processor import VideoProcessor
 from utils.cli_prompts import clean_path, countdown_prompt, get_user_input, quick_preflight, resolve_cli_presentation
 from utils.cli_render import create_renderer
-from utils.cli_runtime import build_unpackr_arg_parser, configure_windows_console_utf8
+from utils.cli_runtime import build_unpackr_arg_parser, configure_windows_console_utf8, resolve_unpackr_paths
 from utils.defensive import InputValidator, StateValidator, ValidationError
 from utils.dry_run_summary import DryRunPlan
 from utils.safety import LoopSafety, RecursionSafety, StuckDetector
@@ -786,32 +786,30 @@ class UnpackrApp:
 
     def _load_comments(self):
         """
-        Load random comments from JSON file.
+        Load random comments from a custom file or the bundled sample.
 
-        On first run, copies comments.sample.json to comments.json.
-        Users can then customize comments.json without affecting the repo.
+        A comments.json beside an explicit config file takes precedence. The
+        bundled sample is read directly so installed package files stay read-only.
         """
         try:
-            config_dir = Path(__file__).parent / "config_files"
-            comments_file = config_dir / "comments.json"
-            sample_file = config_dir / "comments.sample.json"
+            bundled_dir = Path(__file__).parent / "config_files"
+            config = getattr(self, "config", None)
+            config_path = getattr(config, "config_path", None)
+            custom_dir = Path(config_path).parent if config_path else bundled_dir
+            candidates = [
+                custom_dir / "comments.json",
+                bundled_dir / "comments.json",
+                bundled_dir / "comments.sample.json",
+            ]
 
-            # First run: copy sample to comments.json if it doesn't exist
-            if not comments_file.exists() and sample_file.exists():
-                import shutil
-
-                shutil.copy(sample_file, comments_file)
-                logging.info("Created comments.json from sample (customize as you like)")
-
-            # Load comments from user's file
-            if comments_file.exists():
+            comments_file = next((path for path in candidates if path.is_file()), None)
+            if comments_file is not None:
                 with open(comments_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    # Support both old format (list) and new format (dict with rarities)
-                    if isinstance(data.get("comments"), dict):
-                        return data  # New rarity-based format
-                    else:
-                        return data.get("comments", [])  # Old flat list format
+                # Support both old format (list) and new format (dict with rarities)
+                if isinstance(data.get("comments"), dict):
+                    return data  # New rarity-based format
+                return data.get("comments", [])  # Old flat list format
         except Exception as e:
             logging.debug(f"Could not load comments: {e}")
         return []
@@ -1135,10 +1133,10 @@ class UnpackrApp:
 
                 # Apply visual effects based on rarity
                 if effect == "legendary":
-                    # Special legendary effect: rockets + gold/yellow + bright (1% drop!)
+                    # Special legendary effect: markers + gold/yellow + bright (1% drop!)
                     sys.stdout.write(
                         UnpackrApp._sanitize_console_text(
-                            f"  {Style.DIM}│{Style.RESET_ALL} {Fore.YELLOW}{Style.BRIGHT}🚀 {comment[:71]} 🚀{Style.RESET_ALL}\033[K\n"
+                            f"  {Style.DIM}│{Style.RESET_ALL} {Fore.YELLOW}{Style.BRIGHT}[!] {comment[:71]} [!]{Style.RESET_ALL}\033[K\n"
                         )
                     )
                 else:
@@ -1612,17 +1610,17 @@ def main():
         parser = build_unpackr_arg_parser()
         args = parser.parse_args()
 
-        # Handle positional vs named arguments
-        if args.source_pos:
-            args.source = args.source_pos
-        if args.dest_pos:
-            args.destination = args.dest_pos
+        args.source, args.destination = resolve_unpackr_paths(args, parser)
 
         # Load configuration defensively
-        config_path = Path(args.config) if args.config else Path("config_files/config.json")
+        config_path = (
+            Path(args.config) if args.config else Path(__file__).resolve().parent / "config_files" / "config.json"
+        )
 
         try:
-            config = Config(config_path if config_path.exists() else None)
+            config = Config(config_path)
+            if not getattr(config, "is_valid", True):
+                raise ValueError(f"configuration file is invalid or unavailable: {config_path}")
         except Exception as e:
             print(Fore.RED + f"Error loading config: {e}" + Style.RESET_ALL)
             logging.error(f"Config load failed: {e}", exc_info=True)

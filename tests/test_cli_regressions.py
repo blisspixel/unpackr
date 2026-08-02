@@ -114,6 +114,38 @@ def test_vhealth_main_handles_inaccessible_path(monkeypatch):
     assert exc.value.code == 1
 
 
+def test_vhealth_main_blocks_invalid_config(monkeypatch, tmp_path):
+    target = tmp_path / "videos"
+    target.mkdir()
+    config_path = tmp_path / "invalid.json"
+    config_path.write_text("{bad", encoding="utf-8")
+    monkeypatch.setattr(vhealth.sys, "argv", ["vhealth", str(target), "--config", str(config_path)])
+
+    with pytest.raises(SystemExit) as exc:
+        vhealth.main()
+
+    assert exc.value.code == 1
+
+
+def test_unpackr_main_blocks_invalid_config(monkeypatch, tmp_path):
+    source = tmp_path / "source"
+    destination = tmp_path / "destination"
+    source.mkdir()
+    destination.mkdir()
+    config_path = tmp_path / "invalid.json"
+    config_path.write_text("{bad", encoding="utf-8")
+    monkeypatch.setattr(
+        unpackr.sys,
+        "argv",
+        ["unpackr", "--source", str(source), "--destination", str(destination), "--config", str(config_path)],
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        unpackr.main()
+
+    assert exc.value.code == 1
+
+
 def test_unpackr_main_vhealth_uses_destination_dir(monkeypatch, tmp_path):
     """`unpackr --vhealth` should pass destination_dir to vhealth checker."""
     source = tmp_path / "source"

@@ -54,7 +54,7 @@ def test_remove_sample_videos_dry_run_uses_plan(tmp_path):
     assert "sample/preview" in seen["reason"]
 
 
-def test_load_comments_copies_sample_file_on_first_run(monkeypatch, tmp_path):
+def test_load_comments_reads_sample_without_writing_package_files(monkeypatch, tmp_path):
     base = tmp_path / "repo"
     config_dir = base / "config_files"
     config_dir.mkdir(parents=True)
@@ -66,7 +66,23 @@ def test_load_comments_copies_sample_file_on_first_run(monkeypatch, tmp_path):
 
     loaded = unpackr.UnpackrApp._load_comments(dummy)
     assert loaded == ["hello"]
-    assert (config_dir / "comments.json").exists()
+    assert not (config_dir / "comments.json").exists()
+
+
+def test_load_comments_prefers_file_beside_explicit_config(monkeypatch, tmp_path):
+    bundled_dir = tmp_path / "package" / "config_files"
+    bundled_dir.mkdir(parents=True)
+    (bundled_dir / "comments.sample.json").write_text('{"comments": ["sample"]}', encoding="utf-8")
+    monkeypatch.setattr(unpackr, "__file__", str(bundled_dir.parent / "unpackr.py"))
+
+    custom_dir = tmp_path / "custom"
+    custom_dir.mkdir()
+    custom_config = custom_dir / "config.json"
+    custom_config.write_text("{}", encoding="utf-8")
+    (custom_dir / "comments.json").write_text('{"comments": ["custom"]}', encoding="utf-8")
+    dummy = types.SimpleNamespace(config=types.SimpleNamespace(config_path=custom_config))
+
+    assert unpackr.UnpackrApp._load_comments(dummy) == ["custom"]
 
 
 def test_get_random_comment_old_format_persists(monkeypatch):

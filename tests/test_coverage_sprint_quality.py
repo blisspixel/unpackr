@@ -27,7 +27,10 @@ def test_structured_event_emitter_console_and_file_error_paths(tmp_path):
     assert "size=123" in mock_log.call_args.args[1]
 
     emitter = EventEmitter(log_file=tmp_path / "events.jsonl", enable_console=False, enable_file=True)
-    with patch("builtins.open", side_effect=OSError("boom")), patch("core.structured_events.logger.error") as mock_error:
+    with (
+        patch("builtins.open", side_effect=OSError("boom")),
+        patch("core.structured_events.logger.error") as mock_error,
+    ):
         emitter.emit(EventType.VIDEO_DISCOVERED, "broken")
     assert "Failed to write event to file" in mock_error.call_args.args[0]
 
@@ -95,7 +98,10 @@ def test_event_analyzer_edge_paths(tmp_path):
     assert len(analyzer.events) == 1
     assert analyzer.get_error_summary() == {"VIDEO_VALIDATION_FAILED": 1}
 
-    with patch("builtins.open", side_effect=OSError("boom")), patch("core.structured_events.logger.error") as mock_error:
+    with (
+        patch("builtins.open", side_effect=OSError("boom")),
+        patch("core.structured_events.logger.error") as mock_error,
+    ):
         analyzer.load_events()
     assert "Failed to load events" in mock_error.call_args.args[0]
 
@@ -325,6 +331,9 @@ def test_doctor_main_non_json(monkeypatch):
     monkeypatch.setattr(doctor.sys, "argv", ["unpackr-doctor"])
 
     class DummyDoctor:
+        def __init__(self, config_path=None):
+            self.config_path = config_path
+
         def run(self):
             return 0
 

@@ -5,6 +5,7 @@ Loads and validates configuration settings.
 
 import json
 import shutil
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, TypeGuard, cast
 
@@ -25,8 +26,6 @@ class Config:
         "music_extensions": [".mp3", ".flac", ".wav", ".aac", ".m4a", ".ogg", ".wma"],
         "image_extensions": [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp", ".raw", ".cr2", ".nef"],
         "document_extensions": [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".rtf", ".odt"],
-        "ebook_extensions": [".epub", ".mobi", ".azw", ".azw3", ".pdf"],
-        "archive_extensions": [".zip", ".7z", ".rar"],
         "removable_extensions": [
             ".sfv",
             ".nfo",
@@ -40,14 +39,34 @@ class Config:
             ".dat",
             ".exe",
             ".htm",
+            ".html",
             ".log",
+            ".json",
+            ".encr",
+            ".encrypted",
+            ".md5",
+            ".sha1",
+            ".sha256",
+            ".torrent",
+            ".magnet",
         ],
         "min_music_files": 10,
         "min_image_files": 10,
         "min_documents": 10,
         "min_sample_size_mb": 50,
-        "max_log_files": 5,
+        "max_log_files": 3,
         "log_folder": "logs",
+        "max_runtime_hours": 48,
+        "max_videos_per_folder": 500,
+        "max_subfolder_depth": 20,
+        "stuck_timeout_hours": 3,
+        "file_delete_max_attempts": 5,
+        "file_delete_retry_delay": 1,
+        "folder_delete_max_attempts": 2,
+        "folder_delete_retry_delay": 5,
+        "file_lock_wait_attempts": 10,
+        "file_lock_wait_delay": 1,
+        "archive_extraction_loop_limit": 100,
     }
 
     def __init__(self, config_path: Optional[Path] = None) -> None:
@@ -57,21 +76,28 @@ class Config:
         Args:
             config_path: Path to config.json file. If None, uses defaults.
         """
-        self.config: Dict[str, Any] = self.DEFAULT_CONFIG.copy()
+        self.config_path = config_path
+        self.config: Dict[str, Any] = deepcopy(self.DEFAULT_CONFIG)
+        self.is_valid = config_path is None
 
-        if config_path and config_path.exists():
-            self.load_config(config_path)
+        if config_path is not None:
+            try:
+                config_exists = config_path.is_file()
+            except OSError:
+                config_exists = False
+            if config_exists:
+                self.is_valid = self.load_config(config_path)
 
-    def load_config(self, config_path: Path) -> None:
+    def load_config(self, config_path: Path) -> bool:
         """Load configuration from JSON file."""
         try:
-            with open(config_path, "r") as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 user_config = json.load(f)
                 if not isinstance(user_config, dict):
                     print("\nERROR: Config file must contain a JSON object at top level")
                     print(f"  Config file: {config_path.absolute()}")
-                    print("Using default configuration.")
-                    return
+                    print("Configuration is invalid and will block startup.")
+                    return False
 
                 # Validate loaded config before applying
                 is_valid, errors = self._validate_config(cast(Dict[str, Any], user_config))
@@ -82,10 +108,11 @@ class Config:
                     for error in errors:
                         print(error)
                         print()
-                    print("Using default configuration instead.")
-                    return
+                    print("Configuration is invalid and will block startup.")
+                    return False
 
                 self.config.update(cast(Dict[str, Any], user_config))
+                return True
         except json.JSONDecodeError as e:
             print("\nERROR: Invalid JSON in config file")
             print(f"  Config file: {config_path.absolute()}")
@@ -93,18 +120,20 @@ class Config:
             print(f"  Line: {e.lineno}, Column: {e.colno}")
             print()
             print("Fix the JSON syntax and try again.")
-            print("Using default configuration.")
+            print("Configuration is invalid and will block startup.")
+            return False
         except Exception as e:
             print("\nERROR: Could not load config file")
             print(f"  Config file: {config_path.absolute()}")
             print(f"  Problem: {e}")
             print()
-            print("Using default configuration.")
+            print("Configuration is invalid and will block startup.")
+            return False
 
     def save_config(self, config_path: Path) -> None:
         """Save current configuration to JSON file."""
         try:
-            with open(config_path, "w") as f:
+            with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(self.config, f, indent=4)
         except Exception as e:
             print(f"Error saving config to {config_path}: {e}")
@@ -132,17 +161,24 @@ class Config:
             "min_image_files": (0, 1000, "Minimum image files", 10),
             "min_documents": (0, 1000, "Minimum documents", 10),
             "min_sample_size_mb": (1, 10000, "Minimum sample size", 50),
-            "max_log_files": (1, 100, "Maximum log files", 5),
-            "max_runtime_hours": (1, 168, "Maximum runtime hours", 24),
-            "max_videos_per_folder": (1, 10000, "Maximum videos per folder", 100),
-            "max_subfolder_depth": (1, 50, "Maximum subfolder depth", 10),
-            "stuck_timeout_hours": (1, 24, "Stuck timeout hours", 4),
+            "max_log_files": (1, 100, "Maximum log files", 3),
+            "max_runtime_hours": (1, 168, "Maximum runtime hours", 48),
+            "max_videos_per_folder": (1, 10000, "Maximum videos per folder", 500),
+            "max_subfolder_depth": (1, 50, "Maximum subfolder depth", 20),
+            "stuck_timeout_hours": (1, 24, "Stuck timeout hours", 3),
+            "file_delete_max_attempts": (1, 100, "File deletion attempts", 5),
+            "file_delete_retry_delay": (1, 3600, "File deletion retry delay", 1),
+            "folder_delete_max_attempts": (1, 100, "Folder deletion attempts", 2),
+            "folder_delete_retry_delay": (1, 3600, "Folder deletion retry delay", 5),
+            "file_lock_wait_attempts": (1, 1000, "File lock wait attempts", 10),
+            "file_lock_wait_delay": (1, 3600, "File lock wait delay", 1),
+            "archive_extraction_loop_limit": (1, 10000, "Archive extraction loop limit", 100),
         }
 
         for field, (min_val, max_val, _display_name, example) in numeric_fields.items():
             if field in config:
                 value = config[field]
-                if not isinstance(value, int):
+                if not isinstance(value, int) or isinstance(value, bool):
                     errors.append(
                         f"ERROR: Invalid config value\n"
                         f"  Field: {field}\n"
@@ -166,8 +202,6 @@ class Config:
             "music_extensions": [".mp3", ".flac", ".wav"],
             "image_extensions": [".jpg", ".png", ".gif"],
             "document_extensions": [".pdf", ".doc", ".txt"],
-            "ebook_extensions": [".epub", ".mobi", ".pdf"],
-            "archive_extensions": [".zip", ".rar", ".7z"],
             "removable_extensions": [".nfo", ".sfv", ".txt"],
         }
 
@@ -211,8 +245,14 @@ class Config:
                         errors.append(f"tool_paths['{tool}'] must contain only strings")
 
         # Validate string fields
-        if "log_folder" in config and not isinstance(config["log_folder"], str):
-            errors.append(f"log_folder must be a string, got {type(config['log_folder']).__name__}")
+        if "log_folder" in config:
+            log_folder = config["log_folder"]
+            if not isinstance(log_folder, str):
+                errors.append(f"log_folder must be a string, got {type(log_folder).__name__}")
+            elif not log_folder.strip():
+                errors.append("log_folder must be a non-empty string")
+            elif "\x00" in log_folder:
+                errors.append("log_folder must not contain null bytes")
 
         return (len(errors) == 0, errors)
 
@@ -308,7 +348,7 @@ class Config:
     @property
     def max_log_files(self) -> int:
         """Get maximum number of log files to keep."""
-        return self._get_int("max_log_files", 5)
+        return self._get_int("max_log_files", 3)
 
     @property
     def log_folder(self) -> str:
@@ -318,22 +358,85 @@ class Config:
     @property
     def max_runtime_hours(self) -> int:
         """Get maximum runtime in hours."""
-        return self._get_int("max_runtime_hours", 12)
+        return self._get_int("max_runtime_hours", 48)
 
     @property
     def max_videos_per_folder(self) -> int:
         """Get maximum videos per folder safety limit."""
-        return self._get_int("max_videos_per_folder", 200)
+        return self._get_int("max_videos_per_folder", 500)
 
     @property
     def max_subfolder_depth(self) -> int:
         """Get maximum subfolder recursion depth."""
-        return self._get_int("max_subfolder_depth", 15)
+        return self._get_int("max_subfolder_depth", 20)
 
     @property
     def stuck_timeout_hours(self) -> int:
         """Get stuck detection timeout in hours."""
         return self._get_int("stuck_timeout_hours", 3)
+
+    @property
+    def file_delete_max_attempts(self) -> int:
+        """Get maximum attempts for deleting a file."""
+        return self._get_int("file_delete_max_attempts", 5)
+
+    @file_delete_max_attempts.setter
+    def file_delete_max_attempts(self, value: int) -> None:
+        self.set("file_delete_max_attempts", value)
+
+    @property
+    def file_delete_retry_delay(self) -> int:
+        """Get initial file deletion retry delay in seconds."""
+        return self._get_int("file_delete_retry_delay", 1)
+
+    @file_delete_retry_delay.setter
+    def file_delete_retry_delay(self, value: int) -> None:
+        self.set("file_delete_retry_delay", value)
+
+    @property
+    def folder_delete_max_attempts(self) -> int:
+        """Get maximum attempts for deleting a folder."""
+        return self._get_int("folder_delete_max_attempts", 2)
+
+    @folder_delete_max_attempts.setter
+    def folder_delete_max_attempts(self, value: int) -> None:
+        self.set("folder_delete_max_attempts", value)
+
+    @property
+    def folder_delete_retry_delay(self) -> int:
+        """Get folder deletion retry delay in seconds."""
+        return self._get_int("folder_delete_retry_delay", 5)
+
+    @folder_delete_retry_delay.setter
+    def folder_delete_retry_delay(self, value: int) -> None:
+        self.set("folder_delete_retry_delay", value)
+
+    @property
+    def file_lock_wait_attempts(self) -> int:
+        """Get maximum checks while waiting for a file lock."""
+        return self._get_int("file_lock_wait_attempts", 10)
+
+    @file_lock_wait_attempts.setter
+    def file_lock_wait_attempts(self, value: int) -> None:
+        self.set("file_lock_wait_attempts", value)
+
+    @property
+    def file_lock_wait_delay(self) -> int:
+        """Get delay between file lock checks in seconds."""
+        return self._get_int("file_lock_wait_delay", 1)
+
+    @file_lock_wait_delay.setter
+    def file_lock_wait_delay(self, value: int) -> None:
+        self.set("file_lock_wait_delay", value)
+
+    @property
+    def archive_extraction_loop_limit(self) -> int:
+        """Get the maximum archive extraction loop iterations."""
+        return self._get_int("archive_extraction_loop_limit", 100)
+
+    @archive_extraction_loop_limit.setter
+    def archive_extraction_loop_limit(self, value: int) -> None:
+        self.set("archive_extraction_loop_limit", value)
 
     def _get_str_list(self, key: str, default: List[str]) -> List[str]:
         value = self.config.get(key, default)
@@ -343,7 +446,7 @@ class Config:
 
     def _get_int(self, key: str, default: int) -> int:
         value = self.config.get(key, default)
-        return value if isinstance(value, int) else default
+        return value if isinstance(value, int) and not isinstance(value, bool) else default
 
     def _get_str(self, key: str, default: str) -> str:
         value = self.config.get(key, default)

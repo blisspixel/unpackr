@@ -23,9 +23,9 @@ Use this index to find the right doc for operations, troubleshooting, and mainte
 - `BUILD.md` - install/build modes
 - `CHANGELOG.md` - user-visible changes by release
 
-Current quality snapshot:
-- full suite: `482` passing tests
-- coverage: `86.24%`
+Quality contract:
+- full suite required to pass
+- coverage required to remain at or above `80%`
 - stricter typed modules: `core/config.py`, `core/file_handler.py`, `core/safety_invariants.py`
 
 ## Archive

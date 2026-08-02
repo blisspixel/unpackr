@@ -9,12 +9,15 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 from contextlib import redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 from colorama import Fore, Style, init
+
+from utils.cli_runtime import existing_file_path
 
 init(autoreset=True)
 
@@ -28,10 +31,15 @@ class UnpackrDoctor:
         "ffmpeg": (4, 4),
     }
 
-    def __init__(self):
-        self.issues = []
-        self.warnings = []
-        self.passed = []
+    def __init__(self, config_path: Optional[Path] = None) -> None:
+        self.config_path = config_path
+        self.issues: list[str] = []
+        self.warnings: list[str] = []
+        self.passed: list[str] = []
+
+    def _config_file(self) -> Path:
+        """Return the explicit config path or the bundled default."""
+        return self.config_path or Path(__file__).parent / "config_files" / "config.json"
 
     def print_header(self):
         """Print diagnostic header."""
@@ -59,9 +67,9 @@ class UnpackrDoctor:
         if "par2cmdline version too old" in warning_text:
             actions.append("Upgrade par2cmdline to 0.8.1+ for stable repair behavior.")
         if "missing packages:" in issue_text:
-            actions.append("Install required Python packages with `pip install -e .`.")
+            actions.append("Install required Python packages with `python -m pip install .`.")
         if "config" in issue_text and "json" in issue_text:
-            actions.append("Fix JSON syntax in `config_files/config.json`.")
+            actions.append(f"Fix the active config file: `{self._config_file()}`.")
         if "write permissions" in issue_text:
             actions.append("Run from a writable directory or adjust folder permissions.")
         if "disk space" in issue_text or "gb free" in issue_text:
@@ -104,12 +112,12 @@ class UnpackrDoctor:
         else:
             print(f"{Fore.RED}✗ Missing: {', '.join(missing)}{Style.RESET_ALL}")
             self.issues.append(f"Missing packages: {', '.join(missing)}")
-            print(f"  {Style.DIM}Fix: pip install {' '.join(missing)}{Style.RESET_ALL}")
+            print(f"  {Style.DIM}Fix: python -m pip install {' '.join(missing)}{Style.RESET_ALL}")
 
     def check_config_file(self):
         """Check config file exists and is valid."""
         print(f"{Fore.YELLOW}[3/10]{Style.RESET_ALL} Checking configuration file...", end=" ")
-        config_path = Path(__file__).parent / "config_files" / "config.json"
+        config_path = self._config_file()
 
         if not config_path.exists():
             print(f"{Fore.RED}✗ Config file not found{Style.RESET_ALL}")
@@ -117,8 +125,13 @@ class UnpackrDoctor:
             return
 
         try:
-            with open(config_path, "r") as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 config = json.load(f)
+
+            if not isinstance(config, dict):
+                print(f"{Fore.RED}✗ Config must contain a JSON object{Style.RESET_ALL}")
+                self.issues.append("Config file must contain a JSON object")
+                return
 
             # Check for required keys
             required_keys = ["tool_paths", "video_extensions", "removable_extensions"]
@@ -134,6 +147,9 @@ class UnpackrDoctor:
         except json.JSONDecodeError as e:
             print(f"{Fore.RED}✗ Invalid JSON: {e}{Style.RESET_ALL}")
             self.issues.append("Config file has invalid JSON")
+        except OSError as e:
+            print(f"{Fore.RED}✗ Cannot read config: {e}{Style.RESET_ALL}")
+            self.issues.append("Config file cannot be read")
 
     def check_tool(self, tool_name, commands, critical=True):
         """Check if external tool is available."""
@@ -225,12 +241,14 @@ class UnpackrDoctor:
         print(f"{Fore.YELLOW}[4/10]{Style.RESET_ALL} Checking external tools...")
 
         # Load config to get tool paths
-        config_path = Path(__file__).parent / "config_files" / "config.json"
+        config_path = self._config_file()
         try:
-            with open(config_path, "r") as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 config = json.load(f)
-            tool_paths = config.get("tool_paths", {})
-        except (OSError, json.JSONDecodeError):
+            tool_paths = config.get("tool_paths", {}) if isinstance(config, dict) else {}
+            if not isinstance(tool_paths, dict):
+                tool_paths = {}
+        except (OSError, json.JSONDecodeError, AttributeError, TypeError):
             tool_paths = {}
 
         # Check 7-Zip
@@ -238,6 +256,9 @@ class UnpackrDoctor:
         commands = tool_paths.get("7z", [])
         if isinstance(commands, str):
             commands = [commands]
+        elif not isinstance(commands, list):
+            commands = []
+        commands = [command for command in commands if isinstance(command, str)]
         commands.extend(["7z", "C:\\Program Files\\7-Zip\\7z.exe"])
 
         found, path = self.check_tool("7z", commands, critical=True)
@@ -255,7 +276,10 @@ class UnpackrDoctor:
         commands = tool_paths.get("par2", [])
         if isinstance(commands, str):
             commands = [commands]
-        commands.extend(["par2", "bin\\par2.exe"])
+        elif not isinstance(commands, list):
+            commands = []
+        commands = [command for command in commands if isinstance(command, str)]
+        commands.extend(["par2"])
 
         found, path = self.check_tool("par2", commands, critical=True)
         if found and path:
@@ -272,6 +296,9 @@ class UnpackrDoctor:
         commands = tool_paths.get("ffmpeg", [])
         if isinstance(commands, str):
             commands = [commands]
+        elif not isinstance(commands, list):
+            commands = []
+        commands = [command for command in commands if isinstance(command, str)]
         commands.extend(["ffmpeg"])
 
         found, path = self.check_tool("ffmpeg", commands, critical=False)
@@ -286,11 +313,10 @@ class UnpackrDoctor:
     def check_write_permissions(self):
         """Check write permissions in current directory."""
         print(f"{Fore.YELLOW}[5/10]{Style.RESET_ALL} Checking write permissions...", end=" ")
-        test_file = Path(__file__).parent / ".doctor_test"
 
         try:
-            test_file.write_text("test")
-            test_file.unlink()
+            with tempfile.NamedTemporaryFile(prefix=".unpackr-doctor-", dir=Path.cwd()):
+                pass
             print(f"{Fore.GREEN}✓ Can write to current directory{Style.RESET_ALL}")
             self.passed.append("Write permissions")
         except Exception as e:
@@ -321,11 +347,18 @@ class UnpackrDoctor:
     def check_comments_file(self):
         """Check easter egg comments file."""
         print(f"{Fore.YELLOW}[7/10]{Style.RESET_ALL} Checking easter egg comments...", end=" ")
-        comments_path = Path(__file__).parent / "config_files" / "comments.json"
+        config_dir = self._config_file().parent
+        bundled_dir = Path(__file__).parent / "config_files"
+        candidates = [
+            config_dir / "comments.json",
+            config_dir / "comments.sample.json",
+            bundled_dir / "comments.sample.json",
+        ]
+        comments_path = next((path for path in candidates if path.is_file()), None)
 
-        if not comments_path.exists():
+        if comments_path is None:
             print(f"{Fore.YELLOW}⚠ Comments file not found (easter eggs disabled){Style.RESET_ALL}")
-            self.warnings.append("No comments.json - easter eggs disabled")
+            self.warnings.append("No comments file - easter eggs disabled")
             return
 
         try:
@@ -372,10 +405,25 @@ class UnpackrDoctor:
     def check_log_directory(self):
         """Check log directory can be created."""
         print(f"{Fore.YELLOW}[9/10]{Style.RESET_ALL} Checking log directory...", end=" ")
-        log_dir = Path(__file__).parent / "logs"
+        log_folder = "logs"
+        try:
+            with open(self._config_file(), "r", encoding="utf-8") as config_file:
+                payload = json.load(config_file)
+            configured_log_folder = payload.get("log_folder") if isinstance(payload, dict) else None
+            if (
+                isinstance(configured_log_folder, str)
+                and configured_log_folder.strip()
+                and "\x00" not in configured_log_folder
+            ):
+                log_folder = configured_log_folder.strip()
+        except (OSError, json.JSONDecodeError, AttributeError, TypeError):
+            pass
+
+        log_dir = Path(log_folder).expanduser()
+        log_dir = (Path.cwd() / log_dir).resolve() if not log_dir.is_absolute() else log_dir.resolve()
 
         try:
-            log_dir.mkdir(exist_ok=True)
+            log_dir.mkdir(parents=True, exist_ok=True)
             print(f"{Fore.GREEN}✓ Log directory ready{Style.RESET_ALL}")
             self.passed.append("Log directory")
         except Exception as e:
@@ -492,9 +540,10 @@ def main():
         description="Diagnose unpackr runtime requirements and setup.",
     )
     parser.add_argument("--json", action="store_true", help="Output machine-readable JSON results")
+    parser.add_argument("--config", type=existing_file_path, help="Path to an existing custom config file")
     args = parser.parse_args()
 
-    doctor = UnpackrDoctor()
+    doctor = UnpackrDoctor(Path(args.config) if args.config else None)
     if args.json:
         # Suppress human-readable output in JSON mode.
         with redirect_stdout(io.StringIO()):

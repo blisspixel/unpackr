@@ -8,6 +8,12 @@
 unpackr-doctor --json
 ```
 
+To diagnose the same custom configuration used for a run:
+
+```bash
+unpackr-doctor --config "C:\path\to\config.json" --json
+```
+
 The command exits with:
 
 - `0` when there are no blocking issues (`status: "ready"`)

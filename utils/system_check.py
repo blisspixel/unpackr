@@ -59,12 +59,16 @@ class SystemCheck:
 
         # Get tool path from config if available
         tool_paths = self.config.get("tool_paths", {})
+        if not isinstance(tool_paths, dict):
+            tool_paths = {}
         custom_paths = tool_paths.get(tool_key)
 
-        # Convert single path to list for uniform handling
+        # Convert single path to list for uniform handling; reject other shapes.
         if isinstance(custom_paths, str):
             custom_paths = [custom_paths]
-        elif custom_paths is None:
+        elif isinstance(custom_paths, list):
+            custom_paths = [path for path in custom_paths if isinstance(path, str)]
+        else:
             custom_paths = []
 
         # Add default command as fallback
@@ -245,7 +249,7 @@ class SystemCheck:
         if not can_proceed:
             print(Fore.RED + "ERROR: Critical tools missing! Cannot continue." + Style.RESET_ALL)
             print(
-                f"{Fore.YELLOW}TIP: Edit config_files/config.json and set correct paths in 'tool_paths' section{Style.RESET_ALL}"
+                f"{Fore.YELLOW}TIP: Update 'tool_paths' in the active config and pass it with --config{Style.RESET_ALL}"
             )
 
         return can_proceed
@@ -271,12 +275,16 @@ class SystemCheck:
 
         # Get tool path from config if available
         tool_paths = self.config.get("tool_paths", {})
+        if not isinstance(tool_paths, dict):
+            tool_paths = {}
         custom_paths = tool_paths.get(tool_key)
 
-        # Convert single path to list for uniform handling
+        # Convert single path to list for uniform handling; reject other shapes.
         if isinstance(custom_paths, str):
             custom_paths = [custom_paths]
-        elif custom_paths is None:
+        elif isinstance(custom_paths, list):
+            custom_paths = [path for path in custom_paths if isinstance(path, str)]
+        else:
             custom_paths = []
 
         if not custom_paths:

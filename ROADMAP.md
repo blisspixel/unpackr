@@ -4,16 +4,16 @@ This roadmap is reliability-first: safety, correctness, observability, then perf
 
 ## Version Focus
 
-- Current line: `1.3.x`
+- Current line: `1.3.x` (latest: `1.3.1`, August 2026)
 - Primary objective: make destructive operations auditable, deterministic, and hard to misuse.
 
 ## Quality Baseline
 
 - CI quality gate is `80%` coverage minimum.
-- Current measured repo-wide coverage is `86.24%`.
-- Full regression suite currently passes at `482` tests.
+- The full regression suite must pass before merge.
 - Dependency/version policy is enforced by `unpackr-doctor` and runtime preflight.
-- Python support floor is `3.11+`.
+- Installed CLI entry points and documented path flags are covered by regression and CI smoke tests.
+- Python support floor is `3.11+` (CI matrix includes `3.11` through `3.14`).
 - Active documentation stays under `docs/`; superseded content belongs in `docs/archive/`.
 
 ## Guiding Principles
@@ -35,7 +35,7 @@ Acceptance criteria:
 - Dry-run and live-run decisions are policy-equivalent (execution differs, decisions do not).
 
 Status:
-- Mostly complete. Continue hardening edge cases and deletion audit trails.
+- Largely complete in `1.3.1`. Continue hardening edge cases and deletion audit trails.
 
 ### Next: Observability And Automation
 
@@ -47,7 +47,7 @@ Acceptance criteria:
 - Structured outputs include timestamps, status, and actionable remediation hints.
 
 Status:
-- In progress. `doctor --json` is documented; next target is structured `unpackr` run summaries and richer machine-readable run output.
+- In progress. `unpackr-doctor --json` is documented and CI-tested; next target is structured `unpackr` run summaries and richer machine-readable run output.
 
 ### Next: Correctness And Recovery Hardening
 
@@ -76,6 +76,7 @@ Status:
 ## Release Discipline
 
 - Every change touching deletion/move logic requires tests.
+- Every packaging or CLI contract change requires an installed-command or argument-parser regression test.
 - Docs updates are mandatory for behavior changes.
 - Changelog entries must state user-visible impact and migration notes.
 

@@ -19,6 +19,7 @@ from colorama import Fore, Style, init
 
 from core import Config
 from core.video_processor import VideoProcessor
+from utils.cli_runtime import existing_file_path
 from utils.safety import SubprocessSafety
 
 init(autoreset=True)
@@ -971,7 +972,7 @@ def main():
     parser.add_argument(
         "--skip-samples", action="store_true", help="Skip sample detection, go straight to health check"
     )
-    parser.add_argument("--config", help="Path to custom config file")
+    parser.add_argument("--config", type=existing_file_path, help="Path to an existing custom config file")
     parser.add_argument("-v", "--verbose", action="store_true", help="Show verbose output (ffmpeg messages, etc.)")
 
     args = parser.parse_args()
@@ -987,7 +988,11 @@ def main():
     print(f"{Style.DIM}Check videos for corruption, duplicates, samples{Style.RESET_ALL}\n")
 
     # Load config
-    config = Config(Path(args.config)) if args.config else Config()
+    config_path = Path(args.config) if args.config else Path(__file__).resolve().parent / "config_files" / "config.json"
+    config = Config(config_path)
+    if not getattr(config, "is_valid", True):
+        print(f"\n{Fore.RED}Error: Configuration file is invalid or unavailable: {config_path}{Style.RESET_ALL}")
+        sys.exit(1)
 
     # Validate path
     path = Path(args.path)

@@ -121,7 +121,7 @@ def test_config_edge_cases(runner: ComprehensiveRunner):
     config = Config(None)
     runner.test("Config: Default video extensions not empty", len(config.video_extensions) > 0)
     runner.test("Config: Default log folder", config.log_folder == "logs")
-    runner.test("Config: Default max log files", config.max_log_files == 5)
+    runner.test("Config: Default max log files", config.max_log_files == 3)
 
     # Test video extension access
     extensions = config.video_extensions

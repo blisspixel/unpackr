@@ -5,10 +5,11 @@
 - Windows
 - Python `3.11+`
 
-## Recommended Install (Editable)
+## Recommended Install
 
 ```powershell
-pip install -e .
+python -m pip install .
+unpackr --help
 unpackr-doctor
 ```
 
@@ -17,15 +18,17 @@ This provides console entry points:
 - `unpackr-doctor`
 - `vhealth`
 
-For contributor installs:
+The install also includes the top-level command modules and bundled default configuration files. The commands therefore work outside the repository directory after installation.
+
+For editable contributor installs:
 
 ```powershell
-pip install -e .[dev]
+python -m pip install -e .[dev]
 pre-commit install
 pre-commit run --all-files
 ```
 
-If your default `python` on Windows is older than `3.11`, prefer `py -3.13 -m ...` when running the quality gate locally.
+Use the same Python `3.11+` interpreter for installation and command execution. On Windows, `py -3.14 -m pip install .` is an explicit alternative when `python` resolves to an older interpreter.
 
 ## Batch Wrapper Mode
 

@@ -40,20 +40,20 @@ class SafetyLimits:
     RAR_EXTRACTION_SPEED_MB_PER_SEC = 10
     PAR2_REPAIR_SPEED_MB_PER_SEC = 5  # PAR2 is slower due to checksums
 
-    # Retry limits
+    # Retry limits (defaults; runtime uses Config values when available)
     MAX_FILE_DELETE_RETRIES = 5
     MAX_FILE_RELEASE_WAIT = 10
-    MAX_FOLDER_DELETE_RETRIES = 3
+    MAX_FOLDER_DELETE_RETRIES = 2
 
     # Process wait limits
     FILE_RELEASE_CHECK_DELAY = 1  # seconds
     DELETE_RETRY_DELAY = 1  # seconds
     FOLDER_CLEANUP_DELAY = 5  # seconds
 
-    # Total operation limits
-    MAX_VIDEOS_PER_FOLDER = 100  # Safety limit
-    MAX_SUBFOLDERS_DEPTH = 10  # Prevent infinite recursion
-    MAX_TOTAL_PROCESSING_TIME = 3600 * 4  # 4 hours total
+    # Total operation limits (defaults; runtime uses Config values when available)
+    MAX_VIDEOS_PER_FOLDER = 500  # Safety limit
+    MAX_SUBFOLDERS_DEPTH = 20  # Prevent infinite recursion
+    MAX_TOTAL_PROCESSING_TIME = 3600 * 48  # 48 hours total
     MAX_SUBPROCESS_CAPTURE_BYTES = 64 * 1024  # Bound stdout/stderr returned from temp files
 
     @staticmethod

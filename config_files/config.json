@@ -45,18 +45,6 @@
         ".rtf",
         ".odt"
     ],
-    "ebook_extensions": [
-        ".epub",
-        ".mobi",
-        ".azw",
-        ".azw3",
-        ".pdf"
-    ],
-    "archive_extensions": [
-        ".zip",
-        ".7z",
-        ".rar"
-    ],
     "removable_extensions": [
         ".sfv",
         ".nfo",
@@ -87,8 +75,6 @@
     "min_sample_size_mb": 50,
     "max_log_files": 3,
     "log_folder": "logs",
-    "image_collection_threshold": 10,
-    "file_move_max_attempts": 3,
     "file_delete_max_attempts": 5,
     "file_delete_retry_delay": 1,
     "folder_delete_max_attempts": 2,

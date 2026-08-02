@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   checks:
     runs-on: ${{ matrix.os }}
@@ -14,13 +17,13 @@ jobs:
       fail-fast: false
       matrix:
         os: ["windows-latest", "ubuntu-latest", "macos-latest"]
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
@@ -28,7 +31,19 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[dev]
+          python -m pip install -e .[dev]
+
+      - name: CLI entry point smoke test
+        run: |
+          unpackr --help
+          unpackr-doctor --help
+          vhealth --help
+
+      - name: Wheel contents smoke test
+        if: runner.os == 'Linux' && matrix.python-version == '3.14'
+        run: |
+          python -m pip wheel --no-deps --wheel-dir dist .
+          python -c "import glob, zipfile; wheel = glob.glob('dist/unpackr-*.whl')[0]; names = set(zipfile.ZipFile(wheel).namelist()); required = {'unpackr.py', 'doctor.py', 'vhealth.py', 'config_files/config.json', 'config_files/comments.sample.json'}; assert required <= names, required - names; assert 'config_files/comments.json' not in names"
 
       - name: Pre-commit quality gate
         if: runner.os == 'Linux' && matrix.python-version == '3.11'

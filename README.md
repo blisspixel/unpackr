@@ -1,4 +1,12 @@
+License: Apache 2.0 + Commons Clause (see [`LICENSE`](LICENSE))
+
+Personal/research/sharing use free.
+
+Commercial/enterprise products require separate license from Nick Seal.
+
 # Unpackr
+
+**Version 1.3.1** · August 2026
 
 Unpackr is a Windows automation tool for processing Usenet-style download folders with safety-first, predictable behavior.
 
@@ -23,7 +31,8 @@ Minimum supported versions:
 ## Install
 
 ```bash
-pip install -e .
+python -m pip install .
+unpackr --help
 unpackr-doctor
 ```
 
@@ -32,14 +41,14 @@ Run `unpackr-doctor` before live processing and resolve blocking issues first.
 Developer quality tooling:
 
 ```bash
-pip install -e .[dev]
+python -m pip install -e .[dev]
 pre-commit install
 pre-commit run --all-files
 ```
 
 Current engineering baseline:
-- `482` tests passing in the full suite
-- `86.24%` total coverage
+- full regression suite required to pass
+- `80%` minimum coverage enforced in CI
 - stricter Pyright tier on `core/config.py`, `core/file_handler.py`, and `core/safety_invariants.py`
 - enforced local + CI gate via `ruff`, `mypy`, `pyright`, `bandit`, `pytest`, coverage, and `pre-commit`
 
@@ -47,20 +56,26 @@ Current engineering baseline:
 
 ```bash
 # Preview only (no file changes)
-unpackr "G:\Downloads" "G:\Videos" --dry-run
+unpackr --source "G:\Downloads" --destination "G:\Videos" --dry-run
 
 # Show plan and exit
-unpackr "G:\Downloads" "G:\Videos" --show-plan
+unpackr --source "G:\Downloads" --destination "G:\Videos" --show-plan
 
 # Live run
+unpackr --source "G:\Downloads" --destination "G:\Videos"
+```
+
+The option is spelled `--destination`. The common misspelling `--destinantion` is accepted for compatibility, but scripts should use the canonical spelling.
+
+Positional paths are also supported:
+
+```bash
 unpackr "G:\Downloads" "G:\Videos"
 ```
 
-Named arguments are also supported:
+Source and destination must be provided together. Incomplete or conflicting path arguments fail with a usage error instead of falling into interactive mode.
 
-```bash
-unpackr --source "G:\Downloads" --destination "G:\Videos"
-```
+If the installed launcher is unavailable, run the same command as `python -m unpackr ...` from the repository checkout, then reinstall with `python -m pip install .`.
 
 ## Safety
 
@@ -81,7 +96,7 @@ You are responsible for following the laws, licenses, and rules that apply to yo
 
 Unpackr can move and permanently delete files. You are responsible for backups and for reviewing planned actions before live use.
 
-This project is a technical tool, not legal advice, and is provided "as is." See `LICENSE` for full terms.
+This project is a technical tool, not legal advice, and is provided "as is." The license terms are summarized at the top of this README, in [`LICENSE`](LICENSE), and in the package metadata.
 
 ## Tooling And Exit Codes
 
