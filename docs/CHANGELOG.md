@@ -7,6 +7,7 @@ Release dates are included where recorded.
 - Added a mock live-dashboard screenshot to the README.
 - Started first-class Linux and macOS support: platform helper module, PATH-first tool discovery, POSIX force-delete fallback, doctor process checks on all OS targets, expanded non-Windows CI, and multi-OS documentation.
 - Cross-platform parity hardening: full Linux CI suite with coverage gate, expanded macOS suite, optional real `7z`/`ffmpeg` checks, POSIX shell launchers, platform package-manager doctor hints, and `docs/PLATFORMS.md`.
+- Fixed archive path validation so Windows-style absolute and `..\` traversal members are rejected on Linux/macOS, not only on Windows.
 
 ## v1.3.1 (2026-08-02)
 

@@ -511,35 +511,43 @@ class TestArchivePathValidation:
     def test_validate_archive_paths_rejects_absolute_paths(self, processor, temp_dir):
         archive = temp_dir / "archive.rar"
         archive.write_text("test")
-        stdout = "2024-01-01 00:00:00 ....A 1 1 C:\\evil.txt\n"
-
-        with patch(
-            "core.archive_processor.SubprocessSafety.run_with_line_handler",
-            side_effect=self._fake_listing(stdout),
+        for stdout in (
+            "2024-01-01 00:00:00 ....A 1 1 C:\\evil.txt\n",
+            "2024-01-01 00:00:00 ....A 1 1 /etc/passwd\n",
+            "2024-01-01 00:00:00 ....A 1 1 //server/share/evil.txt\n",
         ):
-            assert processor._validate_archive_paths(archive, temp_dir, ["7z"]) is False
+            with patch(
+                "core.archive_processor.SubprocessSafety.run_with_line_handler",
+                side_effect=self._fake_listing(stdout),
+            ):
+                assert processor._validate_archive_paths(archive, temp_dir, ["7z"]) is False
 
     def test_validate_archive_paths_rejects_parent_traversal(self, processor, temp_dir):
         archive = temp_dir / "archive.rar"
         archive.write_text("test")
-        stdout = "2024-01-01 00:00:00 ....A 1 1 ..\\evil.txt\n"
-
-        with patch(
-            "core.archive_processor.SubprocessSafety.run_with_line_handler",
-            side_effect=self._fake_listing(stdout),
+        for stdout in (
+            "2024-01-01 00:00:00 ....A 1 1 ..\\evil.txt\n",
+            "2024-01-01 00:00:00 ....A 1 1 ../evil.txt\n",
+            "2024-01-01 00:00:00 ....A 1 1 nested/../../evil.txt\n",
         ):
-            assert processor._validate_archive_paths(archive, temp_dir, ["7z"]) is False
+            with patch(
+                "core.archive_processor.SubprocessSafety.run_with_line_handler",
+                side_effect=self._fake_listing(stdout),
+            ):
+                assert processor._validate_archive_paths(archive, temp_dir, ["7z"]) is False
 
     def test_validate_archive_paths_accepts_safe_relative_paths(self, processor, temp_dir):
         archive = temp_dir / "archive.rar"
         archive.write_text("test")
-        stdout = "2024-01-01 00:00:00 ....A 1 1 subdir\\video.mkv\n"
-
-        with patch(
-            "core.archive_processor.SubprocessSafety.run_with_line_handler",
-            side_effect=self._fake_listing(stdout),
+        for stdout in (
+            "2024-01-01 00:00:00 ....A 1 1 subdir\\video.mkv\n",
+            "2024-01-01 00:00:00 ....A 1 1 subdir/video.mkv\n",
         ):
-            assert processor._validate_archive_paths(archive, temp_dir, ["7z"]) is True
+            with patch(
+                "core.archive_processor.SubprocessSafety.run_with_line_handler",
+                side_effect=self._fake_listing(stdout),
+            ):
+                assert processor._validate_archive_paths(archive, temp_dir, ["7z"]) is True
 
     def test_validate_archive_paths_returns_false_on_validation_exception(self, processor, temp_dir):
         archive = temp_dir / "archive.rar"
