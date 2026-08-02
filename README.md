@@ -10,6 +10,10 @@ Commercial/enterprise products require separate license from Nick Seal.
 
 Unpackr is a Windows automation tool for processing Usenet-style download folders with safety-first, predictable behavior.
 
+![Unpackr live dashboard mock](docs/assets/unpackr-dashboard.png)
+
+*Example dashboard mid-run: progress, stats, current folder action, and status line. Paths and counts are illustrative.*
+
 ## Why Unpackr
 
 - Reduces manual cleanup: verify, extract, validate, move, and clean in one run.

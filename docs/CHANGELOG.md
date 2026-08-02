@@ -4,7 +4,7 @@ Release dates are included where recorded.
 
 ## Unreleased
 
-- None.
+- Added a mock live-dashboard screenshot to the README.
 
 ## v1.3.1 (2026-08-02)
 
