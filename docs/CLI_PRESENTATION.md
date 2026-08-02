@@ -4,7 +4,7 @@ This document covers terminal rendering behavior for `unpackr`.
 
 ## Scope
 
-- Processing workflow support remains Windows-only.
+- Processing workflows are supported on Windows, Linux, and macOS.
 - CLI presentation paths are designed to degrade safely across Windows, Linux, and macOS terminals.
 
 ## Modes

@@ -24,6 +24,7 @@ unpackr/
 |   |-- defensive.py
 |   |-- dry_run_summary.py
 |   |-- error_messages.py
+|   |-- platform_support.py
 |   |-- progress.py
 |   |-- safety.py
 |   `-- system_check.py
@@ -34,7 +35,7 @@ unpackr/
 
 Unpackr intentionally delegates archive/parity/media engine work to mature external tools.
 
-- Required runtime tool: `7z` (`22.0+`, blocking if missing/too old)
+- Required runtime tool: `7z` / `7zz` (`22.0+`, blocking if missing/too old)
 - Recommended runtime tool: `par2` (`0.8.1+`, warning if missing/too old)
 - Recommended runtime tool: `ffmpeg` (`4.4+`, warning if missing/too old)
 
@@ -42,6 +43,16 @@ Why:
 - Lower defect surface for complex binary formats
 - Better compatibility/performance than custom re-implementation
 - Reliability work stays focused on orchestration and policy
+
+## Platform Support
+
+- Supported OS targets: Windows, Linux, macOS
+- Shared policy lives in `utils/platform_support.py`:
+  - PATH-first tool candidate lists (plus Windows absolute fallbacks / Homebrew prefixes)
+  - helper-process detection and termination
+  - force-delete fallbacks (encoded PowerShell on Windows; guarded `rmtree` on POSIX)
+- Filename sanitization remains conservative so outputs stay portable across filesystems
+- CLI presentation already degrades safely on non-Windows terminals (`docs/CLI_PRESENTATION.md`)
 
 ## Processing Flow
 

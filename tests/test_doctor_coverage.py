@@ -175,15 +175,11 @@ def test_check_log_directory_failure(monkeypatch, doc, capsys):
 
 
 def test_check_running_processes_windows_conflicts(monkeypatch, doc, capsys):
-    monkeypatch.setattr(doctor.sys, "platform", "win32")
-    monkeypatch.setattr(
-        doctor.subprocess,
-        "run",
-        lambda *args, **kwargs: types.SimpleNamespace(stdout="7z.exe\npar2.exe\n"),
-    )
+    monkeypatch.setattr(doctor, "detect_running_helpers", lambda labels=None: ["7-Zip", "par2"])
+    monkeypatch.setattr(doctor, "platform_label", lambda: "Windows")
     doc.check_running_processes()
     out = capsys.readouterr().out
-    assert "Running: 7-Zip, par2" in out
+    assert "Running on Windows: 7-Zip, par2" in out
 
 
 def test_print_summary_and_run(monkeypatch, doc, capsys):

@@ -2,12 +2,13 @@
 
 ## Supported Runtime
 
-- Windows
+- Windows, Linux, macOS
 - Python `3.11+`
+- External tools: `7z`/`7zz` (required), `par2` and `ffmpeg` (recommended)
 
 ## Recommended Install
 
-```powershell
+```bash
 python -m pip install .
 unpackr --help
 unpackr-doctor
@@ -22,7 +23,7 @@ The install also includes the top-level command modules and bundled default conf
 
 For editable contributor installs:
 
-```powershell
+```bash
 python -m pip install -e .[dev]
 pre-commit install
 pre-commit run --all-files
@@ -30,7 +31,13 @@ pre-commit run --all-files
 
 Use the same Python `3.11+` interpreter for installation and command execution. On Windows, `py -3.14 -m pip install .` is an explicit alternative when `python` resolves to an older interpreter.
 
-## Batch Wrapper Mode
+## OS Notes
+
+- **Windows:** `unpackr.bat` / `vhealth.bat` wrappers are optional conveniences. Default config still lists common `Program Files` tool locations as fallbacks after PATH names.
+- **Linux / macOS:** install tools from the platform package manager and keep `7z`/`7zz`, `par2`, and `ffmpeg` on `PATH`. Platform helpers also probe common Homebrew prefixes on macOS.
+- Cross-platform process detection and force-delete fallbacks live in `utils/platform_support.py`.
+
+## Batch Wrapper Mode (Windows)
 
 You can also run via the included wrappers:
 - `unpackr.bat`

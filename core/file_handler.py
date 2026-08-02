@@ -3,7 +3,6 @@ File handling operations for Unpackr.
 Manages file operations, folder cleanup, and content classification.
 """
 
-import base64
 import logging
 import stat
 import time
@@ -16,6 +15,7 @@ import psutil
 from core.safety_invariants import InvariantEnforcer
 from utils.defensive import ErrorRecovery, InputValidator, StateValidator, ValidationError
 from utils.error_messages import log_error
+from utils.platform_support import force_delete_directory, is_windows
 
 
 class FileHandler:
@@ -539,44 +539,27 @@ class FileHandler:
                     time.sleep(retry_delay)
 
         if self._tree_contains_linklike_entries(folder):
-            logging.warning(f"Folder {folder} contains a symlink or junction; refusing PowerShell fallback delete")
+            logging.warning(f"Folder {folder} contains a symlink or junction; refusing force-delete fallback")
             return False
 
-        # Final attempt using PowerShell (handles special chars better)
-        logging.info(f"Trying PowerShell force delete for {folder}")
+        # Final platform-specific force delete (PowerShell on Windows, rmtree on POSIX).
+        fallback_label = "PowerShell" if is_windows() else "POSIX"
+        logging.info(f"Trying {fallback_label} force delete for {folder}")
         try:
-            import subprocess
-
-            # Use an encoded command so the folder path is never parsed as
-            # PowerShell command text, even if it contains metacharacters.
-            subprocess.run(self._build_powershell_delete_command(folder), capture_output=True, text=True, timeout=60)
-            # Check if folder still exists
-            if not folder.exists():
-                logging.info(f"PowerShell successfully deleted folder {folder}")
+            if force_delete_directory(folder):
+                logging.info(f"{fallback_label} successfully deleted folder {folder}")
                 return True
         except Exception as e:
-            logging.error(f"PowerShell delete failed for {folder}: {e}")
+            logging.error(f"{fallback_label} force delete failed for {folder}: {e}")
 
         logging.error(f"Could not delete folder {folder} after all attempts")
         return False
 
     def _build_powershell_delete_command(self, folder: Path) -> List[str]:
-        """
-        Build a PowerShell command that treats the folder path as data rather
-        than command text.
-        """
-        folder_literal = str(folder).replace("'", "''")
-        script = (
-            f"$target = '{folder_literal}'; "
-            "$item = Get-Item -LiteralPath $target -Force -ErrorAction Stop; "
-            "if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { exit 3 }; "
-            "$reparse = Get-ChildItem -LiteralPath $target -Force -Recurse -ErrorAction SilentlyContinue | "
-            "Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint } | Select-Object -First 1; "
-            "if ($reparse) { exit 3 }; "
-            "Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue"
-        )
-        encoded_script = base64.b64encode(script.encode("utf-16le")).decode("ascii")
-        return ["powershell", "-NoProfile", "-EncodedCommand", encoded_script]
+        """Compatibility wrapper around the shared Windows force-delete command builder."""
+        from utils.platform_support import build_powershell_delete_command
+
+        return build_powershell_delete_command(folder)
 
     def _is_linklike_path(self, path: Path) -> bool:
         """Return True for symlinks, junctions, and other reparse points."""

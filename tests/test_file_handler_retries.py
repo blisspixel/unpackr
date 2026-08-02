@@ -37,29 +37,23 @@ def test_safe_delete_folder_powershell_fallback_encodes_literal_path(tmp_path, m
     folder.mkdir()
 
     captured = {}
-    original_exists = Path.exists
 
     def fake_rmtree(_folder):
         raise OSError("locked")
 
-    def fake_run(args, **kwargs):
-        captured["args"] = args
-        return type("CompletedProcess", (), {"returncode": 0})()
-
-    def fake_exists(self):
-        if self == folder:
-            return False
-        return original_exists(self)
+    def fake_force_delete(target):
+        captured["command"] = handler._build_powershell_delete_command(target)
+        return True
 
     monkeypatch.setattr(handler, "is_folder_empty_or_removable", lambda *args, **kwargs: True)
     monkeypatch.setattr(handler, "_delete_tree_safely", fake_rmtree)
     monkeypatch.setattr(handler, "_tree_contains_linklike_entries", lambda path: False)
-    monkeypatch.setattr("subprocess.run", fake_run)
-    monkeypatch.setattr("core.file_handler.Path.exists", fake_exists)
+    monkeypatch.setattr("core.file_handler.force_delete_directory", fake_force_delete)
+    monkeypatch.setattr("core.file_handler.is_windows", lambda: True)
 
     assert handler.safe_delete_folder(folder, max_attempts=1) is True
 
-    args = captured["args"]
+    args = captured["command"]
     assert args[:3] == ["powershell", "-NoProfile", "-EncodedCommand"]
     assert str(folder) not in args
 

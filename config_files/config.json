@@ -88,9 +88,11 @@
     "stuck_timeout_hours": 3,
     "tool_paths": {
         "7z": [
+            "7z",
+            "7zz",
+            "7za",
             "C:\\Program Files\\7-Zip\\7z.exe",
-            "C:\\Program Files (x86)\\7-Zip\\7z.exe",
-            "7z"
+            "C:\\Program Files (x86)\\7-Zip\\7z.exe"
         ],
         "par2": [
             "par2",
@@ -98,7 +100,8 @@
         ],
         "ffmpeg": [
             "ffmpeg",
-            "C:\\ffmpeg\\bin\\ffmpeg.exe"
+            "C:\\ffmpeg\\bin\\ffmpeg.exe",
+            "C:\\Program Files\\FFmpeg\\bin\\ffmpeg.exe"
         ]
     }
 }

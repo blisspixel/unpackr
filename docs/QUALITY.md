@@ -59,8 +59,9 @@ Required state:
 - CLI prompt/presentation helpers now live in `utils/cli_prompts.py` instead of the `unpackr.py` entrypoint body.
 - If behavior changes, add or update tests in the same change.
 - For destructive-path changes (move/delete logic), regression tests are mandatory.
-- CI matrix runs on Python `3.11`, `3.12`, `3.13`, and `3.14`.
+- CI matrix runs on Python `3.11`, `3.12`, `3.13`, and `3.14` across Windows, Linux, and macOS.
 - Every CI matrix lane launches all three installed console entry points with `--help`.
 - Linux `3.11` runs the full pre-commit quality gate.
 - Windows runs the full regression suite and coverage gate.
-- Linux/macOS run CLI/runtime smoke tests on every matrix lane.
+- Linux runs an expanded cross-platform suite (platform helpers, safety, config, doctor, file handling).
+- macOS runs platform/safety-focused suites while full parity expansion continues.

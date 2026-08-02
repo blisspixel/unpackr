@@ -950,10 +950,10 @@ def main():
     parser = argparse.ArgumentParser(
         description="Check videos for corruption, find duplicates, detect samples and low-res files",
         epilog="Examples:\n"
-        '  vhealth "C:\\Videos"\n'
-        '  vhealth "C:\\Videos\\movie.mkv"\n'
-        '  vhealth "C:\\Videos" --delete-bad\n'
-        '  vhealth "C:\\Videos" --min-resolution 720p',
+        '  vhealth "~/Videos"\n'
+        '  vhealth "~/Videos/movie.mkv"\n'
+        '  vhealth "~/Videos" --delete-bad\n'
+        '  vhealth "~/Videos" --min-resolution 720p',
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 

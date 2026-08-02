@@ -5,6 +5,7 @@ Release dates are included where recorded.
 ## Unreleased
 
 - Added a mock live-dashboard screenshot to the README.
+- Started first-class Linux and macOS support: platform helper module, PATH-first tool discovery, POSIX force-delete fallback, doctor process checks on all OS targets, expanded non-Windows CI, and multi-OS documentation.
 
 ## v1.3.1 (2026-08-02)
 

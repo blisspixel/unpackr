@@ -1,11 +1,12 @@
 # Roadmap
 
-This roadmap is reliability-first: safety, correctness, observability, then performance.
+This roadmap is reliability-first: safety, correctness, cross-platform parity, observability, then performance.
 
 ## Version Focus
 
 - Current line: `1.3.x` (latest: `1.3.1`, August 2026)
-- Primary objective: make destructive operations auditable, deterministic, and hard to misuse.
+- Next line: `1.4.x` — first-class **Windows, Linux, and macOS** support
+- Primary objective: keep destructive operations auditable and deterministic on every supported OS
 
 ## Quality Baseline
 
@@ -15,6 +16,7 @@ This roadmap is reliability-first: safety, correctness, observability, then perf
 - Installed CLI entry points and documented path flags are covered by regression and CI smoke tests.
 - Python support floor is `3.11+` (CI matrix includes `3.11` through `3.14`).
 - Active documentation stays under `docs/`; superseded content belongs in `docs/archive/`.
+- Platform policy lives in `utils/platform_support.py` rather than ad-hoc `sys.platform` checks.
 
 ## Guiding Principles
 
@@ -22,20 +24,58 @@ This roadmap is reliability-first: safety, correctness, observability, then perf
 - Keep defaults conservative.
 - Ship measurable reliability gains each iteration.
 - Prefer explicit policy over implicit behavior.
+- Prefer PATH-resolved tools first; platform-specific absolute paths are fallbacks only.
+- Windows remains a first-class target; Linux and macOS must reach the same safety bar, not a degraded subset.
+
+## Research Summary (Cross-Platform)
+
+Unpackr is already mostly portable:
+
+| Layer | Status | Notes |
+|-------|--------|-------|
+| Python orchestration | Portable | `pathlib`, list-form subprocess, config/JSON |
+| External tools | Portable | `7z` / `7zz`, `par2`, `ffmpeg` via package managers |
+| Safety invariants | Portable | path containment, symlink refusal, dry-run parity |
+| Process lock handling | Portable core | `psutil` open-file checks work on POSIX |
+| Force-delete fallback | Was Windows-only | PowerShell path; POSIX now uses guarded `rmtree` |
+| Defaults / docs / CI | Were Windows-centric | PATH-first defaults + expanded non-Windows CI |
+
+Main historical friction was product framing and defaults (Windows paths, PowerShell-only fallbacks, doctor process checks skipped on non-Windows, Linux/macOS CI limited to smoke tests)—not an architectural hard block.
 
 ## Milestones
 
-### Now: Safety Contract Closure
+### Now: Cross-Platform Foundations (`1.4.0`)
 
-Goal: eliminate ambiguous deletion behavior.
+Goal: make Linux and macOS supported platforms with the same safety contract as Windows.
 
 Acceptance criteria:
-- No destructive action occurs without a logged reason.
-- Regression suite includes path-access and containment failure cases.
-- Dry-run and live-run decisions are policy-equivalent (execution differs, decisions do not).
+- Runtime no longer assumes Windows for tool discovery, process conflict checks, or force-delete fallbacks.
+- `unpackr-doctor` reports platform-correct tool guidance and helper-process conflicts on Linux/macOS.
+- Bundled/default `tool_paths` prefer PATH command names; Windows absolute paths remain optional fallbacks.
+- CI runs a meaningful non-Windows regression suite (not help-text smoke only).
+- README/BUILD/CONFIGURATION document multi-OS install and tool packaging (`p7zip`, `par2cmdline`, `ffmpeg`).
+- Filename sanitization stays conservative for shared/network volumes (Windows-hostile characters remain scrubbed).
 
 Status:
-- Largely complete in `1.3.1`. Continue hardening edge cases and deletion audit trails.
+- In progress. Platform helper module, PATH-first defaults, POSIX force-delete, and doctor process parity are landing first.
+
+### Next: Cross-Platform Parity Hardening (`1.4.x`)
+
+Goal: make Linux/macOS behavior as boringly reliable as Windows for real operator workloads.
+
+Acceptance criteria:
+- Full regression suite green on Linux CI for every supported Python version.
+- Expanded macOS suite for path, delete, doctor, and archive safety modules.
+- Integration coverage with real `7z`/`ffmpeg` where the runner provides them.
+- Documented package-manager recipes:
+  - Debian/Ubuntu: `p7zip-full`, `par2`, `ffmpeg`
+  - Fedora/RHEL: `p7zip`, `par2cmdline`, `ffmpeg`
+  - macOS Homebrew: `p7zip`, `par2`, `ffmpeg`
+- Optional shell wrappers (`unpackr.sh`) for environments that prefer non-batch launchers.
+- Explicit matrix of filesystem quirks: case-sensitive volumes, APFS/ZFS, bind mounts, SMB/NFS.
+
+Status:
+- Planned immediately after foundations.
 
 ### Next: Observability And Automation
 
@@ -73,12 +113,34 @@ Acceptance criteria:
 Status:
 - Pending. Defer concurrency work until benchmark harness and safety regression matrix are in place.
 
+## Cross-Platform Implementation Plan
+
+### Phase A — Foundations (this train)
+1. Introduce `utils/platform_support.py` for OS detection, tool candidates, process helpers, force-delete.
+2. Route `SystemCheck`, `doctor`, and `FileHandler` through those helpers.
+3. Make default `tool_paths` PATH-first and multi-OS aware.
+4. Expand Linux CI beyond smoke tests.
+5. Rewrite product docs to stop saying “Windows-only.”
+
+### Phase B — Parity
+1. Run the full suite on Linux CI; widen macOS coverage.
+2. Add package-manager install docs and doctor remediation text per OS.
+3. Validate real archive extraction/video health on non-Windows runners when tools are present.
+4. Add POSIX launcher scripts and packaging notes.
+
+### Phase C — Exceptional polish
+1. Filesystem quirk matrix and tests (case sensitivity, symlink farms, non-ASCII paths).
+2. Permission model notes for multi-user NAS layouts.
+3. Optional SELinux/AppArmor troubleshooting notes if operators hit confinement issues.
+4. Benchmark evidence per OS before any concurrency work.
+
 ## Release Discipline
 
 - Every change touching deletion/move logic requires tests.
 - Every packaging or CLI contract change requires an installed-command or argument-parser regression test.
 - Docs updates are mandatory for behavior changes.
 - Changelog entries must state user-visible impact and migration notes.
+- Platform-behavior changes require tests that exercise both Windows and POSIX code paths (via real OS or monkeypatched helpers).
 
 ## References
 

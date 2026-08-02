@@ -6,25 +6,19 @@ from utils.system_check import SystemCheck
 def test_check_running_processes_windows_and_linux(monkeypatch):
     checker = SystemCheck()
 
-    monkeypatch.setattr("utils.system_check.sys.platform", "win32")
     monkeypatch.setattr(
-        "utils.system_check.subprocess.run",
-        lambda *a, **k: types.SimpleNamespace(stdout="7z.exe\npar2.exe\n"),
+        "utils.system_check.detect_running_helpers",
+        lambda labels=None: ["7-Zip", "par2"],
     )
     has_conflicts, running = checker.check_running_processes()
     assert has_conflicts is True
     assert "7-Zip" in running
     assert "par2" in running
 
-    monkeypatch.setattr("utils.system_check.sys.platform", "linux")
-    monkeypatch.setattr(
-        "utils.system_check.subprocess.run",
-        lambda *a, **k: types.SimpleNamespace(stdout="7z process\npar2 process\n"),
-    )
+    monkeypatch.setattr("utils.system_check.detect_running_helpers", lambda labels=None: [])
     has_conflicts, running = checker.check_running_processes()
-    assert has_conflicts is True
-    assert "7-Zip" in running
-    assert "par2" in running
+    assert has_conflicts is False
+    assert running == []
 
 
 def test_warn_running_processes_auto_kill_paths(monkeypatch):

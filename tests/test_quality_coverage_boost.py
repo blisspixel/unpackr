@@ -85,10 +85,9 @@ def test_system_check_tool_command_and_display(capsys, monkeypatch):
 
 def test_system_check_process_conflicts_linux(monkeypatch):
     checker = SystemCheck()
-    monkeypatch.setattr("utils.system_check.sys.platform", "linux")
     monkeypatch.setattr(
-        "utils.system_check.subprocess.run",
-        lambda *args, **kwargs: types.SimpleNamespace(stdout="7z something\npar2 doing work"),
+        "utils.system_check.detect_running_helpers",
+        lambda labels=None: ["7-Zip", "par2"],
     )
 
     has_conflicts, running = checker.check_running_processes()
@@ -99,14 +98,15 @@ def test_system_check_process_conflicts_linux(monkeypatch):
 
 def test_system_check_kill_processes_windows(monkeypatch):
     checker = SystemCheck()
-    monkeypatch.setattr("utils.system_check.sys.platform", "win32")
     calls = []
 
     def fake_run(cmd, **kwargs):
         calls.append(cmd)
         return types.SimpleNamespace(returncode=0)
 
-    monkeypatch.setattr("utils.system_check.subprocess.run", fake_run)
+    monkeypatch.setattr("utils.platform_support.is_windows", lambda: True)
+    monkeypatch.setattr("utils.platform_support.subprocess.run", fake_run)
+    # kill_processes delegates into platform_support; ensure the shared helper is used.
     assert checker.kill_processes(["7-Zip", "par2"]) is True
     assert any("taskkill" in c[0].lower() for c in calls)
 

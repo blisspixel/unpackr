@@ -8,7 +8,7 @@ Commercial/enterprise products require separate license from Nick Seal.
 
 **Version 1.3.1** · August 2026
 
-Unpackr is a Windows automation tool for processing Usenet-style download folders with safety-first, predictable behavior.
+Unpackr is a local automation tool for processing Usenet-style download folders with safety-first, predictable behavior. It runs on **Windows, Linux, and macOS**.
 
 ![Unpackr live dashboard mock](docs/assets/unpackr-dashboard.png)
 
@@ -22,15 +22,30 @@ Unpackr is a Windows automation tool for processing Usenet-style download folder
 
 ## Requirements
 
-- Windows
+- **OS:** Windows, Linux, or macOS
 - Python `3.11+`
-- Required: [7-Zip](https://www.7-zip.org/)
+- Required: [7-Zip](https://www.7-zip.org/) / `p7zip` (`7z` or `7zz` on PATH)
 - Recommended: [par2cmdline](https://github.com/Parchive/par2cmdline), [ffmpeg](https://ffmpeg.org/)
 
 Minimum supported versions:
-- `7z`: `22.0+` (required)
+- `7z` / `7zz`: `22.0+` (required)
 - `par2`: `0.8.1+` (recommended)
 - `ffmpeg`: `4.4+` (recommended)
+
+Package-manager examples:
+
+```bash
+# Debian / Ubuntu
+sudo apt install p7zip-full par2 ffmpeg
+
+# Fedora
+sudo dnf install p7zip par2cmdline ffmpeg
+
+# macOS (Homebrew)
+brew install p7zip par2 ffmpeg
+```
+
+Windows: install [7-Zip](https://www.7-zip.org/), then put `par2` and `ffmpeg` on `PATH` (or set absolute paths in config `tool_paths`).
 
 ## Install
 
@@ -60,13 +75,19 @@ Current engineering baseline:
 
 ```bash
 # Preview only (no file changes)
-unpackr --source "G:\Downloads" --destination "G:\Videos" --dry-run
+unpackr --source "~/Downloads" --destination "~/Videos" --dry-run
 
 # Show plan and exit
-unpackr --source "G:\Downloads" --destination "G:\Videos" --show-plan
+unpackr --source "~/Downloads" --destination "~/Videos" --show-plan
 
 # Live run
-unpackr --source "G:\Downloads" --destination "G:\Videos"
+unpackr --source "~/Downloads" --destination "~/Videos"
+```
+
+On Windows, drive-letter paths work the same way:
+
+```powershell
+unpackr --source "G:\Downloads" --destination "G:\Videos" --dry-run
 ```
 
 The option is spelled `--destination`. The common misspelling `--destinantion` is accepted for compatibility, but scripts should use the canonical spelling.
@@ -74,7 +95,7 @@ The option is spelled `--destination`. The common misspelling `--destinantion` i
 Positional paths are also supported:
 
 ```bash
-unpackr "G:\Downloads" "G:\Videos"
+unpackr "~/Downloads" "~/Videos"
 ```
 
 Source and destination must be provided together. Incomplete or conflicting path arguments fail with a usage error instead of falling into interactive mode.

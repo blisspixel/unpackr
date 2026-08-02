@@ -18,6 +18,7 @@ from typing import Optional
 from colorama import Fore, Style, init
 
 from utils.cli_runtime import existing_file_path
+from utils.platform_support import detect_running_helpers, merge_tool_candidates, platform_label
 
 init(autoreset=True)
 
@@ -253,13 +254,7 @@ class UnpackrDoctor:
 
         # Check 7-Zip
         print(f"  {Style.DIM}7-Zip:{Style.RESET_ALL} ", end="")
-        commands = tool_paths.get("7z", [])
-        if isinstance(commands, str):
-            commands = [commands]
-        elif not isinstance(commands, list):
-            commands = []
-        commands = [command for command in commands if isinstance(command, str)]
-        commands.extend(["7z", "C:\\Program Files\\7-Zip\\7z.exe"])
+        commands = merge_tool_candidates(tool_paths.get("7z"), "7z")
 
         found, path = self.check_tool("7z", commands, critical=True)
         if found and path:
@@ -269,17 +264,11 @@ class UnpackrDoctor:
         else:
             print(f"{Fore.RED}✗ Not found (CRITICAL){Style.RESET_ALL}")
             self.issues.append("7-Zip not found - required for archive extraction")
-            print(f"    {Style.DIM}Download: https://www.7-zip.org/{Style.RESET_ALL}")
+            print(f"    {Style.DIM}Install 7-Zip / p7zip and ensure `7z` is on PATH{Style.RESET_ALL}")
 
         # Check par2
         print(f"  {Style.DIM}par2cmdline:{Style.RESET_ALL} ", end="")
-        commands = tool_paths.get("par2", [])
-        if isinstance(commands, str):
-            commands = [commands]
-        elif not isinstance(commands, list):
-            commands = []
-        commands = [command for command in commands if isinstance(command, str)]
-        commands.extend(["par2"])
+        commands = merge_tool_candidates(tool_paths.get("par2"), "par2")
 
         found, path = self.check_tool("par2", commands, critical=True)
         if found and path:
@@ -293,13 +282,7 @@ class UnpackrDoctor:
 
         # Check ffmpeg
         print(f"  {Style.DIM}ffmpeg:{Style.RESET_ALL} ", end="")
-        commands = tool_paths.get("ffmpeg", [])
-        if isinstance(commands, str):
-            commands = [commands]
-        elif not isinstance(commands, list):
-            commands = []
-        commands = [command for command in commands if isinstance(command, str)]
-        commands.extend(["ffmpeg"])
+        commands = merge_tool_candidates(tool_paths.get("ffmpeg"), "ffmpeg")
 
         found, path = self.check_tool("ffmpeg", commands, critical=False)
         if found and path:
@@ -431,30 +414,17 @@ class UnpackrDoctor:
             self.issues.append("Cannot create log directory")
 
     def check_running_processes(self):
-        """Check for conflicting processes."""
+        """Check for conflicting helper processes on the current platform."""
         print(f"{Fore.YELLOW}[10/10]{Style.RESET_ALL} Checking for process conflicts...", end=" ")
 
         try:
-            if sys.platform == "win32":
-                result = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True, timeout=5)
-                output = result.stdout.lower()
-
-                conflicts = []
-                if "7z.exe" in output or "7zfm.exe" in output:
-                    conflicts.append("7-Zip")
-                if "par2.exe" in output:
-                    conflicts.append("par2")
-
-                if conflicts:
-                    print(f"{Fore.YELLOW}⚠ Running: {', '.join(conflicts)}{Style.RESET_ALL}")
-                    self.warnings.append(f"Processes running: {', '.join(conflicts)} (will auto-kill)")
-                else:
-                    print(f"{Fore.GREEN}✓ No conflicts{Style.RESET_ALL}")
-                    self.passed.append("Process check")
+            conflicts = detect_running_helpers(["7-Zip", "par2"])
+            if conflicts:
+                print(f"{Fore.YELLOW}⚠ Running on {platform_label()}: {', '.join(conflicts)}{Style.RESET_ALL}")
+                self.warnings.append(f"Processes running: {', '.join(conflicts)} (will auto-kill)")
             else:
-                print(f"{Fore.GREEN}✓ Not Windows (skipped){Style.RESET_ALL}")
+                print(f"{Fore.GREEN}✓ No conflicts ({platform_label()}){Style.RESET_ALL}")
                 self.passed.append("Process check")
-
         except Exception:
             print(f"{Fore.YELLOW}⚠ Could not check{Style.RESET_ALL}")
 

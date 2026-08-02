@@ -43,14 +43,16 @@ Invalid or unreadable configuration is blocking. The commands exit instead of co
 
 Paths to external tools. Each value is an array; entries are tried in order until one succeeds.
 
-- `7z` is required.
+- `7z` / `7zz` is required.
 - `par2` and `ffmpeg` are recommended for best reliability/validation coverage.
+- Prefer PATH command names first. Absolute paths are optional fallbacks.
+- On every platform, Unpackr also merges built-in platform candidates from `utils/platform_support.py`.
 
 ```json
 "tool_paths": {
-  "7z": ["C:\\Program Files\\7-Zip\\7z.exe"],
-  "par2": ["C:\\custom\\path\\par2.exe"],
-  "ffmpeg": ["C:\\ffmpeg\\bin\\ffmpeg.exe"]
+  "7z": ["7z", "7zz", "C:\\Program Files\\7-Zip\\7z.exe"],
+  "par2": ["par2"],
+  "ffmpeg": ["ffmpeg"]
 }
 ```
 

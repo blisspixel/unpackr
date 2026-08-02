@@ -148,21 +148,21 @@ def test_system_check_evaluate_display_and_commands(monkeypatch, capsys):
 
 def test_system_check_process_kill_and_warn_paths(monkeypatch, capsys):
     checker = SystemCheck()
-    monkeypatch.setattr("utils.system_check.sys.platform", "win32")
     calls = []
     monkeypatch.setattr(
-        "utils.system_check.subprocess.run",
+        "utils.platform_support.subprocess.run",
         lambda cmd, **kwargs: calls.append(cmd) or types.SimpleNamespace(stdout="", stderr=""),
     )
+    monkeypatch.setattr("utils.platform_support.is_windows", lambda: True)
     assert checker.kill_processes(["7-Zip", "par2"]) is True
     assert any("taskkill" in cmd[0] for cmd in calls)
 
-    monkeypatch.setattr("utils.system_check.sys.platform", "linux")
+    monkeypatch.setattr("utils.platform_support.is_windows", lambda: False)
     calls.clear()
     assert checker.kill_processes(["7-Zip", "par2"]) is True
     assert any("pkill" in cmd[0] for cmd in calls)
 
-    monkeypatch.setattr("utils.system_check.subprocess.run", Mock(side_effect=RuntimeError("boom")))
+    monkeypatch.setattr("utils.system_check.kill_helper_processes", lambda _names: False)
     assert checker.kill_processes(["7-Zip"]) is False
 
     checker = SystemCheck()
@@ -315,13 +315,13 @@ def test_doctor_version_and_process_check_edges(monkeypatch, tmp_path, capsys):
     doc._check_tool_min_version("ffmpeg", "ffmpeg", "ffmpeg", critical=False)
     assert any("version too old" in warning for warning in doc.warnings)
 
-    monkeypatch.setattr(doctor.sys, "platform", "linux")
+    monkeypatch.setattr(doctor, "detect_running_helpers", lambda labels=None: [])
+    monkeypatch.setattr(doctor, "platform_label", lambda: "Linux")
     doc = doctor.UnpackrDoctor()
     doc.check_running_processes()
     assert "Process check" in doc.passed
 
-    monkeypatch.setattr(doctor.sys, "platform", "win32")
-    monkeypatch.setattr(doctor.subprocess, "run", Mock(side_effect=RuntimeError("boom")))
+    monkeypatch.setattr(doctor, "detect_running_helpers", Mock(side_effect=RuntimeError("boom")))
     doc = doctor.UnpackrDoctor()
     doc.check_running_processes()
     assert "Could not check" in capsys.readouterr().out

@@ -57,6 +57,39 @@ jobs:
         if: runner.os == 'Windows' && matrix.python-version != '3.11'
         run: python -m pytest -q
 
-      - name: Pytest (Linux/macOS Smoke)
-        if: runner.os != 'Windows'
-        run: python -m pytest -q tests/test_cli_render.py tests/test_runtime_helpers.py
+      - name: Pytest (Linux expanded suite)
+        if: runner.os == 'Linux'
+        run: >
+          python -m pytest -q
+          tests/test_cli_render.py
+          tests/test_runtime_helpers.py
+          tests/test_platform_support.py
+          tests/test_system_check_security.py
+          tests/test_system_check_runtime.py
+          tests/test_system_check_versions.py
+          tests/test_config_validation.py
+          tests/test_packaging.py
+          tests/test_documentation_contract.py
+          tests/test_doctor_json.py
+          tests/test_cli_regressions.py
+          tests/test_safety.py
+          tests/test_safety_extra.py
+          tests/test_safety_invariants.py
+          tests/test_file_handler.py
+          tests/test_paths.py
+          tests/test_defensive.py
+
+      - name: Pytest (macOS smoke + platform suite)
+        if: runner.os == 'macOS'
+        run: >
+          python -m pytest -q
+          tests/test_cli_render.py
+          tests/test_runtime_helpers.py
+          tests/test_platform_support.py
+          tests/test_system_check_security.py
+          tests/test_config_validation.py
+          tests/test_packaging.py
+          tests/test_documentation_contract.py
+          tests/test_doctor_json.py
+          tests/test_safety_invariants.py
+          tests/test_paths.py

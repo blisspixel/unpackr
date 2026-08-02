@@ -7,10 +7,11 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 from typing import Dict, List, Tuple
 
 from colorama import Fore, Style
+
+from utils.platform_support import detect_running_helpers, kill_helper_processes, merge_tool_candidates
 
 
 class SystemCheck:
@@ -57,24 +58,11 @@ class SystemCheck:
         if not tool_info:
             return False
 
-        # Get tool path from config if available
+        # Get tool path from config if available, then merge platform defaults.
         tool_paths = self.config.get("tool_paths", {})
         if not isinstance(tool_paths, dict):
             tool_paths = {}
-        custom_paths = tool_paths.get(tool_key)
-
-        # Convert single path to list for uniform handling; reject other shapes.
-        if isinstance(custom_paths, str):
-            custom_paths = [custom_paths]
-        elif isinstance(custom_paths, list):
-            custom_paths = [path for path in custom_paths if isinstance(path, str)]
-        else:
-            custom_paths = []
-
-        # Add default command as fallback
-        if not custom_paths:
-            default_command = tool_info.get("command")
-            custom_paths = [default_command[0]] if isinstance(default_command, list) and default_command else []
+        custom_paths = merge_tool_candidates(tool_paths.get(tool_key), tool_key)
 
         # Try each path until one works
         for custom_path in custom_paths:
@@ -273,23 +261,11 @@ class SystemCheck:
         if tool_key in working_paths:
             return [working_paths[tool_key]]
 
-        # Get tool path from config if available
+        # Get tool path from config if available, then merge platform defaults.
         tool_paths = self.config.get("tool_paths", {})
         if not isinstance(tool_paths, dict):
             tool_paths = {}
-        custom_paths = tool_paths.get(tool_key)
-
-        # Convert single path to list for uniform handling; reject other shapes.
-        if isinstance(custom_paths, str):
-            custom_paths = [custom_paths]
-        elif isinstance(custom_paths, list):
-            custom_paths = [path for path in custom_paths if isinstance(path, str)]
-        else:
-            custom_paths = []
-
-        if not custom_paths:
-            default_command = tool_info.get("command")
-            custom_paths = [default_command[0]] if isinstance(default_command, list) and default_command else []
+        custom_paths = merge_tool_candidates(tool_paths.get(tool_key), tool_key)
 
         for custom_path in custom_paths:
             resolved_path = self._resolve_tool_path(custom_path)
@@ -305,38 +281,10 @@ class SystemCheck:
         Returns:
             Tuple of (has_conflicts, list of running process names)
         """
-        running = []
-
         try:
-            if sys.platform == "win32":
-                # Windows: use tasklist
-                result = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True, timeout=5)
-                output = result.stdout.lower()
-
-                # Check for 7z processes
-                if "7z.exe" in output or "7zfm.exe" in output or "7zg.exe" in output:
-                    running.append("7-Zip")
-
-                # Check for par2 processes
-                if "par2.exe" in output or "par2cmdline" in output:
-                    running.append("par2")
-            else:
-                # Linux/Mac: use ps
-                result = subprocess.run(["ps", "aux"], capture_output=True, text=True, timeout=5)
-                output = result.stdout.lower()
-
-                # Check for 7z processes
-                if "7z" in output or "7za" in output or "7zr" in output:
-                    running.append("7-Zip")
-
-                # Check for par2 processes
-                if "par2" in output:
-                    running.append("par2")
-
-        except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
-            # If we can't check, assume no conflicts
+            running = detect_running_helpers(["7-Zip", "par2"])
+        except Exception:
             return False, []
-
         return len(running) > 0, running
 
     def kill_processes(self, process_names: List[str]) -> bool:
@@ -349,26 +297,7 @@ class SystemCheck:
         Returns:
             True if successful, False otherwise
         """
-        try:
-            if sys.platform == "win32":
-                # Windows: use taskkill
-                for proc in process_names:
-                    if proc == "7-Zip":
-                        # Kill all 7z variants
-                        for exe in ["7z.exe", "7zFM.exe", "7zG.exe"]:
-                            subprocess.run(["taskkill", "/F", "/IM", exe], capture_output=True, timeout=5)
-                    elif proc == "par2":
-                        subprocess.run(["taskkill", "/F", "/IM", "par2.exe"], capture_output=True, timeout=5)
-            else:
-                # Linux/Mac: use pkill
-                for proc in process_names:
-                    if proc == "7-Zip":
-                        subprocess.run(["pkill", "-9", "7z"], capture_output=True, timeout=5)
-                    elif proc == "par2":
-                        subprocess.run(["pkill", "-9", "par2"], capture_output=True, timeout=5)
-            return True
-        except Exception:
-            return False
+        return kill_helper_processes(process_names)
 
     def warn_running_processes(self) -> bool:
         """

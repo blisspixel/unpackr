@@ -79,11 +79,15 @@ def resolve_unpackr_paths(
 
 def build_unpackr_arg_parser() -> argparse.ArgumentParser:
     """Create the unpackr CLI parser."""
+    from utils.platform_support import example_destination_path, example_source_path
+
+    source_example = example_source_path()
+    destination_example = example_destination_path()
     parser = argparse.ArgumentParser(
         description="Automated video file processing and cleanup tool.",
         epilog="Examples:\n"
-        "  unpackr --source C:\\Downloads --destination D:\\Videos\n"
-        "  unpackr C:\\Downloads D:\\Videos\n"
+        f'  unpackr --source "{source_example}" --destination "{destination_example}"\n'
+        f'  unpackr "{source_example}" "{destination_example}"\n'
         "  unpackr  (interactive mode)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
