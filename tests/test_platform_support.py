@@ -138,3 +138,140 @@ def test_shell_launchers_exist_and_are_posix_scripts():
         text = path.read_text(encoding="utf-8")
         assert text.startswith("#!/usr/bin/env bash")
         assert "python3" in text
+
+
+def test_default_tool_candidates_macos_appends_homebrew_paths(monkeypatch):
+    monkeypatch.setattr(platform_support, "is_windows", lambda: False)
+    monkeypatch.setattr(platform_support, "is_macos", lambda: True)
+    candidates = platform_support.default_tool_candidates("ffmpeg")
+    assert "ffmpeg" in candidates
+    # Path joins use OS separators; match either form.
+    assert any(path.replace("\\", "/").endswith("/ffmpeg") for path in candidates)
+
+
+def test_default_tool_candidates_windows_appends_program_files(monkeypatch):
+    monkeypatch.setattr(platform_support, "is_windows", lambda: True)
+    candidates = platform_support.default_tool_candidates("7z")
+    assert any("Program Files" in path for path in candidates)
+
+
+def test_resolve_first_available_tool_rejects_relative_paths_and_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(platform_support, "is_windows", lambda: False)
+    monkeypatch.setattr(platform_support, "is_macos", lambda: False)
+    monkeypatch.setattr(platform_support.shutil, "which", lambda name: None)
+    assert platform_support.resolve_first_available_tool("7z", ["./relative/7z", "missing-cmd"]) == ""
+    assert platform_support.resolve_first_available_tool("7z", [str(tmp_path / "nope.exe")]) == ""
+
+
+def test_resolve_first_available_tool_uses_path_lookup(monkeypatch):
+    monkeypatch.setattr(platform_support.shutil, "which", lambda name: "/usr/bin/ffmpeg" if name == "ffmpeg" else None)
+    assert platform_support.resolve_first_available_tool("ffmpeg", ["ffmpeg"]) == "/usr/bin/ffmpeg"
+
+
+def test_force_delete_missing_path_is_success(tmp_path):
+    missing = tmp_path / "gone"
+    assert platform_support.force_delete_directory(missing) is True
+
+
+def test_force_delete_windows_path_uses_powershell(tmp_path, monkeypatch):
+    target = tmp_path / "win-del"
+    target.mkdir()
+    (target / "a.txt").write_text("x", encoding="utf-8")
+
+    monkeypatch.setattr(platform_support, "is_windows", lambda: True)
+
+    def fake_run(cmd, **kwargs):
+        # Simulate PowerShell removing the tree.
+        import shutil
+
+        shutil.rmtree(target, ignore_errors=True)
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(platform_support.subprocess, "run", fake_run)
+    assert platform_support.force_delete_directory(target) is True
+    assert not target.exists()
+
+
+def test_force_delete_windows_timeout_returns_false(tmp_path, monkeypatch):
+    target = tmp_path / "win-timeout"
+    target.mkdir()
+    monkeypatch.setattr(platform_support, "is_windows", lambda: True)
+
+    def boom(*args, **kwargs):
+        raise platform_support.subprocess.TimeoutExpired(cmd="powershell", timeout=1)
+
+    monkeypatch.setattr(platform_support.subprocess, "run", boom)
+    assert platform_support.force_delete_directory(target) is False
+    assert target.exists()
+
+
+def test_detect_running_helpers_windows_tasklist(monkeypatch):
+    monkeypatch.setattr(platform_support, "is_windows", lambda: True)
+
+    def fake_run(cmd, **kwargs):
+        assert cmd[0] == "tasklist"
+        return type("R", (), {"stdout": '"ffmpeg.exe","1234","Console"\n'})()
+
+    monkeypatch.setattr(platform_support.subprocess, "run", fake_run)
+    found = platform_support.detect_running_helpers(["ffmpeg", "par2"])
+    assert found == ["ffmpeg"]
+
+
+def test_detect_running_helpers_empty_labels_returns_empty(monkeypatch):
+    monkeypatch.setattr(platform_support, "is_windows", lambda: False)
+    assert platform_support.detect_running_helpers([]) == []
+
+
+def test_detect_running_helpers_oserror_returns_empty(monkeypatch):
+    monkeypatch.setattr(platform_support, "is_windows", lambda: True)
+
+    def boom(*args, **kwargs):
+        raise OSError("no tasklist")
+
+    monkeypatch.setattr(platform_support.subprocess, "run", boom)
+    assert platform_support.detect_running_helpers(["7-Zip"]) == []
+
+
+def test_kill_helper_processes_windows_taskkill(monkeypatch):
+    calls = []
+    monkeypatch.setattr(platform_support, "is_windows", lambda: True)
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return type("R", (), {"returncode": 0})()
+
+    monkeypatch.setattr(platform_support.subprocess, "run", fake_run)
+    assert platform_support.kill_helper_processes(["7-Zip", "par2", "ffmpeg"]) is True
+    assert any(cmd[:3] == ["taskkill", "/F", "/IM"] for cmd in calls)
+
+
+def test_kill_helper_processes_exception_returns_false(monkeypatch):
+    monkeypatch.setattr(platform_support, "is_windows", lambda: False)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("pkill missing")
+
+    monkeypatch.setattr(platform_support.subprocess, "run", boom)
+    assert platform_support.kill_helper_processes(["ffmpeg"]) is False
+
+
+def test_platform_label_unknown(monkeypatch):
+    monkeypatch.setattr(platform_support, "is_windows", lambda: False)
+    monkeypatch.setattr(platform_support, "is_macos", lambda: False)
+    monkeypatch.setattr(platform_support, "is_linux", lambda: False)
+    monkeypatch.setattr(platform_support.sys, "platform", "aix")
+    assert platform_support.platform_label() == "aix"
+
+
+def test_package_manager_hint_unknown_platform(monkeypatch):
+    monkeypatch.setattr(platform_support, "is_windows", lambda: False)
+    monkeypatch.setattr(platform_support, "is_macos", lambda: False)
+    monkeypatch.setattr(platform_support, "is_linux", lambda: False)
+    assert "package manager" in platform_support.package_manager_install_hint().lower()
+
+
+def test_helper_process_names_windows_and_posix(monkeypatch):
+    monkeypatch.setattr(platform_support, "is_windows", lambda: True)
+    assert "7z.exe" in platform_support.helper_process_names()["7-Zip"]
+    monkeypatch.setattr(platform_support, "is_windows", lambda: False)
+    assert "7zz" in platform_support.helper_process_names()["7-Zip"]
