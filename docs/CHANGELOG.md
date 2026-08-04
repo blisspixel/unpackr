@@ -6,6 +6,7 @@ Release dates are included where recorded.
 
 - Polished `vhealth` for multi-OS excellence: shared package version, platform-aware help, `~/` path expansion, ffmpeg preflight guidance, shared linklike scanning, and `--version`.
 - Added `unpackr --json` run summaries, `docs/EXIT_CODES.md`, and a CI gate that validates `unpackr-doctor --json` schema/exit consistency.
+- Added safe `--resume` via `<source>/.unpackr-state.json`, documented preservation heuristics, and aligned pre-scan thresholds to inclusive `>=` matches.
 
 ## v1.4.0 (2026-08-04)
 

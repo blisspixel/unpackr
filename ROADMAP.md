@@ -67,9 +67,9 @@ Acceptance criteria:
 - Structured outputs include timestamps, status, and actionable remediation hints.
 
 Status:
-- In progress. `unpackr-doctor --json` + CI schema gate; `unpackr --json` run summaries; `docs/EXIT_CODES.md`.
+- Complete for 1.4.x automation contracts: doctor JSON + CI gate; unpackr `--json`; `docs/EXIT_CODES.md`. Optional follow-up: per-folder structured event streams.
 
-### Next: Correctness And Recovery Hardening
+### Now: Correctness And Recovery Hardening
 
 Goal: reduce false positives/false negatives in processing decisions.
 
@@ -79,7 +79,7 @@ Acceptance criteria:
 - Preservation heuristics have documented limits and examples.
 
 Status:
-- In progress. Integration scenarios and destructive-path regression coverage continue to expand, with `core/file_handler.py` and `unpackr.py` receiving the current focus.
+- Substantially advanced: `--resume` + `.unpackr-state.json`; `docs/PRESERVATION.md`; pre-scan thresholds aligned to inclusive defaults. Remaining: broader archive/video decision matrix tests.
 
 ### Later: Performance With Evidence
 

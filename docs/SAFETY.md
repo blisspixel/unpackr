@@ -33,6 +33,8 @@ No automated deletion workflow can eliminate all risk.
 | Folders with unrecognized files | Always preserved |
 | Anything in destination directory | Never touched |
 
+Details and resume semantics: [PRESERVATION.md](PRESERVATION.md).
+
 ## Safety Mechanisms
 
 ### Path Containment

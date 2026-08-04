@@ -122,4 +122,9 @@ def build_unpackr_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Emit a machine-readable run summary JSON object after the run completes.",
     )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Skip folders already completed in <source>/.unpackr-state.json from a prior interrupted run.",
+    )
     return parser

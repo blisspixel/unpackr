@@ -32,6 +32,7 @@ from utils.cli_render import create_renderer
 from utils.cli_runtime import build_unpackr_arg_parser, configure_windows_console_utf8, resolve_unpackr_paths
 from utils.defensive import InputValidator, StateValidator, ValidationError
 from utils.dry_run_summary import DryRunPlan
+from utils.run_state import RunState, default_state_path
 from utils.run_summary import build_unpackr_run_summary, dumps_run_summary
 from utils.safety import LoopSafety, RecursionSafety, StuckDetector
 from utils.system_check import SystemCheck
@@ -249,6 +250,8 @@ class UnpackrApp:
         self.failed_deletions: Deque[Tuple[Path, bool, bool]] = deque(
             maxlen=1000
         )  # Track folders that couldn't be deleted
+        self.run_state: Optional[RunState] = None
+        self.resume_enabled: bool = False
         self.recursion_guard = RecursionSafety(config.max_subfolder_depth, "Subfolder processing")
         self.stuck_detector = StuckDetector(timeout=config.stuck_timeout_hours * 3600, check_interval=60)
         self.runtime_limit: Optional[Any] = None  # Will be initialized when processing starts
@@ -445,20 +448,21 @@ class UnpackrApp:
                 # Check if this is a content folder worth preserving
                 # For images: must have both >10 files AND >10MB total (avoids thumbnail folders)
                 image_total_mb = image_total_bytes / (1024 * 1024)
-                has_significant_images = image_files > self.config.min_image_files and image_total_mb > 10
+                # Thresholds are inclusive (>=) to match deletion guards in file_handler.
+                has_significant_images = image_files >= self.config.min_image_files and image_total_mb > 10
 
                 if (
-                    music_files > self.config.min_music_files
+                    music_files >= self.config.min_music_files
                     or has_significant_images
-                    or document_files > self.config.min_documents
+                    or document_files >= self.config.min_documents
                 ):
                     # This is a content folder with significant music/images/docs - preserve it
                     reasons = []
-                    if music_files > self.config.min_music_files:
+                    if music_files >= self.config.min_music_files:
                         reasons.append(f"{music_files} music files")
                     if has_significant_images:
                         reasons.append(f"{image_files} images ({image_total_mb:.1f}MB)")
-                    if document_files > self.config.min_documents:
+                    if document_files >= self.config.min_documents:
                         reasons.append(f"{document_files} documents")
                     reason_str = ", ".join(reasons)
                     plan.add_content_folder(folder, reason_str)
@@ -1306,6 +1310,15 @@ class UnpackrApp:
 
         video_folders = [item["path"] for item in self.work_plan.video_folders]
 
+        run_state = getattr(self, "run_state", None)
+        if getattr(self, "resume_enabled", False) and run_state is not None:
+            before = len(video_folders)
+            video_folders = [folder for folder in video_folders if not run_state.is_completed(folder)]
+            skipped = before - len(video_folders)
+            if skipped:
+                logging.info(f"Resume: skipping {skipped} already-completed folder(s)")
+                print(f"{Fore.CYAN}Resume: skipping {skipped} completed folder(s){Style.RESET_ALL}")
+
         if not video_folders:
             print(Fore.YELLOW + "No video folders found to process." + Style.RESET_ALL)
             return
@@ -1369,6 +1382,12 @@ class UnpackrApp:
 
                 # Process folder
                 self.process_folder(folder, destination_dir, i, total)
+                if (
+                    run_state is not None
+                    and not self.cancellation_requested
+                    and not getattr(self, "dry_run", False)
+                ):
+                    run_state.mark_completed(folder)
 
                 # Mark progress for stuck detection
                 self.stuck_detector.mark_progress()
@@ -1758,6 +1777,13 @@ def main():
         if runtime_app is None:
             emit_json_and_exit(1, "failed", errors=["application failed to initialize"])
 
+        runtime_app.resume_enabled = bool(getattr(args, "resume", False))
+        state_path = default_state_path(source_dir)
+        runtime_app.run_state = RunState.load(state_path) if runtime_app.resume_enabled else RunState(path=state_path)
+        runtime_app.run_state.configure(source_dir, destination_dir)
+        if runtime_app.resume_enabled:
+            logging.info(f"Resume enabled; state file: {state_path}")
+
         # Set up graceful cancellation handler
         def handle_cancel(signum, frame):
             if runtime_app.cancellation_requested:
@@ -1881,6 +1907,8 @@ def main():
 
             if runtime_app.cancellation_requested:
                 emit_json_and_exit(0, "cancelled", cancelled=True)
+            if runtime_app.run_state is not None:
+                runtime_app.run_state.clear()
             emit_json_and_exit(0, "completed")
         except Exception as e:
             print(Fore.RED + f"\nFatal error during processing: {e}" + Style.RESET_ALL)

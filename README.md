@@ -82,6 +82,9 @@ unpackr --source "~/Downloads" --destination "~/Videos" --show-plan
 
 # Live run
 unpackr --source "~/Downloads" --destination "~/Videos"
+
+# Resume after an interrupted live run
+unpackr --source "~/Downloads" --destination "~/Videos" --resume
 ```
 
 On Windows, drive-letter paths work the same way:

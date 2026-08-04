@@ -17,6 +17,7 @@ Use this index to find the right doc for operations, troubleshooting, and mainte
 - `TROUBLESHOOTING.md` - common failures and remediation
 - `DOCTOR_JSON.md` - `unpackr-doctor --json` schema/contract
 - `EXIT_CODES.md` - exit codes and machine-readable run output
+- `PRESERVATION.md` - content preservation heuristics and resume behavior
 
 ## Engineering And Release
 
