@@ -81,7 +81,7 @@ Acceptance criteria:
 Status:
 - Complete for 1.4.x correctness contracts: `--resume` + `.unpackr-state.json`; `docs/PRESERVATION.md`; pre-scan inclusive thresholds (`tests/test_preservation_thresholds.py`); archive/video decision matrices (`tests/test_decision_matrix.py`); deletion-guard alignment.
 
-### Next: Performance With Evidence
+### Done: Performance With Evidence (foundation)
 
 Goal: improve throughput without regressing safety.
 
@@ -91,7 +91,7 @@ Acceptance criteria:
 - No safety invariant regressions in stress tests.
 
 Status:
-- Pending. Defer concurrency work until benchmark harness and safety regression matrix are in place.
+- Complete for evidence infrastructure: harness schema v1 + `--compare`; published sample baseline (`benchmarks/published/`); safety stress matrix (`tests/test_safety_stress_matrix.py`); resume-state merge-safe multi-writer hardening. **Concurrency remains deferred** until a real multi-archive workload is measured with and without parallelism.
 
 ## Cross-Platform Implementation Plan
 

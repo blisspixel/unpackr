@@ -1,0 +1,35 @@
+{
+  "duration_seconds": 0.135,
+  "filesystem": {
+    "case_sensitive": false,
+    "path": "C:\\Users\\nicks\\AppData\\Local\\Temp",
+    "platform": "win32",
+    "supports_non_ascii_names": true,
+    "supports_symlinks": true
+  },
+  "generated_at": "2026-08-04T18:09:30.398869+00:00",
+  "hardware": {
+    "cpu_count": 32,
+    "machine": "AMD64",
+    "platform": "Windows",
+    "processor": "AMD64 Family 25 Model 33 Stepping 2, AuthenticAMD",
+    "python": "3.14.5",
+    "release": "11",
+    "system": "Windows"
+  },
+  "metrics": {
+    "cpu_score": 10.0,
+    "default_extraction_speed_mbps": 50.0,
+    "default_video_decode_fps": 100.0,
+    "disk_type": "SSD",
+    "random_read_mbps": 528.054,
+    "sequential_read_mbps": 616.864
+  },
+  "notes": [
+    "These are micro-benchmarks for relative comparison, not guaranteed throughput.",
+    "Attach this JSON as before/after evidence when proposing performance changes.",
+    "Do not enable concurrency work without regression evidence against this baseline.",
+    "Use --compare before.json after.json to emit a delta report."
+  ],
+  "schema_version": 1
+}

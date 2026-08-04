@@ -92,3 +92,6 @@ def test_benchmarks_doc_requires_evidence_before_concurrency():
     assert "before/after" in lowered
     assert "concurrency" in lowered
     assert "benchmark_harness.py" in benchmarks
+    assert "--compare" in benchmarks
+    assert "test_safety_stress_matrix.py" in benchmarks
+    assert "benchmarks/published" in benchmarks

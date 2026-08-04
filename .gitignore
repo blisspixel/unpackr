@@ -217,6 +217,11 @@ archive/temp/
 *.lprof
 *.pyprof
 .prof/
+.unpackr-benchmark-cache.json
+# Local ad-hoc harness runs; keep published samples under benchmarks/published/
+benchmarks/*.json
+!benchmarks/published/
+!benchmarks/published/**
 
 # ============================================================================
 # Jupyter Notebook (if ever used)
