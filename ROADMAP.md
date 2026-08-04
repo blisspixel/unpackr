@@ -79,7 +79,7 @@ Acceptance criteria:
 - Preservation heuristics have documented limits and examples.
 
 Status:
-- Substantially advanced: `--resume` + `.unpackr-state.json`; `docs/PRESERVATION.md`; pre-scan thresholds aligned to inclusive defaults. Remaining: broader archive/video decision matrix tests.
+- Complete for 1.4.x correctness contracts: `--resume` + `.unpackr-state.json`; `docs/PRESERVATION.md`; pre-scan inclusive thresholds with matrix tests (`tests/test_preservation_thresholds.py`); deletion-guard alignment. Remaining: broader archive/video decision matrix tests.
 
 ### Later: Performance With Evidence
 
