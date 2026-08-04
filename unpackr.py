@@ -1382,11 +1382,7 @@ class UnpackrApp:
 
                 # Process folder
                 self.process_folder(folder, destination_dir, i, total)
-                if (
-                    run_state is not None
-                    and not self.cancellation_requested
-                    and not getattr(self, "dry_run", False)
-                ):
+                if run_state is not None and not self.cancellation_requested and not getattr(self, "dry_run", False):
                     run_state.mark_completed(folder)
 
                 # Mark progress for stuck detection
