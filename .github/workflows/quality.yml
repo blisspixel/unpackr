@@ -91,6 +91,8 @@ jobs:
           tests/test_cli_render.py
           tests/test_runtime_helpers.py
           tests/test_platform_support.py
+          tests/test_filesystem_quirks.py
+          tests/test_benchmark_harness.py
           tests/test_external_tools_optional.py
           tests/test_system_check_security.py
           tests/test_system_check_runtime.py

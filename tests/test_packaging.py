@@ -19,7 +19,7 @@ def test_setup_includes_cli_modules_and_bundled_config(monkeypatch):
     assert setup_kwargs["package_data"]["config_files"] == ["comments.sample.json", "config.json"]
     assert setup_kwargs["exclude_package_data"]["config_files"] == ["comments.json"]
     assert "build_py" in setup_kwargs["cmdclass"]
-    assert setup_kwargs["version"] == "1.3.1"
+    assert setup_kwargs["version"] == "1.4.0"
     assert setup_kwargs["url"] == "https://github.com/blisspixel/unpackr"
     assert "Programming Language :: Python :: 3.14" in setup_kwargs["classifiers"]
     assert "Operating System :: POSIX :: Linux" in setup_kwargs["classifiers"]

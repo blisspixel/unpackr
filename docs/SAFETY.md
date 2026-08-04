@@ -39,6 +39,8 @@ No automated deletion workflow can eliminate all risk.
 - All extractions happen in the source directory
 - Writes are constrained to expected source/destination targets
 - Archive contents validated before extraction (no path traversal)
+- Windows-style `\` members, drive letters, UNC paths, and `..` segments are rejected on every OS
+- Symlinks / junctions / reparse points are refused for destructive cleanup
 
 ### Fail-Closed Validation
 - When uncertain, reject rather than proceed

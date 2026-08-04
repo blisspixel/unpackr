@@ -6,7 +6,7 @@ Commercial/enterprise products require separate license from Nick Seal.
 
 # Unpackr
 
-**Version 1.3.1** · August 2026
+**Version 1.4.0** · August 2026
 
 Unpackr is a local automation tool for processing Usenet-style download folders with safety-first, predictable behavior. It runs on **Windows, Linux, and macOS**.
 

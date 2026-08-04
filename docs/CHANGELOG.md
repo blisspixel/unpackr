@@ -4,10 +4,31 @@ Release dates are included where recorded.
 
 ## Unreleased
 
-- Added a mock live-dashboard screenshot to the README.
-- Started first-class Linux and macOS support: platform helper module, PATH-first tool discovery, POSIX force-delete fallback, doctor process checks on all OS targets, expanded non-Windows CI, and multi-OS documentation.
-- Cross-platform parity hardening: full Linux CI suite with coverage gate, expanded macOS suite, optional real `7z`/`ffmpeg` checks, POSIX shell launchers, platform package-manager doctor hints, and `docs/PLATFORMS.md`.
-- Fixed archive path validation so Windows-style absolute and `..\` traversal members are rejected on Linux/macOS, not only on Windows.
+- None.
+
+## v1.4.0 (2026-08-04)
+
+First-class multi-OS release: Windows, Linux, and macOS with the same safety contract.
+
+### Platforms
+- Added PATH-first tool discovery, POSIX force-delete, and cross-platform helper process checks.
+- Added POSIX launchers (`unpackr.sh`, `unpackr-doctor.sh`, `vhealth.sh`).
+- Expanded CI: full Linux suite + coverage gate, expanded macOS suite, real `7z`/`ffmpeg` optional checks.
+- Documented package-manager recipes and launchers in `docs/PLATFORMS.md`.
+
+### Filesystem Hardening
+- Added `utils/filesystem_policy.py` for containment, case-collision detection, symlink-farm refusal, and Unicode normalization.
+- Archive path validation rejects Windows-style absolute/`..\` members on POSIX as well as Windows.
+- Doctor probes case sensitivity, symlink support, and non-ASCII filename support in the working directory.
+- Documented NAS permission layout plus SELinux/AppArmor troubleshooting notes.
+
+### Performance Discipline
+- Added `scripts/benchmark_harness.py` and `docs/BENCHMARKS.md` so performance changes require before/after evidence.
+- Explicitly defer concurrency until safety regression evidence exists.
+
+### Packaging / Polish
+- Package version `1.4.0` with OS classifiers for Windows, Linux, and macOS.
+- README mock dashboard screenshot and multi-OS install guidance.
 
 ## v1.3.1 (2026-08-02)
 

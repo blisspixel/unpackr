@@ -18,6 +18,7 @@ from typing import Optional
 from colorama import Fore, Style, init
 
 from utils.cli_runtime import existing_file_path
+from utils.filesystem_policy import probe_filesystem
 from utils.platform_support import (
     detect_running_helpers,
     merge_tool_candidates,
@@ -97,7 +98,7 @@ class UnpackrDoctor:
 
     def check_python_version(self):
         """Check Python version."""
-        print(f"{Fore.YELLOW}[1/10]{Style.RESET_ALL} Checking Python version...", end=" ")
+        print(f"{Fore.YELLOW}[1/11]{Style.RESET_ALL} Checking Python version...", end=" ")
         version = sys.version_info
         if version.major == 3 and version.minor >= 11:
             print(f"{Fore.GREEN}✓ Python {version.major}.{version.minor}.{version.micro}{Style.RESET_ALL}")
@@ -108,7 +109,7 @@ class UnpackrDoctor:
 
     def check_dependencies(self):
         """Check required Python packages."""
-        print(f"{Fore.YELLOW}[2/10]{Style.RESET_ALL} Checking Python dependencies...", end=" ")
+        print(f"{Fore.YELLOW}[2/11]{Style.RESET_ALL} Checking Python dependencies...", end=" ")
         required = ["tqdm", "psutil", "colorama"]
         missing = []
 
@@ -128,7 +129,7 @@ class UnpackrDoctor:
 
     def check_config_file(self):
         """Check config file exists and is valid."""
-        print(f"{Fore.YELLOW}[3/10]{Style.RESET_ALL} Checking configuration file...", end=" ")
+        print(f"{Fore.YELLOW}[3/11]{Style.RESET_ALL} Checking configuration file...", end=" ")
         config_path = self._config_file()
 
         if not config_path.exists():
@@ -250,7 +251,7 @@ class UnpackrDoctor:
 
     def check_external_tools(self):
         """Check external tools (7z, par2, ffmpeg)."""
-        print(f"{Fore.YELLOW}[4/10]{Style.RESET_ALL} Checking external tools...")
+        print(f"{Fore.YELLOW}[4/11]{Style.RESET_ALL} Checking external tools...")
 
         # Load config to get tool paths
         config_path = self._config_file()
@@ -307,7 +308,7 @@ class UnpackrDoctor:
 
     def check_write_permissions(self):
         """Check write permissions in current directory."""
-        print(f"{Fore.YELLOW}[5/10]{Style.RESET_ALL} Checking write permissions...", end=" ")
+        print(f"{Fore.YELLOW}[5/11]{Style.RESET_ALL} Checking write permissions...", end=" ")
 
         try:
             with tempfile.NamedTemporaryFile(prefix=".unpackr-doctor-", dir=Path.cwd()):
@@ -318,9 +319,35 @@ class UnpackrDoctor:
             print(f"{Fore.RED}✗ Cannot write: {e}{Style.RESET_ALL}")
             self.issues.append("No write permissions in current directory")
 
+    def check_filesystem_quirks(self):
+        """Probe case sensitivity, symlink, and non-ASCII filename support."""
+        print(f"{Fore.YELLOW}[6/11]{Style.RESET_ALL} Checking filesystem quirks...", end=" ")
+        try:
+            probe = probe_filesystem(Path.cwd())
+            bits = [
+                f"case_sensitive={probe.case_sensitive}",
+                f"symlinks={probe.supports_symlinks}",
+                f"non_ascii={probe.supports_non_ascii_names}",
+            ]
+            print(f"{Fore.GREEN}✓ {', '.join(bits)}{Style.RESET_ALL}")
+            self.passed.append("Filesystem probe")
+            if not probe.case_sensitive:
+                self.warnings.append(
+                    "Working directory is case-insensitive; names that differ only by case can collide"
+                )
+            if not probe.supports_symlinks:
+                self.warnings.append(
+                    "Symlink creation unavailable here; junction/symlink refusal still applies to existing links"
+                )
+            if not probe.supports_non_ascii_names:
+                self.warnings.append("Filesystem rejected non-ASCII test names; prefer ASCII-safe filenames")
+        except Exception as e:
+            print(f"{Fore.YELLOW}⚠ Could not probe: {e}{Style.RESET_ALL}")
+            self.warnings.append("Filesystem quirk probe failed")
+
     def check_disk_space(self):
         """Check available disk space."""
-        print(f"{Fore.YELLOW}[6/10]{Style.RESET_ALL} Checking disk space...", end=" ")
+        print(f"{Fore.YELLOW}[7/11]{Style.RESET_ALL} Checking disk space...", end=" ")
         try:
             import shutil
 
@@ -341,7 +368,7 @@ class UnpackrDoctor:
 
     def check_comments_file(self):
         """Check easter egg comments file."""
-        print(f"{Fore.YELLOW}[7/10]{Style.RESET_ALL} Checking easter egg comments...", end=" ")
+        print(f"{Fore.YELLOW}[8/11]{Style.RESET_ALL} Checking easter egg comments...", end=" ")
         config_dir = self._config_file().parent
         bundled_dir = Path(__file__).parent / "config_files"
         candidates = [
@@ -373,7 +400,7 @@ class UnpackrDoctor:
 
     def check_core_modules(self):
         """Check core Python modules are present."""
-        print(f"{Fore.YELLOW}[8/10]{Style.RESET_ALL} Checking core modules...", end=" ")
+        print(f"{Fore.YELLOW}[9/11]{Style.RESET_ALL} Checking core modules...", end=" ")
         required_modules = [
             "core.config",
             "core.file_handler",
@@ -399,7 +426,7 @@ class UnpackrDoctor:
 
     def check_log_directory(self):
         """Check log directory can be created."""
-        print(f"{Fore.YELLOW}[9/10]{Style.RESET_ALL} Checking log directory...", end=" ")
+        print(f"{Fore.YELLOW}[10/11]{Style.RESET_ALL} Checking log directory...", end=" ")
         log_folder = "logs"
         try:
             with open(self._config_file(), "r", encoding="utf-8") as config_file:
@@ -427,7 +454,7 @@ class UnpackrDoctor:
 
     def check_running_processes(self):
         """Check for conflicting helper processes on the current platform."""
-        print(f"{Fore.YELLOW}[10/10]{Style.RESET_ALL} Checking for process conflicts...", end=" ")
+        print(f"{Fore.YELLOW}[11/11]{Style.RESET_ALL} Checking for process conflicts...", end=" ")
 
         try:
             conflicts = detect_running_helpers(["7-Zip", "par2"])
@@ -484,6 +511,7 @@ class UnpackrDoctor:
         self.check_config_file()
         self.check_external_tools()
         self.check_write_permissions()
+        self.check_filesystem_quirks()
         self.check_disk_space()
         self.check_comments_file()
         self.check_core_modules()

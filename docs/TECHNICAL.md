@@ -24,10 +24,13 @@ unpackr/
 |   |-- defensive.py
 |   |-- dry_run_summary.py
 |   |-- error_messages.py
+|   |-- filesystem_policy.py
 |   |-- platform_support.py
 |   |-- progress.py
 |   |-- safety.py
 |   `-- system_check.py
+|-- scripts/
+|   `-- benchmark_harness.py
 `-- tests/
 ```
 

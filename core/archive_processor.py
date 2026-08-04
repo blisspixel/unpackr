@@ -11,6 +11,7 @@ from typing import Any, Callable
 from core.safety_invariants import InvariantEnforcer
 from utils.defensive import StateValidator
 from utils.error_messages import log_error
+from utils.filesystem_policy import containment_violation
 from utils.safety import LoopSafety, ProcessTracker, SafetyLimits, SubprocessSafety
 from utils.system_check import SystemCheck
 
@@ -451,39 +452,10 @@ class ArchiveProcessor:
                 if not file_path:
                     return True
 
-                # Normalize separators so Windows-style archive members are judged
-                # consistently on Linux/macOS (where "\\" is not a path separator).
-                normalized = file_path.replace("\\", "/").strip()
-                if not normalized or normalized in {".", "./"}:
-                    return True
-
-                # Absolute POSIX, Windows drive, or UNC-style members are unsafe.
-                if (
-                    normalized.startswith("/")
-                    or normalized.startswith("//")
-                    or (len(normalized) >= 3 and normalized[1] == ":" and normalized[0].isalpha())
-                    or Path(file_path).is_absolute()
-                    or Path(normalized).is_absolute()
-                ):
-                    unsafe["reason"] = f"absolute path: {file_path}"
+                reason = containment_violation(file_path, target_folder_resolved)
+                if reason:
+                    unsafe["reason"] = reason
                     return False
-
-                member = Path(normalized)
-                if ".." in member.parts:
-                    unsafe["reason"] = f"parent directory reference: {file_path}"
-                    return False
-
-                try:
-                    would_extract_to = (target_folder / member).resolve()
-                    try:
-                        would_extract_to.relative_to(target_folder_resolved)
-                    except ValueError:
-                        unsafe["reason"] = f"would extract outside target: {file_path} -> {would_extract_to}"
-                        return False
-                except Exception as e:
-                    unsafe["reason"] = f"path validation error for {file_path}: {e}"
-                    return False
-
                 return True
 
             success, _, code = SubprocessSafety.run_with_line_handler(

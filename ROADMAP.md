@@ -4,8 +4,7 @@ This roadmap is reliability-first: safety, correctness, cross-platform parity, o
 
 ## Version Focus
 
-- Current line: `1.3.x` (latest: `1.3.1`, August 2026)
-- Next line: `1.4.x` — first-class **Windows, Linux, and macOS** support
+- Current line: `1.4.x` (latest: `1.4.0`, August 2026) — first-class **Windows, Linux, and macOS**
 - Primary objective: keep destructive operations auditable and deterministic on every supported OS
 
 ## Quality Baseline
@@ -124,19 +123,21 @@ Status:
 
 Status: done.
 
-### Phase B — Parity (active)
+### Phase B — Parity
 1. Run the full suite on Linux CI; widen macOS coverage.
 2. Add package-manager install docs and doctor remediation text per OS.
 3. Validate real archive extraction/video health on non-Windows runners when tools are present.
 4. Add POSIX launcher scripts and packaging notes.
 
-Status: largely implemented in-tree; confirm green CI matrix.
+Status: done in `1.4.0`.
 
 ### Phase C — Exceptional polish
 1. Filesystem quirk matrix and tests (case sensitivity, symlink farms, non-ASCII paths).
 2. Permission model notes for multi-user NAS layouts.
 3. Optional SELinux/AppArmor troubleshooting notes if operators hit confinement issues.
 4. Benchmark evidence per OS before any concurrency work.
+
+Status: done in `1.4.0` (`utils/filesystem_policy.py`, doctor FS probe, `docs/PLATFORMS.md`, `docs/BENCHMARKS.md`, `scripts/benchmark_harness.py`).
 
 ## Release Discipline
 

@@ -200,6 +200,7 @@ def test_print_summary_and_run(monkeypatch, doc, capsys):
         "check_config_file",
         "check_external_tools",
         "check_write_permissions",
+        "check_filesystem_quirks",
         "check_disk_space",
         "check_comments_file",
         "check_core_modules",

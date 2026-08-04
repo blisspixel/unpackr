@@ -12,7 +12,8 @@ Use this index to find the right doc for operations, troubleshooting, and mainte
 
 - `SAFETY.md` - destructive-operation safety contract
 - `CONFIGURATION.md` - `config_files/config.json` reference
-- `PLATFORMS.md` - Windows / Linux / macOS install, launchers, filesystem notes
+- `PLATFORMS.md` - Windows / Linux / macOS install, launchers, filesystem/NAS/SELinux notes
+- `BENCHMARKS.md` - micro-benchmark harness and performance evidence rules
 - `TROUBLESHOOTING.md` - common failures and remediation
 - `DOCTOR_JSON.md` - `unpackr-doctor --json` schema/contract
 

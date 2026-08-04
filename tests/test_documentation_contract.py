@@ -63,5 +63,25 @@ def test_safety_docs_match_current_default_limits():
 
 def test_platforms_doc_covers_all_target_operating_systems():
     platforms = (ROOT / "docs" / "PLATFORMS.md").read_text(encoding="utf-8")
-    for needle in ("Windows", "Linux", "macOS", "p7zip", "brew install", "unpackr.sh"):
-        assert needle in platforms
+    lowered = platforms.lower()
+    for needle in (
+        "windows",
+        "linux",
+        "macos",
+        "p7zip",
+        "brew install",
+        "unpackr.sh",
+        "selinux",
+        "apparmor",
+        "case-insensitive",
+        "benchmark_harness.py",
+    ):
+        assert needle in lowered
+
+
+def test_benchmarks_doc_requires_evidence_before_concurrency():
+    benchmarks = (ROOT / "docs" / "BENCHMARKS.md").read_text(encoding="utf-8")
+    lowered = benchmarks.lower()
+    assert "before/after" in lowered
+    assert "concurrency" in lowered
+    assert "benchmark_harness.py" in benchmarks
