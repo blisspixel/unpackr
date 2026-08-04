@@ -8,6 +8,7 @@ Release dates are included where recorded.
 - Added `unpackr --json` run summaries, `docs/EXIT_CODES.md`, and a CI gate that validates `unpackr-doctor --json` schema/exit consistency.
 - Added safe `--resume` via `<source>/.unpackr-state.json`, documented preservation heuristics, and aligned pre-scan thresholds to inclusive `>=` matches.
 - Added preservation threshold matrix tests (music/docs inclusive edges, image count+size dual rule, video/archive priority, deletion-guard alignment).
+- Added archive/video decision matrix tests (pre-scan roles, RAR/7z part selection, sample removal keywords, containment table, sample-size edges).
 
 ## v1.4.0 (2026-08-04)
 

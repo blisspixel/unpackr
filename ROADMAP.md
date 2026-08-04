@@ -57,7 +57,7 @@ Goal: make Linux/macOS behavior as boringly reliable as Windows for real operato
 Status:
 - Complete in `1.4.0` (full Linux suite, expanded macOS suite, real-tool checks, POSIX launchers, filesystem quirk policy/docs).
 
-### Now: Observability And Automation
+### Done: Observability And Automation
 
 Goal: make runtime behavior machine-verifiable in CI and local scripts.
 
@@ -69,7 +69,7 @@ Acceptance criteria:
 Status:
 - Complete for 1.4.x automation contracts: doctor JSON + CI gate; unpackr `--json`; `docs/EXIT_CODES.md`. Optional follow-up: per-folder structured event streams.
 
-### Now: Correctness And Recovery Hardening
+### Done: Correctness And Recovery Hardening
 
 Goal: reduce false positives/false negatives in processing decisions.
 
@@ -79,9 +79,9 @@ Acceptance criteria:
 - Preservation heuristics have documented limits and examples.
 
 Status:
-- Complete for 1.4.x correctness contracts: `--resume` + `.unpackr-state.json`; `docs/PRESERVATION.md`; pre-scan inclusive thresholds with matrix tests (`tests/test_preservation_thresholds.py`); deletion-guard alignment. Remaining: broader archive/video decision matrix tests.
+- Complete for 1.4.x correctness contracts: `--resume` + `.unpackr-state.json`; `docs/PRESERVATION.md`; pre-scan inclusive thresholds (`tests/test_preservation_thresholds.py`); archive/video decision matrices (`tests/test_decision_matrix.py`); deletion-guard alignment.
 
-### Later: Performance With Evidence
+### Next: Performance With Evidence
 
 Goal: improve throughput without regressing safety.
 
