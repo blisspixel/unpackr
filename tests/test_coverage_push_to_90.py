@@ -267,6 +267,9 @@ def test_vhealth_duplicate_and_main_branches(tmp_path, monkeypatch):
         def print_summary(self, auto_delete=False):
             return None
 
+        def _resolve_ffmpeg_command(self):
+            return ["ffmpeg"]
+
     args = types.SimpleNamespace(
         path=str(tmp_path),
         clean=False,
@@ -276,9 +279,9 @@ def test_vhealth_duplicate_and_main_branches(tmp_path, monkeypatch):
         config=None,
         verbose=False,
     )
-    monkeypatch.setattr(vhealth.argparse.ArgumentParser, "parse_args", lambda self: args)
+    monkeypatch.setattr(vhealth.argparse.ArgumentParser, "parse_args", lambda self, argv=None: args)
     monkeypatch.setattr(vhealth, "VideoHealthChecker", DummyChecker)
-    monkeypatch.setattr(vhealth, "Config", lambda config_path=None: object())
+    monkeypatch.setattr(vhealth, "Config", lambda config_path=None: types.SimpleNamespace(is_valid=True))
     with pytest.raises(SystemExit, match="1"):
         vhealth.main()
 
@@ -287,7 +290,7 @@ def test_vhealth_duplicate_and_main_branches(tmp_path, monkeypatch):
             raise RuntimeError("boom")
 
     args.clean = True
-    monkeypatch.setattr(vhealth.argparse.ArgumentParser, "parse_args", lambda self: args)
+    monkeypatch.setattr(vhealth.argparse.ArgumentParser, "parse_args", lambda self, argv=None: args)
     monkeypatch.setattr(vhealth, "VideoHealthChecker", FailingChecker)
     monkeypatch.setattr("time.sleep", lambda *_args, **_kwargs: None)
     with pytest.raises(SystemExit, match="1"):

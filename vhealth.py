@@ -1,16 +1,14 @@
 r"""
-vhealth - Check videos for corruption, find duplicates, detect samples
+vhealth - Check videos for corruption, find duplicates, detect samples.
 
-Usage:
-    vhealth "C:\Videos"                    # Check all videos in folder
-    vhealth "C:\Videos\movie.mkv"          # Check single file
-    vhealth "C:\Videos" --delete-bad       # Auto-delete corrupt/low-quality videos
-    vhealth "C:\Videos" --min-resolution 720p  # Flag videos below 720p
+Works on Windows, Linux, and macOS. Requires Python 3.11+ and prefers ffmpeg
+on PATH for full health validation.
 """
+
+from __future__ import annotations
 
 import argparse
 import logging
-import stat
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, cast
@@ -20,7 +18,15 @@ from colorama import Fore, Style, init
 from core import Config
 from core.video_processor import VideoProcessor
 from utils.cli_runtime import existing_file_path
+from utils.filesystem_policy import is_linklike
+from utils.platform_support import (
+    example_destination_path,
+    platform_label,
+    resolve_first_available_tool,
+    tool_missing_hint,
+)
 from utils.safety import SubprocessSafety
+from version import __version__
 
 init(autoreset=True)
 
@@ -515,19 +521,16 @@ class VideoHealthChecker:
 
     def _is_linklike_path(self, path: Path) -> bool:
         """Return True for symlinks, junctions, and other reparse points."""
-        try:
-            if path.is_symlink():
-                return True
-        except (OSError, PermissionError):
-            return True
+        return bool(is_linklike(path))
 
-        try:
-            file_attributes = getattr(path.lstat(), "st_file_attributes", 0)
-        except (OSError, PermissionError):
-            return True
-
-        reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
-        return bool(reparse_flag and file_attributes & reparse_flag)
+    def _resolve_ffmpeg_command(self) -> Optional[List[str]]:
+        """Resolve ffmpeg from config/PATH; return None when unavailable."""
+        command = self.video_processor.system_check.get_tool_command("ffmpeg")
+        if command:
+            return list(command)
+        # Ensure platform defaults are still tried when config omits tool_paths.
+        found = resolve_first_available_tool("ffmpeg")
+        return [found] if found else None
 
     def _is_unsafe_path(self, path: Path, root: Optional[Path]) -> bool:
         """Return True when a path is symlink-like or resolves outside root."""
@@ -707,13 +710,9 @@ class VideoHealthChecker:
     def _get_duration(self, video_file: Path) -> Optional[float]:
         """Get video duration in seconds."""
         try:
-            from utils.system_check import SystemCheck
-
-            system_check = SystemCheck(self.config)
-
-            ffmpeg_cmd = system_check.get_tool_command("ffmpeg")
+            ffmpeg_cmd = self._resolve_ffmpeg_command()
             if not ffmpeg_cmd:
-                ffmpeg_cmd = ["ffmpeg"]
+                return None
 
             success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
                 ffmpeg_cmd + ["-i", str(video_file)],
@@ -739,34 +738,24 @@ class VideoHealthChecker:
     def _get_resolution(self, video_file: Path) -> Optional[Tuple[int, int]]:
         """Get video resolution (width, height)."""
         try:
-            from utils.system_check import SystemCheck
+            import re
 
-            system_check = SystemCheck(self.config)
-
-            ffmpeg_cmd = system_check.get_tool_command("ffmpeg")
+            ffmpeg_cmd = self._resolve_ffmpeg_command()
             if not ffmpeg_cmd:
-                ffmpeg_cmd = ["ffmpeg"]
+                return None
 
-            # Use ffprobe if available, otherwise ffmpeg
             success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
                 ffmpeg_cmd + ["-i", str(video_file)],
                 timeout=10,
                 operation=f"Resolution check: {video_file.name}",
-                expected_codes=[0, 1],  # ffmpeg returns 1 when no output file specified
+                expected_codes=[0, 1],
             )
 
-            # Parse resolution from output
-            # Look for pattern like "1920x1080" or "Stream #0:0: Video: ..., 1920x1080"
-            output = stdout + stderr
-            import re
-
-            # Try to find resolution pattern
+            # Parse resolution from output (e.g. "1920x1080").
+            output = f"{stdout}\n{stderr}"
             match = re.search(r"(\d{3,4})x(\d{3,4})", output)
             if match:
-                width = int(match.group(1))
-                height = int(match.group(2))
-                return (width, height)
-
+                return (int(match.group(1)), int(match.group(2)))
             return None
         except Exception as e:
             logging.debug(f"Could not get resolution for {video_file.name}: {e}")
@@ -945,19 +934,27 @@ class VideoHealthChecker:
             print(f"{Fore.YELLOW}{failed_count} failed{Style.RESET_ALL}")
 
 
-def main():
-    """Main entry point for vhealth command."""
+def build_vhealth_arg_parser() -> argparse.ArgumentParser:
+    """Create the vhealth CLI parser with platform-appropriate examples."""
+    sample_root = example_destination_path()
     parser = argparse.ArgumentParser(
-        description="Check videos for corruption, find duplicates, detect samples and low-res files",
-        epilog="Examples:\n"
-        '  vhealth "~/Videos"\n'
-        '  vhealth "~/Videos/movie.mkv"\n'
-        '  vhealth "~/Videos" --delete-bad\n'
-        '  vhealth "~/Videos" --min-resolution 720p',
+        description=(
+            "Check videos for corruption, find duplicates, and detect samples/low-res files. "
+            f"Runs on {platform_label()} (Windows/Linux/macOS supported)."
+        ),
+        epilog=(
+            "Examples:\n"
+            f'  vhealth "{sample_root}"\n'
+            f'  vhealth "{sample_root}/movie.mkv"\n'
+            f'  vhealth "{sample_root}" --delete-bad\n'
+            f'  vhealth "{sample_root}" --min-resolution 720p\n'
+            "\n"
+            "ffmpeg is recommended for full health/resolution checks. "
+            "Sample-size and duplicate-name heuristics still work without it."
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-
-    parser.add_argument("path", help="Video file or folder to check")
+    parser.add_argument("path", nargs="?", help="Video file or folder to check")
     parser.add_argument(
         "--clean",
         action="store_true",
@@ -974,8 +971,17 @@ def main():
     )
     parser.add_argument("--config", type=existing_file_path, help="Path to an existing custom config file")
     parser.add_argument("-v", "--verbose", action="store_true", help="Show verbose output (ffmpeg messages, etc.)")
+    parser.add_argument("--version", action="version", version=f"vhealth {__version__}")
+    return parser
 
-    args = parser.parse_args()
+
+def main(argv: Optional[List[str]] = None) -> None:
+    """Main entry point for vhealth command."""
+    parser = build_vhealth_arg_parser()
+    args = parser.parse_args(argv)
+
+    if not args.path:
+        parser.error("path is required")
 
     # Setup logging
     if args.verbose:
@@ -984,8 +990,8 @@ def main():
         logging.basicConfig(level=logging.CRITICAL, format="%(message)s")  # Suppress all but critical
 
     # Print header
-    print(f"\n{Fore.CYAN}vhealth{Style.RESET_ALL} {Style.DIM}v1.3.0{Style.RESET_ALL}")
-    print(f"{Style.DIM}Check videos for corruption, duplicates, samples{Style.RESET_ALL}\n")
+    print(f"\n{Fore.CYAN}vhealth{Style.RESET_ALL} {Style.DIM}v{__version__}{Style.RESET_ALL}")
+    print(f"{Style.DIM}Check videos for corruption, duplicates, samples · {platform_label()}{Style.RESET_ALL}\n")
 
     # Load config
     config_path = Path(args.config) if args.config else Path(__file__).resolve().parent / "config_files" / "config.json"
@@ -994,8 +1000,8 @@ def main():
         print(f"\n{Fore.RED}Error: Configuration file is invalid or unavailable: {config_path}{Style.RESET_ALL}")
         sys.exit(1)
 
-    # Validate path
-    path = Path(args.path)
+    # Validate path (expand ~ and relative segments first).
+    path = Path(args.path).expanduser()
     try:
         path_exists = path.exists()
     except OSError as e:
@@ -1008,6 +1014,13 @@ def main():
 
     checker = VideoHealthChecker(config)
     auto_delete = args.clean or args.delete_bad
+    # Warn when ffmpeg is missing for any mode that relies on decode/metadata checks.
+    if checker._resolve_ffmpeg_command() is None:
+        print(f"{Fore.YELLOW}WARNING:{Style.RESET_ALL} ffmpeg not found on {platform_label()}.")
+        print(f"  {Style.DIM}{tool_missing_hint('ffmpeg')}{Style.RESET_ALL}")
+        print(
+            f"  {Style.DIM}Continuing with sample/duplicate heuristics; full corruption checks will be limited.{Style.RESET_ALL}\n"
+        )
 
     # Show mode and countdown
     if auto_delete:

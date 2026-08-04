@@ -14,7 +14,8 @@ def test_setup_includes_cli_modules_and_bundled_config(monkeypatch):
     monkeypatch.setattr(setuptools, "setup", lambda **kwargs: setup_kwargs.update(kwargs))
     runpy.run_path(str(Path(__file__).parents[1] / "setup.py"), run_name="__setup_test__")
 
-    assert set(setup_kwargs["py_modules"]) == {"doctor", "unpackr", "vhealth"}
+    assert set(setup_kwargs["py_modules"]) == {"doctor", "unpackr", "vhealth", "version"}
+    assert setup_kwargs["version"] == __import__("version").__version__
     assert "config_files" in setup_kwargs["packages"]
     assert setup_kwargs["package_data"]["config_files"] == ["comments.sample.json", "config.json"]
     assert setup_kwargs["exclude_package_data"]["config_files"] == ["comments.json"]

@@ -20,9 +20,14 @@ class BuildPyWithoutLocalState(build_py):
 readme_file = Path(__file__).parent / "README.md"
 long_description = readme_file.read_text(encoding="utf-8") if readme_file.exists() else ""
 
+version_file = Path(__file__).parent / "version.py"
+version_globals: dict = {}
+exec(version_file.read_text(encoding="utf-8"), version_globals)  # nosec B102 - local version.py only
+package_version = version_globals["__version__"]
+
 setup(
     name="unpackr",
-    version="1.4.0",
+    version=package_version,
     description="Turn messy folders of archives into clean, working videos",
     url="https://github.com/blisspixel/unpackr",
     project_urls={
@@ -34,7 +39,7 @@ setup(
     long_description_content_type="text/markdown",
     python_requires=">=3.11",
     packages=find_packages(exclude=["tests", "docs", "archive"]),
-    py_modules=["doctor", "unpackr", "vhealth"],
+    py_modules=["doctor", "unpackr", "vhealth", "version"],
     include_package_data=True,
     package_data={
         "config_files": ["comments.sample.json", "config.json"],

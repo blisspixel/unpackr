@@ -127,13 +127,13 @@ This project is a technical tool, not legal advice, and is provided "as is." The
 
 - `unpackr`: processing pipeline
 - `unpackr-doctor`: environment and dependency checks
-- `vhealth`: post-run video health checks
+- `vhealth`: post-run video health checks (Windows / Linux / macOS; prefers `ffmpeg`)
 - Quality gate: `ruff`, `mypy`, `pyright`, `bandit`, `pytest`, `coverage`, `pre-commit`
 
 Exit semantics:
 - `unpackr-doctor`: `0` ready, `1` blocked
 - `unpackr`: non-zero on validation/setup/processing failures
-- `vhealth`: non-zero on invalid input/runtime errors
+- `vhealth`: non-zero on invalid input/runtime errors (`vhealth --version` for package version)
 
 Doctor JSON output: [docs/DOCTOR_JSON.md](docs/DOCTOR_JSON.md)
 

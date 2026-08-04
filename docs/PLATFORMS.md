@@ -46,7 +46,22 @@ After `python -m pip install .`, console scripts are available on every OS:
 
 - `unpackr`
 - `unpackr-doctor`
-- `vhealth`
+- `vhealth` — same multi-OS support as unpackr (pathlib scanning, symlink refusal, ffmpeg via PATH)
+
+### vhealth notes
+
+```bash
+vhealth --version
+vhealth ~/Videos                 # Linux / macOS
+vhealth "G:\Videos"              # Windows
+vhealth ~/Videos --min-resolution 720p
+vhealth ~/Videos --delete-bad    # destructive; countdown applies
+```
+
+- Works on Windows, Linux, and macOS.
+- **ffmpeg** is recommended for corruption/resolution checks; sample-size and duplicate-name heuristics still run without it.
+- Symlinks/junctions are skipped during scans (fail closed).
+- `~/...` home expansion is supported on all platforms.
 
 From a source checkout:
 

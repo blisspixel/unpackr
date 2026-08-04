@@ -4,7 +4,7 @@ Release dates are included where recorded.
 
 ## Unreleased
 
-- None.
+- Polished `vhealth` for multi-OS excellence: shared package version, platform-aware help, `~/` path expansion, ffmpeg preflight guidance, shared linklike scanning, and `--version`.
 
 ## v1.4.0 (2026-08-04)
 
