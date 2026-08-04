@@ -56,6 +56,12 @@ jobs:
           unpackr-doctor --json > doctor-report.json || true
           python -c "import json,sys; d=json.load(open('doctor-report.json', encoding='utf-8')); required={'timestamp_utc','exit_code','status','counts','passed','warnings','issues','recommended_actions'}; missing=required-d.keys(); assert not missing, missing; assert d['exit_code'] in (0,1); assert d['status'] in ('ready','blocked'); assert d['counts']['issues']==len(d['issues']); assert (d['exit_code']==0)==(d['counts']['issues']==0); print('doctor-json-ok', d['status'], d['counts'])"
 
+      - name: Benchmark harness smoke
+        if: runner.os == 'Linux' && matrix.python-version == '3.11'
+        run: |
+          python scripts/benchmark_harness.py -o benchmarks/ci-smoke.json
+          python -c "import json; d=json.load(open('benchmarks/ci-smoke.json', encoding='utf-8')); assert d.get('schema_version')==1; assert 'hardware' in d and 'metrics' in d; assert d['metrics']['sequential_read_mbps']>=0; assert d['metrics']['cpu_score']>0; print('benchmark-smoke-ok', d['hardware'].get('platform'), d['metrics'].get('disk_type'))"
+
       - name: POSIX launcher smoke test
         if: runner.os != 'Windows'
         run: |
@@ -112,9 +118,14 @@ jobs:
           tests/test_safety.py
           tests/test_safety_extra.py
           tests/test_safety_invariants.py
+          tests/test_safety_stress_matrix.py
           tests/test_file_handler.py
           tests/test_file_handler_retries.py
           tests/test_paths.py
           tests/test_defensive.py
           tests/test_archive_processor.py
           tests/test_video_processor.py
+          tests/test_preservation_thresholds.py
+          tests/test_decision_matrix.py
+          tests/test_run_state.py
+          tests/test_run_summary.py

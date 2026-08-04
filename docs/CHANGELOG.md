@@ -10,6 +10,7 @@ Release dates are included where recorded.
 - Added preservation threshold matrix tests (music/docs inclusive edges, image count+size dual rule, video/archive priority, deletion-guard alignment).
 - Added archive/video decision matrix tests (pre-scan roles, RAR/7z part selection, sample removal keywords, containment table, sample-size edges).
 - Performance evidence foundation: benchmark harness `--compare` + schema v1, published Windows baseline, safety stress matrix for delete races / resume multi-writer, merge-safe `RunState` marks.
+- CI Linux benchmark-harness smoke; macOS suite expanded with preservation, decision, stress, and resume tests.
 
 ## v1.4.0 (2026-08-04)
 

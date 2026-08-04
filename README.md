@@ -138,7 +138,7 @@ Exit semantics:
 - `unpackr`: non-zero on validation/setup/processing failures; `--json` emits a run summary
 - `vhealth`: non-zero on invalid input/runtime errors (`vhealth --version` for package version)
 
-Contracts: [Exit Codes](docs/EXIT_CODES.md) · [Doctor JSON](docs/DOCTOR_JSON.md)
+Contracts: [Exit Codes](docs/EXIT_CODES.md) · [Doctor JSON](docs/DOCTOR_JSON.md) · [Preservation](docs/PRESERVATION.md) · [Benchmarks](docs/BENCHMARKS.md)
 
 ## Documentation
 
