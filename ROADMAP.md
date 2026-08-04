@@ -43,40 +43,21 @@ Main historical friction was product framing and defaults (Windows paths, PowerS
 
 ## Milestones
 
-### Now: Cross-Platform Foundations (`1.4.0`)
+### Done: Cross-Platform Foundations (`1.4.0`)
 
 Goal: make Linux and macOS supported platforms with the same safety contract as Windows.
 
-Acceptance criteria:
-- Runtime no longer assumes Windows for tool discovery, process conflict checks, or force-delete fallbacks.
-- `unpackr-doctor` reports platform-correct tool guidance and helper-process conflicts on Linux/macOS.
-- Bundled/default `tool_paths` prefer PATH command names; Windows absolute paths remain optional fallbacks.
-- CI runs a meaningful non-Windows regression suite (not help-text smoke only).
-- README/BUILD/CONFIGURATION document multi-OS install and tool packaging (`p7zip`, `par2cmdline`, `ffmpeg`).
-- Filename sanitization stays conservative for shared/network volumes (Windows-hostile characters remain scrubbed).
-
 Status:
-- Complete enough for `1.4.0` foundations. Follow-on parity work continues below.
+- Complete in `1.4.0` (platform helpers, PATH-first tools, multi-OS docs/CI).
 
-### Now: Cross-Platform Parity Hardening (`1.4.x`)
+### Done: Cross-Platform Parity Hardening (`1.4.x`)
 
 Goal: make Linux/macOS behavior as boringly reliable as Windows for real operator workloads.
 
-Acceptance criteria:
-- Full regression suite green on Linux CI for every supported Python version.
-- Expanded macOS suite for path, delete, doctor, and archive safety modules.
-- Integration coverage with real `7z`/`ffmpeg` where the runner provides them.
-- Documented package-manager recipes:
-  - Debian/Ubuntu: `p7zip-full`, `par2`, `ffmpeg`
-  - Fedora/RHEL: `p7zip`, `par2cmdline`, `ffmpeg`
-  - macOS Homebrew: `p7zip`, `par2`, `ffmpeg`
-- Optional shell wrappers (`unpackr.sh`) for environments that prefer non-batch launchers.
-- Explicit matrix of filesystem quirks: case-sensitive volumes, APFS/ZFS, bind mounts, SMB/NFS.
-
 Status:
-- In progress. Full Linux CI suite, expanded macOS suite, optional real-tool tests, POSIX launchers, doctor package-manager hints, and `docs/PLATFORMS.md` are landing now. Filesystem quirk matrix remains for Phase C.
+- Complete in `1.4.0` (full Linux suite, expanded macOS suite, real-tool checks, POSIX launchers, filesystem quirk policy/docs).
 
-### Next: Observability And Automation
+### Now: Observability And Automation
 
 Goal: make runtime behavior machine-verifiable in CI and local scripts.
 
@@ -86,7 +67,7 @@ Acceptance criteria:
 - Structured outputs include timestamps, status, and actionable remediation hints.
 
 Status:
-- In progress. `unpackr-doctor --json` is documented and CI-tested; next target is structured `unpackr` run summaries and richer machine-readable run output.
+- In progress. `unpackr-doctor --json` + CI schema gate; `unpackr --json` run summaries; `docs/EXIT_CODES.md`.
 
 ### Next: Correctness And Recovery Hardening
 

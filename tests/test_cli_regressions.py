@@ -226,6 +226,7 @@ def test_unpackr_main_vhealth_uses_destination_dir(monkeypatch, tmp_path):
             self.active_process = None
             self.dry_run = False
             self.dry_run_plan = None
+            self.stats = types.SimpleNamespace(get_snapshot=lambda: {"videos_moved": 0})
 
         def _stop_spinner_thread(self):
             pass
@@ -268,7 +269,9 @@ def test_unpackr_main_vhealth_uses_destination_dir(monkeypatch, tmp_path):
     monkeypatch.setattr(unpackr.sys, "argv", ["unpackr", str(source), str(dest), "--vhealth"])
     monkeypatch.setitem(sys.modules, "vhealth", types.SimpleNamespace(VideoHealthChecker=DummyChecker))
 
-    unpackr.main()
+    with pytest.raises(SystemExit) as exc:
+        unpackr.main()
+    assert exc.value.code == 0
 
     assert seen["vhealth_path"] == dest
     assert seen["auto_delete"] is False

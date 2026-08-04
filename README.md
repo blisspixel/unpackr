@@ -132,10 +132,10 @@ This project is a technical tool, not legal advice, and is provided "as is." The
 
 Exit semantics:
 - `unpackr-doctor`: `0` ready, `1` blocked
-- `unpackr`: non-zero on validation/setup/processing failures
+- `unpackr`: non-zero on validation/setup/processing failures; `--json` emits a run summary
 - `vhealth`: non-zero on invalid input/runtime errors (`vhealth --version` for package version)
 
-Doctor JSON output: [docs/DOCTOR_JSON.md](docs/DOCTOR_JSON.md)
+Contracts: [Exit Codes](docs/EXIT_CODES.md) · [Doctor JSON](docs/DOCTOR_JSON.md)
 
 ## Documentation
 

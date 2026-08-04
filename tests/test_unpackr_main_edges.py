@@ -106,6 +106,7 @@ def test_main_app_init_and_scan_failure_branches(monkeypatch, tmp_path):
             self.active_process = None
             self.dry_run = False
             self.dry_run_plan = None
+            self.stats = types.SimpleNamespace(get_snapshot=lambda: {})
 
         def _stop_spinner_thread(self):
             pass
@@ -134,6 +135,7 @@ def test_main_cleanup_warning_and_vhealth_exception(monkeypatch, tmp_path):
             self.dry_run = False
             self.dry_run_plan = None
             self.cleanup_calls = 0
+            self.stats = types.SimpleNamespace(get_snapshot=lambda: {})
 
         def _stop_spinner_thread(self):
             pass
@@ -169,8 +171,10 @@ def test_main_cleanup_warning_and_vhealth_exception(monkeypatch, tmp_path):
     monkeypatch.setattr(unpackr.sys, "argv", ["unpackr", str(source), str(dest), "--vhealth"])
     monkeypatch.setitem(sys.modules, "vhealth", types.SimpleNamespace(VideoHealthChecker=BadChecker))
 
-    # Should complete without fatal exit despite cleanup warning + vhealth exception.
-    unpackr.main()
+    # Completes with exit 0 despite cleanup warning + vhealth exception.
+    with pytest.raises(SystemExit) as exc:
+        unpackr.main()
+    assert exc.value.code == 0
 
 
 def test_main_processing_fatal_exception_branch(monkeypatch, tmp_path):
@@ -186,6 +190,7 @@ def test_main_processing_fatal_exception_branch(monkeypatch, tmp_path):
             self.active_process = None
             self.dry_run = False
             self.dry_run_plan = None
+            self.stats = types.SimpleNamespace(get_snapshot=lambda: {})
 
         def _stop_spinner_thread(self):
             pass

@@ -49,6 +49,12 @@ jobs:
           unpackr --help
           unpackr-doctor --help
           vhealth --help
+          vhealth --version
+
+      - name: Doctor JSON contract gate
+        run: |
+          unpackr-doctor --json > doctor-report.json || true
+          python -c "import json,sys; d=json.load(open('doctor-report.json', encoding='utf-8')); required={'timestamp_utc','exit_code','status','counts','passed','warnings','issues','recommended_actions'}; missing=required-d.keys(); assert not missing, missing; assert d['exit_code'] in (0,1); assert d['status'] in ('ready','blocked'); assert d['counts']['issues']==len(d['issues']); assert (d['exit_code']==0)==(d['counts']['issues']==0); print('doctor-json-ok', d['status'], d['counts'])"
 
       - name: POSIX launcher smoke test
         if: runner.os != 'Windows'

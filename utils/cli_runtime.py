@@ -117,4 +117,9 @@ def build_unpackr_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable ANSI colors and styled output (also respects NO_COLOR/UNPACKR_NO_COLOR).",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit a machine-readable run summary JSON object after the run completes.",
+    )
     return parser

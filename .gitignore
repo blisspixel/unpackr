@@ -234,3 +234,7 @@ archive/temp/
 .kiro/
 _ul*
 nul
+
+# Agent working files
+.agent/
+

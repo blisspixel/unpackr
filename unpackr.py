@@ -19,7 +19,7 @@ from collections import deque
 from contextlib import suppress
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Deque, Dict, List, Optional, Tuple
+from typing import Any, Deque, Dict, List, NoReturn, Optional, Tuple
 
 from colorama import Fore, Style, init
 
@@ -32,8 +32,10 @@ from utils.cli_render import create_renderer
 from utils.cli_runtime import build_unpackr_arg_parser, configure_windows_console_utf8, resolve_unpackr_paths
 from utils.defensive import InputValidator, StateValidator, ValidationError
 from utils.dry_run_summary import DryRunPlan
+from utils.run_summary import build_unpackr_run_summary, dumps_run_summary
 from utils.safety import LoopSafety, RecursionSafety, StuckDetector
 from utils.system_check import SystemCheck
+from version import __version__
 
 # Set UTF-8 encoding for Windows console to handle special characters in easter eggs
 configure_windows_console_utf8()
@@ -1605,10 +1607,43 @@ def main():
     """Main entry point with defensive error handling."""
     init()  # Initialize colorama with default settings; may be refined after args/config.
 
+    json_mode = False
+    source_for_summary: Optional[str] = None
+    dest_for_summary: Optional[str] = None
+    app: Optional["UnpackrApp"] = None
+    dry_run = False
+
+    def emit_json_and_exit(
+        exit_code: int,
+        status: str,
+        *,
+        cancelled: bool = False,
+        errors: Optional[list[str]] = None,
+        warnings: Optional[list[str]] = None,
+    ) -> NoReturn:
+        if json_mode:
+            stats = app.stats.get_snapshot() if app is not None else {}
+            summary = build_unpackr_run_summary(
+                status=status,
+                exit_code=exit_code,
+                source=source_for_summary,
+                destination=dest_for_summary,
+                dry_run=dry_run,
+                cancelled=cancelled,
+                stats=stats,
+                errors=errors,
+                warnings=warnings,
+                version=__version__,
+            )
+            print(dumps_run_summary(summary))
+        raise SystemExit(exit_code)
+
     try:
         # Parse arguments
         parser = build_unpackr_arg_parser()
         args = parser.parse_args()
+        json_mode = bool(getattr(args, "json", False))
+        dry_run = bool(args.dry_run)
 
         args.source, args.destination = resolve_unpackr_paths(args, parser)
 
@@ -1624,7 +1659,7 @@ def main():
         except Exception as e:
             print(Fore.RED + f"Error loading config: {e}" + Style.RESET_ALL)
             logging.error(f"Config load failed: {e}", exc_info=True)
-            sys.exit(1)
+            emit_json_and_exit(1, "failed", errors=[f"config load failed: {e}"])
 
         # Resolve presentation settings before any major console output.
         animation_mode, no_color = resolve_cli_presentation(args, config)
@@ -1641,7 +1676,7 @@ def main():
             logging.info(f"Log file: {log_file}")
         except Exception as e:
             print(Fore.RED + f"Error setting up logging: {e}" + Style.RESET_ALL)
-            sys.exit(1)
+            emit_json_and_exit(1, "failed", errors=[f"logging setup failed: {e}"])
 
         # Get and validate source and destination paths
         if args.source and args.destination:
@@ -1656,10 +1691,16 @@ def main():
             except ValidationError as e:
                 print(Fore.RED + f"Path validation failed: {e}" + Style.RESET_ALL)
                 logging.error(f"Path validation: {e}")
-                sys.exit(1)
+                emit_json_and_exit(1, "failed", errors=[f"path validation failed: {e}"])
 
         else:
             # Interactive mode - get paths from user
+            if json_mode:
+                emit_json_and_exit(
+                    1,
+                    "failed",
+                    errors=["interactive path prompts are unavailable with --json; pass --source and --destination"],
+                )
             print(
                 Style.BRIGHT
                 + Fore.YELLOW
@@ -1672,13 +1713,16 @@ def main():
 
         if source_dir is None or destination_dir is None:
             logging.error("Source or destination directory was not provided")
-            sys.exit(1)
+            emit_json_and_exit(1, "failed", errors=["source or destination directory was not provided"])
+
+        source_for_summary = str(source_dir)
+        dest_for_summary = str(destination_dir)
 
         # Defensive: Additional checks on paths
         if not StateValidator.check_dir_writable(destination_dir):
             print(Fore.RED + f"Destination directory is not writable: {destination_dir}" + Style.RESET_ALL)
             logging.error(f"Destination not writable: {destination_dir}")
-            sys.exit(1)
+            emit_json_and_exit(1, "failed", errors=[f"destination not writable: {destination_dir}"])
 
         if not StateValidator.check_disk_space(destination_dir, required_mb=1000):
             print(Fore.YELLOW + "Warning: Low disk space in destination directory" + Style.RESET_ALL)
@@ -1690,11 +1734,11 @@ def main():
         tools_status = system_check.check_all_tools()
         if not system_check.display_tool_status(tools_status):
             logging.error("Required tools missing")
-            sys.exit(1)
+            emit_json_and_exit(1, "failed", errors=["required tools missing"])
 
         # Check for running processes from previous session
         if not system_check.warn_running_processes():
-            sys.exit(0)
+            emit_json_and_exit(0, "cancelled", cancelled=True, warnings=["user aborted due to process conflicts"])
 
         # Create app and scan first
         try:
@@ -1708,22 +1752,26 @@ def main():
         except Exception as e:
             print(Fore.RED + f"Error initializing application: {e}" + Style.RESET_ALL)
             logging.error(f"App init failed: {e}", exc_info=True)
-            sys.exit(1)
+            emit_json_and_exit(1, "failed", errors=[f"app init failed: {e}"])
+
+        runtime_app = app
+        if runtime_app is None:
+            emit_json_and_exit(1, "failed", errors=["application failed to initialize"])
 
         # Set up graceful cancellation handler
         def handle_cancel(signum, frame):
-            if app.cancellation_requested:
+            if runtime_app.cancellation_requested:
                 # Second Ctrl+C = force exit
                 print(f"\n{Fore.RED}Force exit...{Style.RESET_ALL}")
-                app._stop_spinner_thread()
+                runtime_app._stop_spinner_thread()
                 sys.exit(1)
-            app.cancellation_requested = True
+            runtime_app.cancellation_requested = True
             print(f"\n{Fore.YELLOW}Cancellation requested - finishing current operation...{Style.RESET_ALL}")
             logging.info("User requested cancellation (Ctrl+C)")
             # Terminate active subprocess if any
-            if app.active_process:
+            if runtime_app.active_process:
                 try:
-                    app.active_process.terminate()
+                    runtime_app.active_process.terminate()
                     logging.info("Terminated active subprocess")
                 except Exception:
                     logging.debug("Failed to terminate active subprocess cleanly", exc_info=True)
@@ -1732,11 +1780,11 @@ def main():
 
         # Scan and plan
         try:
-            work_plan = app.scan_and_plan(source_dir)
+            work_plan = runtime_app.scan_and_plan(source_dir)
         except Exception as e:
             print(Fore.RED + f"Error during scan: {e}" + Style.RESET_ALL)
             logging.error(f"Scan failed: {e}", exc_info=True)
-            sys.exit(1)
+            emit_json_and_exit(1, "failed", errors=[f"scan failed: {e}"])
 
         # If --show-plan, display detailed plan and exit
         if args.show_plan:
@@ -1745,7 +1793,7 @@ def main():
             print(f"{Fore.CYAN}Destination: {destination_dir}{Style.RESET_ALL}")
             print(f"\n{Fore.GREEN}Pre-flight check complete. No changes made.{Style.RESET_ALL}")
             print(f"{Fore.YELLOW}Run without --show-plan to execute.{Style.RESET_ALL}\n")
-            sys.exit(0)
+            emit_json_and_exit(0, "planned")
 
         # Display work plan (compact single line)
         work_plan.display()
@@ -1769,11 +1817,14 @@ def main():
         # Quick pre-flight check before countdown
         if not quick_preflight(config, source_dir, destination_dir):
             logging.error("Pre-flight check failed")
-            sys.exit(1)
+            emit_json_and_exit(1, "failed", errors=["pre-flight check failed"])
 
-        if not countdown_prompt(10, operation_label="processing"):
+        # JSON/automation mode skips interactive countdown.
+        if json_mode:
+            logging.info("JSON mode: skipping interactive countdown")
+        elif not countdown_prompt(10, operation_label="processing"):
             logging.info("User cancelled operation")
-            sys.exit(0)
+            emit_json_and_exit(0, "cancelled", cancelled=True)
 
         # Initial cleanup: delete empty folders first for quick wins
         # Skip on first pass if there are many folders (will be cleaned up at end anyway)
@@ -1781,7 +1832,7 @@ def main():
             num_video_folders = len(work_plan.video_folders)
             if num_video_folders < 50:
                 print(f"{Fore.CYAN}Initial cleanup...{Style.RESET_ALL}", flush=True)
-                app.cleanup_empty_folders(source_dir, show_progress=False)
+                runtime_app.cleanup_empty_folders(source_dir, show_progress=False)
             else:
                 # Skip initial cleanup when there are many folders (too slow)
                 logging.info(f"Skipping initial cleanup ({num_video_folders} folders - will clean up at end)")
@@ -1792,25 +1843,25 @@ def main():
         # Run the application
         print()  # Blank line before progress
         try:
-            app.run(source_dir, destination_dir)
+            runtime_app.run(source_dir, destination_dir)
 
             # Skip cleanup if cancelled
-            if not app.cancellation_requested:
+            if not runtime_app.cancellation_requested:
                 # Multi-pass cleanup for locked folders
-                app.retry_failed_deletions()
+                runtime_app.retry_failed_deletions()
 
                 # Final cleanup of empty folders
-                app.cleanup_empty_folders(source_dir)
+                runtime_app.cleanup_empty_folders(source_dir)
 
-            app.display_summary()
+            runtime_app.display_summary()
 
-            if app.cancellation_requested:
+            if runtime_app.cancellation_requested:
                 logging.info("Unpackr cancelled by user")
             else:
                 logging.info("Unpackr completed successfully")
 
             # Run vhealth on destination if requested (skip if cancelled)
-            if args.vhealth and destination_dir and not app.cancellation_requested:
+            if args.vhealth and destination_dir and not runtime_app.cancellation_requested:
                 print(f"\n{Fore.CYAN}Running video health check on destination...{Style.RESET_ALL}\n")
                 try:
                     from vhealth import VideoHealthChecker
@@ -1827,27 +1878,31 @@ def main():
                 except Exception as e:
                     print(f"{Fore.YELLOW}Video health check failed: {e}{Style.RESET_ALL}")
                     logging.error(f"vhealth failed: {e}", exc_info=True)
+
+            if runtime_app.cancellation_requested:
+                emit_json_and_exit(0, "cancelled", cancelled=True)
+            emit_json_and_exit(0, "completed")
         except Exception as e:
             print(Fore.RED + f"\nFatal error during processing: {e}" + Style.RESET_ALL)
             logging.error(f"Processing failed: {e}", exc_info=True)
-            app._stop_spinner_thread()  # Ensure spinner stops before exit
-            app.display_summary()  # Show what we accomplished
-            sys.exit(1)
+            runtime_app._stop_spinner_thread()  # Ensure spinner stops before exit
+            runtime_app.display_summary()  # Show what we accomplished
+            emit_json_and_exit(1, "failed", errors=[f"processing failed: {e}"])
 
     except KeyboardInterrupt:
         print(Fore.YELLOW + "\n\nOperation interrupted by user" + Style.RESET_ALL)
         logging.info("User interrupted operation")
         # Stop spinner if app was initialized
-        if "app" in locals():
-            app._stop_spinner_thread()
-        sys.exit(0)
+        if app is not None:
+            runtime_app._stop_spinner_thread()
+        emit_json_and_exit(0, "cancelled", cancelled=True)
     except Exception as e:
         print(Fore.RED + f"\nUnexpected error: {e}" + Style.RESET_ALL)
         logging.error(f"Unexpected error: {e}", exc_info=True)
         # Stop spinner if app was initialized
-        if "app" in locals():
-            app._stop_spinner_thread()
-        sys.exit(1)
+        if app is not None:
+            runtime_app._stop_spinner_thread()
+        emit_json_and_exit(1, "failed", errors=[f"unexpected error: {e}"])
 
 
 if __name__ == "__main__":

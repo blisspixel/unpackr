@@ -16,6 +16,7 @@ Use this index to find the right doc for operations, troubleshooting, and mainte
 - `BENCHMARKS.md` - micro-benchmark harness and performance evidence rules
 - `TROUBLESHOOTING.md` - common failures and remediation
 - `DOCTOR_JSON.md` - `unpackr-doctor --json` schema/contract
+- `EXIT_CODES.md` - exit codes and machine-readable run output
 
 ## Engineering And Release
 

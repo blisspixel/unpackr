@@ -79,6 +79,13 @@ def test_platforms_doc_covers_all_target_operating_systems():
         assert needle in lowered
 
 
+def test_exit_codes_doc_is_linked_from_docs_index():
+    index = (ROOT / "docs" / "README.md").read_text(encoding="utf-8")
+    assert "EXIT_CODES.md" in index
+    exit_doc = (ROOT / "docs" / "EXIT_CODES.md").read_text(encoding="utf-8")
+    assert "unpackr --json" in exit_doc or "--json" in exit_doc
+
+
 def test_benchmarks_doc_requires_evidence_before_concurrency():
     benchmarks = (ROOT / "docs" / "BENCHMARKS.md").read_text(encoding="utf-8")
     lowered = benchmarks.lower()
