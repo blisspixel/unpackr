@@ -2,6 +2,17 @@
 
 Release dates are included where recorded.
 
+## v1.6.0 (2026-10-11)
+
+Unpackr is a tool you run by hand when you are ready to clean, not something to schedule.
+
+- Removed the timer/service mode: `unpackr service install|status|uninstall`, `--unattended`, `--notify`, the `settle_minutes` and `notify` settings, desktop notifications and the `skipped` run status. Every run follows the same rule: unfinished downloads and archives that cannot be unpacked are junk.
+- Kept the per-source run lock: a second run started on the same folder exits with `run_locked` (exit `1`) instead of racing the first.
+
+**Upgrade notes**
+- If you installed the service, remove it first with 1.5.x (`unpackr service uninstall --all`), or delete `~/.config/systemd/user/unpackr-*` and run `systemctl --user daemon-reload`.
+- `settle_minutes` and `notify` in a config file are ignored.
+
 ## v1.5.1 (2026-10-11)
 
 - On a manual run, an archive set that cannot be unpacked is junk: a set with a volume missing that PAR2 could not rebuild, one cut short, one 7-Zip cannot read, or a password-protected one is removed (to quarantine by default) and listed under DAMAGED, RE-DOWNLOAD and in `--json` `damaged`, instead of being kept and making the run exit `3`. Sets held back by the machine (disk full, extraction timeout, 7-Zip missing or failing) are still kept, and unattended runs keep every such set for a later run. Archives with CRC errors are now removed explicitly too, so leftovers in the source root no longer linger.

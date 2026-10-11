@@ -17,7 +17,7 @@ Stable contracts for CI and automation. Prefer machine JSON when available.
 | `0` | Successful processing; dry-run finished; user cancelled countdown; process-conflict abort before work |
 | `1` | Invalid/missing config; path validation failure; logging setup failure; missing required tools; scan/preflight failure; initialization failure; force-cancel after first Ctrl+C |
 | `2` | Invalid CLI arguments (argparse) |
-| `3` | Live run completed, but some items need attention: an archive set was kept because of the machine (disk full, timeout, 7-Zip missing or failing), or, on an unattended run, because a volume is missing, it could not be listed or it is password-protected; an archive was blocked for unsafe paths; a release contained bait; or par2 could not judge a release with unrecognized files (possibly renamed volumes). Details are in `errors`. Damaged downloads that were removed are listed in `damaged` and do not change the exit code. |
+| `3` | Live run completed, but some items need attention: an archive set was kept because of the machine (disk full, timeout, 7-Zip missing or failing), an archive was blocked for unsafe paths; a release contained bait; or par2 could not judge a release with unrecognized files (possibly renamed volumes). Details are in `errors`. Damaged downloads that were removed are listed in `damaged` and do not change the exit code. |
 
 ### Structured run summary (`--json`)
 
@@ -28,10 +28,10 @@ unpackr --source "~/Downloads" --destination "~/Videos" --dry-run --json
 When `--json` is set, stdout carries only a single JSON object, printed after the run, so `unpackr --json ... | jq` works; the banner, progress and summary screen go to stderr. The object includes:
 
 - `timestamp_utc`, `tool`, `version`
-- `exit_code`, `status` (`completed` \| `completed_with_errors` \| `cancelled` \| `failed` \| `planned` \| `skipped`). `skipped` (exit `0`) means an `--unattended` run found another run already working on the source; without `--unattended` the same situation is `failed` (exit `1`) with `run_locked`.
+- `exit_code`, `status` (`completed` \| `completed_with_errors` \| `cancelled` \| `failed` \| `planned`). Another run already working on the same source is `failed` (exit `1`) with `run_locked`.
 - `dry_run`, `cancelled`
 - `paths.source`, `paths.destination`
-- `counts.*` processing counters (`counts.folders_settling`: releases an unattended run left because they were still being written)
+- `counts.*` processing counters
 - `damaged`: downloads found damaged this run and removed as junk (corrupt or truncated videos, archives with CRC errors, releases PAR2 could not repair); worth downloading again
 - `errors`, `warnings`, `recommended_actions`
 
@@ -39,10 +39,10 @@ Entries in `errors` and `warnings` start with a reason code in brackets, then `f
 
 | Reason code | Level | Meaning |
 |-------------|-------|---------|
-| `archive_volume_missing` | warning or error | A numbered volume is missing (and PAR2 could not rebuild it). Manual run: the set is junk, removed and listed in `damaged` (warning). Unattended run: kept for a later run (error) |
-| `archive_unlistable` | warning or error | 7-Zip could not list the archive (missing volume, damage or password); as above |
-| `archive_incomplete` | warning or error | Extraction stopped at a missing or cut-short volume; as above |
-| `archive_password` | warning or error | Password-protected; as above |
+| `archive_volume_missing` | warning | A numbered volume is missing and PAR2 could not rebuild it: the set is junk, removed and listed in `damaged` |
+| `archive_unlistable` | warning | 7-Zip could not list the archive (missing volume, damage or password); junk, removed and listed in `damaged` |
+| `archive_incomplete` | warning | Extraction stopped at a missing or cut-short volume; junk, removed and listed in `damaged` |
+| `archive_password` | warning | Password-protected; junk, removed and listed in `damaged` |
 | `archive_timeout`, `disk_space_low`, `archive_extract_failed` | error | Extraction did not finish; kept |
 | `archive_unsafe_paths` | error | Entries would extract outside the folder; blocked |
 | `archive_corrupt` | warning | CRC or data error; treated as junk and listed in `damaged` |
@@ -53,10 +53,8 @@ Entries in `errors` and `warnings` start with a reason code in brackets, then `f
 | `folder_failed_security` | error | Release contained bait; nothing was moved from it |
 | `security_rename_script`, `security_known_marker` | warning | Removed, but the release continues |
 | `download_incomplete` | warning | Manual run: unfinished download files (`.part`, `.!qB` ...) removed as junk |
-| `download_in_progress` | warning | Unattended run: release still downloading; skipped this run |
 | `disc_structure_kept` | warning | `VIDEO_TS`/`BDMV` release kept whole |
-| `folder_still_growing` | warning | Unattended run: the download changed within `settle_minutes`; skipped this run |
-| `run_locked` | warning or error | Another run holds `<source>/.unpackr-lock` |
+| `run_locked` | error | Another run holds `<source>/.unpackr-lock` |
 | `layout_unparsed` | warning | Name did not fit `output_layout`; moved with the flat layout |
 | `renamed_deobfuscated` | item | Obfuscated video name replaced with the release name |
 | `subtitle_moved` | item | Subtitle moved next to its video |
@@ -134,13 +132,3 @@ vhealth "~/Videos" --min-resolution 720p
 ## Versioning
 
 Package version is defined in `version.py` and shown by `vhealth --version` and in unpackr JSON `version`.
-
-## `unpackr service`
-
-| Command | `0` | `1` | `2` |
-|---|---|---|---|
-| `service install` | Units written and enabled | Not confirmed, or `systemctl` failed (files are reported) | No systemd user session or not Linux |
-| `service status` | Shown (also with nothing installed) | Several services and no `--source`/`--name` | |
-| `service uninstall` | Removed (each file is listed) | Nothing matched, or ambiguous | |
-
-The service unit treats exit `3` (completed with items needing attention) as success, so `systemctl --user status` does not show a failed unit for a run that reported problems; they are in the notification, the journal and the log.

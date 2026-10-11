@@ -4,7 +4,7 @@ Unpackr turns a messy downloads folder into a clean one: it keeps the good conte
 
 ## Version Focus
 
-- Current line: `1.5.x` (latest: `1.5.1`, October 2026) — first-class **Windows, Linux, and macOS**, Python `3.12` to `3.15`
+- Current line: `1.6.x` (latest: `1.6.0`, October 2026) — first-class **Windows, Linux, and macOS**, Python `3.12` to `3.15`
 - Primary objective: delete the junk decisively, never the good file, and make every removal reversible and explained
 
 ## Quality Baseline
@@ -21,7 +21,7 @@ Unpackr turns a messy downloads folder into a clean one: it keeps the good conte
 
 - Deleting junk is the job. Safeguards protect the good content (videos, music, photos, documents, a release that could still be repaired), not the junk.
 - When the content might be good and Unpackr cannot tell, keep it and say why (fail closed on the good file).
-- A manual run means "clean now"; only unattended runs wait for downloads to finish.
+- Unpackr is run by hand, when you are ready to clean; it is not meant to run on a schedule. Running it means "clean now".
 - Every removal is reversible by default (quarantine) and explained (reason codes, `--json`, the summary screen).
 - Ship measurable reliability gains each iteration.
 - Prefer explicit policy over implicit behavior.
@@ -102,10 +102,13 @@ Goal: make Unpackr the tool you point at a downloads folder and trust: decisive 
 Status:
 - Complete in `1.5.0`: reversible removals (quarantine, trash, `unpackr restore`); a decision for every file in `--json`/`--report`; previews, truncated videos and incomplete archive sets handled correctly; bait, junk, samples and unfinished downloads screened; output layouts and name deobfuscation; unattended mode with a systemd user service; PAR2 that repairs obfuscated posts and never removes unextracted volumes; dry-run/live parity; strict typing (`mypy --strict`, Pyright strict) on Python 3.12 to 3.15.
 
+### Done: Manual Only (`1.6.0`)
+
+- The timer/service mode is gone: one rule for every run, "clean now". Removed `unpackr service`, `--unattended`, `--notify`, `settle_minutes` and `notify`.
+
 ### Next
 
 - Real-tool CI on Windows (7-Zip, par2 and ffmpeg are installed on Linux and macOS runners only).
-- Unattended runs on macOS (launchd) and Windows (Task Scheduler) with the same `service install` experience as systemd.
 - Concurrency stays deferred until a real multi-archive workload is measured with and without it.
 
 ## Cross-Platform Implementation Plan

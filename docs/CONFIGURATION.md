@@ -112,14 +112,6 @@ When `true` (default), a video with an obfuscated or meaningless name (`a1b2c3d4
 
 When `true` (default), subtitles that belong to a moved video (`<video>.en.srt`, or RARBG-style `Subs/2_English.srt` in a single-video release) are moved next to it with a matching name, such as `Some Show - S01E02.English.srt`. Reported as `subtitle_moved`. A shared `Subs` folder in a multi-video release is left alone.
 
-### `settle_minutes`
-
-Unattended runs (`--unattended`, the service) skip any top-level download with a file or folder changed in the last this many minutes, reported as `folder_still_growing` and counted in `counts.folders_settling`, and leave it for a later run. Range `0` to `1440`, default `2`; `0` turns the check off. Manual runs do not wait: running Unpackr by hand means "clean now", and unfinished files are junk.
-
-### `notify`
-
-When `true`, every run sends one desktop notification with `notify-send` (same as `--notify`) if it moved something, extracted something or needs attention. Runs that did nothing stay quiet. Default: `false`; the service passes `--notify` unless installed with `--no-notify`.
-
 ### `dedupe_same_title`
 
 Opt-in. When `true`, two videos of the same title in one release (differing only in quality, codec or group tags) keep only the largest; the others are removed as `duplicate_encode`. Default: `false`.

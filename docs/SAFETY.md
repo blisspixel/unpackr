@@ -23,7 +23,7 @@ With the default `delete_mode: "quarantine"`, nothing a live run removes is dest
 
 Usenet and torrent releases are mostly not the video you wanted. Each top-level release folder is screened before anything else happens:
 
-- **Unfinished downloads.** Files ending in `.!qB`, `.!ut`, `.part`, `.crdownload`, `.partial`, `.download` or `.aria2` (`incomplete_download_markers`) are junk on a manual run: they are removed (`download_incomplete`) and the finished files in the same release are processed as usual. A video still being written fails validation and is removed as damaged. Unattended runs (`--unattended`, the service) cannot know you are done waiting, so they skip such releases (`download_in_progress`) and anything changed in the last `settle_minutes` (`folder_still_growing`) and pick them up later.
+- **Unfinished downloads.** Files ending in `.!qB`, `.!ut`, `.part`, `.crdownload`, `.partial`, `.download` or `.aria2` (`incomplete_download_markers`) are junk: they are removed (`download_incomplete`) and the finished files in the same release are processed as usual. A video still being written fails validation and is removed as damaged. Run Unpackr when your downloads are done.
 - **Disc structures.** A release with `VIDEO_TS` or `BDMV` is kept whole (`disc_structure_kept`).
 - **Bait.** Executables, scripts, shortcuts and installers (`.exe`, `.lnk`, `.scr`, `.bat`, `.cmd`, `.js`, `.vbs`, `.hta`, `.ps1`, `.msi`, `.jar` and more, see `dangerous_extensions`), names that disguise their type (`Movie.mkv.exe`, Unicode direction controls) and subtitles that are oversized or binary are removed (to quarantine by default) and the **whole release fails**: no video from it is moved, the decoy stays for review, and the run exits `3` with `folder_failed_security`. Archives whose listing contains such files are never extracted (`archive_dangerous_member`). Two exceptions are removed and flagged without failing the release: `rename.bat`/`rename.sh` next to a real video, and RARBG's `RARBG_DO_NOT_MIRROR.exe` placeholder. Unpackr never runs or opens any of these files.
 - **Junk by name.** Tracker spam (`RARBG.txt`, `WWW.*.COM*`), OS cruft (`Thumbs.db`, `.DS_Store`, `desktop.ini`, `._*`, `@eaDir`), torrent padding files (verified all zeros) and empty files are removable whatever their extension (`junk_name_patterns`).
@@ -37,10 +37,10 @@ Usenet and torrent releases are mostly not the video you wanted. Each top-level 
 | Sample videos (< 50MB) | Yes: `min_sample_size_mb` |
 | Previews and samples shorter than 10 seconds | Yes: `min_video_duration_seconds` |
 | Corrupt/truncated videos | No: always deleted, listed under DAMAGED, RE-DOWNLOAD |
-| Unfinished downloads (manual runs) | Yes: `incomplete_download_markers` |
+| Unfinished downloads | Yes: `incomplete_download_markers` |
 | Archive sets and their `.par2` files after a successful extraction | No: always deleted |
 | Archive sets that fail with CRC/data errors | No: always deleted, listed for re-download |
-| Archive sets that cannot be unpacked on a manual run: a volume missing that PAR2 could not rebuild, cut short, unreadable, password-protected | No: deleted, listed for re-download (unattended runs keep them) |
+| Archive sets that cannot be unpacked: a volume missing that PAR2 could not rebuild, cut short, unreadable, password-protected | No: deleted, listed for re-download |
 | Releases PAR2 says are damaged beyond repair (no set could be extracted) | No: always deleted, listed for re-download |
 | Empty folders | No: always deleted |
 | Processed folders after extraction | No: always deleted |
@@ -55,7 +55,6 @@ Usenet and torrent releases are mostly not the video you wanted. Each top-level 
 | Document folders (10+ files) | Yes: `min_documents` |
 | Folders with files of an unrecognized extension | Always preserved |
 | Archive sets held back by the machine: disk full, extraction timeout, 7-Zip missing or failing | Kept for retry; the run exits `3` |
-| Incomplete, unreadable or password-protected archive sets on an unattended run | Kept for a later run; the run exits `3` |
 | A PAR2 release par2 could not judge (not installed, tool error) next to unrecognized files, which may be renamed volumes | Kept; the run exits `3` |
 | Anything in destination directory | Never touched |
 

@@ -28,8 +28,7 @@ _ZIP_VOLUME = re.compile(r"^(?P<base>.+)\.z(?P<num>\d{2})$", re.IGNORECASE)
 # Outcomes that leave the archive volumes in place so the user can fix and retry.
 HELD_STATUSES = ("held",)
 # Held because the download itself is broken, not because of this machine (disk, timeout,
-# missing 7-Zip). A manual run treats these sets as junk; an unattended run keeps them,
-# since the rest of the download may still be on its way.
+# missing 7-Zip). These sets are junk; machine problems keep the set for a retry.
 BROKEN_SET_REASONS = frozenset(
     {"archive_volume_missing", "archive_incomplete", "archive_unlistable", "archive_password"}
 )

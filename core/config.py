@@ -83,8 +83,6 @@ class Config:
         "min_sample_size_mb": 50,
         "min_video_duration_seconds": 10,
         "max_sample_duration_seconds": 300,
-        "settle_minutes": 2,
-        "notify": False,
         "dedupe_same_title": False,
         "output_layout": "{name}{ext}",
         "deobfuscate_names": True,
@@ -205,7 +203,6 @@ class Config:
             "min_sample_size_mb": (1, 10000, "Minimum sample size", 50),
             "min_video_duration_seconds": (0, 3600, "Minimum video duration", 10),
             "quarantine_retention_days": (0, 3650, "Quarantine retention days", 14),
-            "settle_minutes": (0, 1440, "Minutes a download must be unchanged before an unattended run touches it", 2),
             "max_sample_duration_seconds": (0, 7200, "Maximum sample duration", 300),
             "quarantine_warn_mb": (0, 10_000_000, "Quarantine warning size (MB)", 20480),
             "max_log_files": (1, 100, "Maximum log files", 3),
@@ -252,7 +249,7 @@ class Config:
                 '  Expected: a preset ("flat", "release", "movies", "tv", "auto") or a template string\n'
                 '  Example: "auto"'
             )
-        for flag in ("deobfuscate_names", "keep_subtitles", "dedupe_same_title", "notify"):
+        for flag in ("deobfuscate_names", "keep_subtitles", "dedupe_same_title"):
             if flag in config and not isinstance(config[flag], bool):
                 errors.append(
                     f"ERROR: Invalid config value\n  Field: {flag}\n  Value: {config[flag]!r}\n  Expected: true or false"
