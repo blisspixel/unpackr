@@ -18,7 +18,10 @@ No automated deletion workflow can eliminate all risk.
 |------|---------------|
 | Junk files (NFO, SFV, URL, DIZ, TXT, M3U) | Yes: `removable_extensions` |
 | Sample videos (< 50MB) | Yes: `min_sample_size_mb` |
+| Previews and samples shorter than 10 seconds | Yes: `min_video_duration_seconds` |
 | Corrupt/truncated videos | No: always deleted |
+| Archive sets after a successful extraction | No: always deleted |
+| Archive sets PAR2 cannot repair, or that fail with CRC/data errors | No: always deleted |
 | Empty folders | No: always deleted |
 | Processed folders after extraction | No: always deleted |
 
@@ -31,6 +34,7 @@ No automated deletion workflow can eliminate all risk.
 | Image folders (10+ files, 10MB+) | Yes: `min_image_files` |
 | Document folders (10+ files) | Yes: `min_documents` |
 | Folders with unrecognized files | Always preserved |
+| Incomplete, unreadable, password-protected or interrupted archive sets | Kept for retry; the run exits `3` |
 | Anything in destination directory | Never touched |
 
 Details and resume semantics: [PRESERVATION.md](PRESERVATION.md).
@@ -46,7 +50,9 @@ Details and resume semantics: [PRESERVATION.md](PRESERVATION.md).
 
 ### Fail-Closed Validation
 - When uncertain, reject rather than proceed
-- Corrupt archive listing = skip extraction
+- Archive volumes are grouped into sets; a set with a missing volume is not extracted, and its remaining volumes and folder are kept
+- An archive 7-Zip cannot list is not extracted and is kept (reported as `archive_unlistable`, not as a security block)
+- Only a set that extracted successfully has its volumes removed
 - Video validation requires ffmpeg for full reliability
 
 ### Race Condition Prevention

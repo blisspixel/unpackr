@@ -432,10 +432,11 @@ class TestCleanupOperations:
         mock_subprocess.return_value = (True, "", "", 0)
 
         with patch.object(processor, "_validate_archive_paths", return_value=True):
-            with patch.object(processor, "_delete_archive_files") as mock_delete:
-                processor.process_rar_files(temp_dir)
-                # Cleanup should be called
-                assert mock_delete.called
+            processor.process_rar_files(temp_dir)
+
+        # The volumes of a set that extracted cleanly are removed.
+        assert not archive.exists()
+        assert [o.status for o in processor.last_outcomes] == ["extracted"]
 
     def test_delete_files_by_extension_retries_permission_error_then_force_deletes(self, processor, temp_dir):
         """Locked files should fall back to a final missing_ok unlink attempt."""

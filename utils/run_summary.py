@@ -36,6 +36,7 @@ def build_unpackr_run_summary(
 
     Status values:
     - completed: finished without cancellation
+    - completed_with_errors: finished, but some items need attention (exit code 3)
     - cancelled: user interrupted after start
     - failed: blocked or aborted with non-zero exit
     - planned: --show-plan only

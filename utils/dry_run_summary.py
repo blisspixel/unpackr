@@ -111,7 +111,7 @@ class DryRunPlan:
 
             for video, size, resolution in self.videos_to_move:
                 res_str = f", {resolution}" if resolution != "unknown" else ""
-                print(f"  Move: {video.name} ({self.format_size(size)}{res_str}, validated)")
+                print(f"  Move: {video.name} ({self.format_size(size)}{res_str}, validated during the live run)")
 
             if self.videos_to_delete:
                 print(f"\n  DELETE SAMPLES ({len(self.videos_to_delete)}):")

@@ -11,6 +11,7 @@ import unpackr
 from core.config import Config
 from core.file_handler import FileHandler
 from utils.defensive import ValidationError
+from conftest import bind_app_helpers
 
 
 @pytest.fixture
@@ -385,6 +386,8 @@ def test_process_folder_skips_archive_extraction_after_par2_failure(tmp_path):
         video_processor=SimpleNamespace(check_video_health=lambda *_: True),
     )
 
+    bind_app_helpers(app)
+
     moved = unpackr.UnpackrApp.process_folder(app, folder, destination, 1, 1)
     assert moved == 0
     assert rar_calls["n"] == 0
@@ -436,6 +439,8 @@ def test_process_folder_handles_archive_stat_error_in_dry_run(tmp_path):
         video_processor=SimpleNamespace(check_video_health=lambda *_: True),
     )
 
+    bind_app_helpers(app)
+
     unpackr.UnpackrApp.process_folder(app, folder, destination, 1, 1)
 
     assert recorded == [(archive, 0)]
@@ -481,6 +486,8 @@ def test_process_folder_live_branches_for_failed_move_and_locked_corrupt_video(t
         failed_deletions=[],
         video_processor=SimpleNamespace(check_video_health=lambda path: path.name == "good.mp4"),
     )
+
+    bind_app_helpers(app)
 
     moved = unpackr.UnpackrApp.process_folder(app, folder, destination, 1, 1)
     assert moved == 0

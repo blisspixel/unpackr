@@ -4,6 +4,12 @@ Release dates are included where recorded.
 
 ## Unreleased
 
+- Videos shorter than `min_video_duration_seconds` (default 10) are removed as previews or samples and counted as samples, not reported as corrupt. A missing duration is the only duration-based corruption. The dry run probes durations and lists previews as deletions instead of "validated" moves (#2).
+- Truncated videos are rejected: the stream check compares how far the first video stream actually reaches with the declared duration, and recognizes ffmpeg's "File ended prematurely" and "partial file" messages (#4).
+- Archive volumes are grouped into sets. A set with a missing volume, an archive 7-Zip cannot list, a password-protected archive, or an interrupted extraction is kept with its folder instead of deleted, and listing failures are no longer reported as path traversal. Only sets that extracted successfully are removed (#3).
+- A live run with items needing attention exits `3` with `status: completed_with_errors`; `errors` and `warnings` carry reason codes. The dry run lists one entry per archive set and flags incomplete sets.
+- Loose videos now go through the same validation, collision-safe move and guarded delete as videos in folders.
+
 - Polished `vhealth` for multi-OS excellence: shared package version, platform-aware help, `~/` path expansion, ffmpeg preflight guidance, shared linklike scanning, and `--version`.
 - Added `unpackr --json` run summaries, `docs/EXIT_CODES.md`, and a CI gate that validates `unpackr-doctor --json` schema/exit consistency.
 - Added safe `--resume` via `<source>/.unpackr-state.json`, documented preservation heuristics, and aligned pre-scan thresholds to inclusive `>=` matches.

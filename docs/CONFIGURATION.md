@@ -29,6 +29,7 @@ Invalid or unreadable configuration is blocking. The commands exit instead of co
   "document_extensions": [".pdf", ".doc", ".docx", ".txt", ".xls", ".xlsx"],
   "removable_extensions": [".nfo", ".sfv", ".url", ".diz", ".txt", ".m3u"],
   "min_sample_size_mb": 50,
+  "min_video_duration_seconds": 10,
   "min_music_files": 10,
   "min_image_files": 10,
   "min_documents": 10,
@@ -61,6 +62,10 @@ Paths to external tools. Each value is an array; entries are tried in order unti
 Videos smaller than this threshold (MB) are treated as samples and deleted. Default: `50`.
 
 To keep nearly all small videos, lower the threshold to `1`. Raising the value classifies more videos as samples and deletes more files.
+
+### `min_video_duration_seconds`
+
+Videos shorter than this many seconds are previews, samples or trailers rather than the content you downloaded, and are removed. Default: `10`. They are counted as samples (`videos_sample`), not as corrupt. Set `0` to disable the duration rule.
 
 ### `min_music_files`, `min_image_files`, `min_documents`
 

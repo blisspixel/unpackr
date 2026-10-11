@@ -3,15 +3,92 @@ Video processing for Unpackr.
 Handles video file health checks and validation.
 """
 
+import contextlib
 import logging
+import re
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Tuple, Union
+from typing import Any, Optional, Tuple, Union
 
 from core.safety_invariants import ValidationCache, ValidationDecision, ValidationResult
 from utils.error_messages import log_error
 from utils.safety import SafetyLimits, SubprocessSafety
 from utils.system_check import SystemCheck
+
+Resolution = Optional[Tuple[int, int]]
+HealthResult = Union[bool, Tuple[bool, bool, Optional[str], Resolution]]
+
+# ffmpeg stderr phrases that mean the file is damaged or incomplete.
+CORRUPTION_INDICATORS = (
+    "invalid data",
+    "corrupt",
+    "truncated",
+    "incomplete",
+    "error while decoding",
+    "moov atom not found",
+    "header missing",
+    "premature end",
+    "ended prematurely",
+    "partial file",
+    "unexpected end",
+)
+
+# A demux pass that reaches less than this share of the declared duration
+# (and falls short by more than TRUNCATION_MIN_GAP_SECONDS) is truncated.
+TRUNCATION_MIN_RATIO = 0.9
+TRUNCATION_MIN_GAP_SECONDS = 2.0
+
+
+@dataclass(frozen=True)
+class VideoVerdict:
+    """Outcome of one video check.
+
+    category is one of "healthy", "preview", "corrupt", "truncated" or "unverified".
+    "preview" means the file is a real video that is too short to be the wanted
+    content (a preview, sample or trailer); it is removed like a sample, not
+    reported as damage.
+    """
+
+    ok: bool
+    category: str
+    reason_code: str
+    detail: str = ""
+
+
+def _config_value(config: Any, key: str, default: Any) -> Any:
+    if isinstance(config, dict):
+        return config.get(key, default)
+    getter = getattr(config, "get", None)
+    if callable(getter):
+        value = getter(key, default)
+        return default if value is None else value
+    return getattr(config, key, default)
+
+
+def parse_ffmpeg_duration(stderr: str) -> Optional[float]:
+    """Return the container duration in seconds from ffmpeg -i output, or None."""
+    for line in stderr.split("\n"):
+        if "Duration:" not in line:
+            continue
+        try:
+            duration_str = line.split("Duration:")[1].split(",")[0].strip()
+            h, m, sec = duration_str.split(":")
+            return int(h) * 3600 + int(m) * 60 + float(sec)
+        except (ValueError, IndexError):
+            return None
+    return None
+
+
+def parse_progress_seconds(stdout: str) -> Optional[float]:
+    """Return the last media position reported by ffmpeg -progress, in seconds."""
+    last: Optional[float] = None
+    for line in stdout.splitlines():
+        key, _, value = line.partition("=")
+        if key in ("out_time_us", "out_time_ms") and value.strip().lstrip("-").isdigit():
+            # ffmpeg reports both keys in microseconds.
+            last = int(value.strip()) / 1_000_000
+    return last
 
 
 class VideoProcessor:
@@ -27,19 +104,65 @@ class VideoProcessor:
         self.config = config or {}
         self.system_check = SystemCheck(config)
         self.process_tracker = process_tracker
+        self.last_verdict: Optional[VideoVerdict] = None
 
-    def check_video_health(
-        self, video_file: Path, check_quality: bool = False
-    ) -> Union[bool, Tuple[bool, bool, Optional[str], Optional[Tuple[int, int]]]]:
+    @property
+    def min_duration_seconds(self) -> float:
+        """Shortest duration kept as real content; shorter videos are previews."""
+        value = _config_value(self.config, "min_video_duration_seconds", 10)
+        try:
+            return max(0.0, float(value))
+        except (TypeError, ValueError):
+            return 10.0
+
+    def _ffmpeg_cmd(self) -> list:
+        return self.system_check.get_tool_command("ffmpeg") or ["ffmpeg"]
+
+    def probe_duration(self, video_file: Path) -> Optional[float]:
+        """Read the container duration without decoding (fast, read-only)."""
+        try:
+            _ok, _out, stderr, _code = SubprocessSafety.run_with_timeout(
+                self._ffmpeg_cmd() + ["-hide_banner", "-i", str(video_file)],
+                timeout=10,
+                operation=f"Video metadata check: {video_file.name}",
+                expected_codes=[0, 1],
+                process_tracker=self.process_tracker,
+            )
+        except FileNotFoundError:
+            return None
+        return parse_ffmpeg_duration(stderr or "")
+
+    def classify_preview(self, duration_seconds: Optional[float]) -> Optional[VideoVerdict]:
+        """Return a preview verdict when a known duration is under the minimum."""
+        minimum = self.min_duration_seconds
+        if duration_seconds and minimum > 0 and duration_seconds < minimum:
+            return VideoVerdict(
+                ok=False,
+                category="preview",
+                reason_code="video_too_short",
+                detail=f"{duration_seconds:.1f}s is under the {minimum:g}s minimum (preview or sample)",
+            )
+        return None
+
+    def _fail(self, verdict: VideoVerdict, check_quality: bool, resolution: Resolution = None) -> HealthResult:
+        self.last_verdict = verdict
+        if check_quality:
+            return (False, False, None, resolution)
+        return False
+
+    def check_video_health(self, video_file: Path, check_quality: bool = False) -> HealthResult:
         """
         Check if a video file is healthy and fully playable (not corrupted or partial).
 
-        Performs comprehensive validation:
+        Validation steps:
         1. File size sanity check (not 0 bytes, reasonable for video)
-        2. Get video metadata (duration, bitrate, streams)
-        3. Verify duration vs file size ratio (detect truncated files)
-        4. Full decode test to ensure video can be read to completion
-        5. Optional: Check for low quality (resolution, bitrate)
+        2. Read container metadata (duration, bitrate, resolution)
+        3. Classify videos shorter than ``min_video_duration_seconds`` as previews
+        4. Demux the first video stream to the end, failing on ffmpeg corruption
+           messages and on streams that end well before the declared duration
+        5. Optional: check for low quality (resolution, bitrate)
+
+        The detailed outcome of the most recent call is kept in ``last_verdict``.
 
         Args:
             video_file: Path to video file
@@ -49,9 +172,9 @@ class VideoProcessor:
             If check_quality is False: bool (True if healthy)
             If check_quality is True: tuple (is_healthy: bool, is_low_quality: bool, quality_reason: str, resolution: tuple)
         """
+        self.last_verdict = None
         file_size_mb = video_file.stat().st_size / (1024 * 1024)
 
-        # Check if file size is 0 or suspiciously small
         if file_size_mb < 1:
             log_error(
                 what_failed=f"Video file rejected: {video_file.name}",
@@ -59,105 +182,74 @@ class VideoProcessor:
                 action="Check if download completed or extraction failed",
                 location=video_file.parent,
             )
-            if check_quality:
-                return (False, False, None, None)
-            return False
+            return self._fail(
+                VideoVerdict(False, "corrupt", "video_file_too_small", f"{file_size_mb:.2f}MB"), check_quality
+            )
 
-        # Use ffmpeg to check video integrity with comprehensive validation
         try:
-            # Get ffmpeg command from config
-            ffmpeg_cmd = self.system_check.get_tool_command("ffmpeg")
-            if not ffmpeg_cmd:
-                ffmpeg_cmd = ["ffmpeg"]
+            ffmpeg_cmd = self._ffmpeg_cmd()
 
-            # Step 1: Get video metadata (duration, bitrate, codec info)
+            # Step 1: container metadata (ffmpeg prints it to stderr and exits 1 without an output).
             logging.debug(f"Checking video metadata: {video_file.name}")
-            success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
+            _success, _stdout, stderr, _code = SubprocessSafety.run_with_timeout(
                 ffmpeg_cmd + ["-i", str(video_file)],
-                timeout=10,  # Metadata check should be fast
+                timeout=10,
                 operation=f"Video metadata check: {video_file.name}",
-                expected_codes=[0, 1],  # ffmpeg returns 1 when no output file specified (normal for metadata check)
+                expected_codes=[0, 1],
                 process_tracker=self.process_tracker,
             )
 
-            # Parse duration, bitrate, and resolution from ffmpeg output
-            duration_seconds = None
+            stderr = stderr or ""
+            duration_seconds = parse_ffmpeg_duration(stderr)
             bitrate_kbps = None
-            resolution = None  # (width, height)
+            resolution: Resolution = None  # (width, height)
+            for line in stderr.split("\n"):
+                if "bitrate:" in line:
+                    with contextlib.suppress(ValueError, IndexError):
+                        bitrate_kbps = float(line.split("bitrate:")[1].strip().split()[0])
+                if "Stream" in line and "Video:" in line:
+                    match = re.search(r"(\d{3,4})x(\d{3,4})", line)
+                    if match:
+                        resolution = (int(match.group(1)), int(match.group(2)))
 
-            # Check stderr for Duration line (ffmpeg outputs metadata to stderr)
-            if stderr:
-                import re
-
-                for line in stderr.split("\n"):
-                    if "Duration:" in line:
-                        # Extract duration: "Duration: 00:45:23.45"
-                        try:
-                            duration_str = line.split("Duration:")[1].split(",")[0].strip()
-                            h, m, s = duration_str.split(":")
-                            duration_seconds = int(h) * 3600 + int(m) * 60 + float(s)
-                        except (ValueError, IndexError):
-                            pass
-                    if "bitrate:" in line:
-                        # Extract bitrate: "bitrate: 2500 kb/s"
-                        try:
-                            bitrate_str = line.split("bitrate:")[1].strip()
-                            bitrate_kbps = float(bitrate_str.split()[0])
-                        except (ValueError, IndexError):
-                            pass
-                    if "Stream" in line and "Video:" in line:
-                        # Extract resolution: "Stream #0:0: Video: ..., 1920x1080"
-                        match = re.search(r"(\d{3,4})x(\d{3,4})", line)
-                        if match:
-                            resolution = (int(match.group(1)), int(match.group(2)))
-
-            # Validate duration exists and is reasonable
-            if not duration_seconds or duration_seconds < 10:
+            if not duration_seconds:
                 log_error(
                     what_failed=f"Video validation failed: {video_file.name}",
-                    reason=f"Invalid or missing duration ({duration_seconds}s)",
+                    reason="Missing or zero duration",
                     action="File may be corrupted or incomplete - re-extract or re-download",
                     location=video_file.parent,
                 )
-                if check_quality:
-                    return (False, False, None, resolution)
-                return False
+                return self._fail(
+                    VideoVerdict(False, "corrupt", "video_duration_missing", "no readable duration"),
+                    check_quality,
+                    resolution,
+                )
 
-            # Calculate expected file size from duration and bitrate
-            # Typical video bitrates: 720p ~2500kbps, 1080p ~5000kbps, 4K ~15000kbps
-            if bitrate_kbps:
-                expected_size_mb = (bitrate_kbps * duration_seconds) / (8 * 1024)
-                size_ratio = file_size_mb / expected_size_mb if expected_size_mb > 0 else 0
+            preview = self.classify_preview(duration_seconds)
+            if preview is not None:
+                logging.info(f"Preview or sample video: {video_file.name} ({preview.detail})")
+                return self._fail(preview, check_quality, resolution)
 
-                # If actual size is less than 70% of expected, likely truncated
-                if size_ratio < 0.70:
-                    log_error(
-                        what_failed=f"Video appears truncated: {video_file.name}",
-                        reason=f"{file_size_mb:.1f}MB actual vs {expected_size_mb:.1f}MB expected (ratio: {size_ratio:.2f})",
-                        action="Re-extract archive or re-download file",
-                        location=video_file.parent,
-                    )
-                    if check_quality:
-                        return (False, False, None, resolution)
-                    return False
-
-                logging.debug(f"Size validation passed: {file_size_mb:.1f}MB (ratio: {size_ratio:.2f})")
-
-            # Step 2: Full decode test - actually decode the entire video to verify all frames readable
-            logging.debug(f"Full decode test: {video_file.name}")
+            # Step 2: demux the first video stream to the end. -progress reports how far
+            # the stream actually reaches, which exposes files cut short even when ffmpeg
+            # exits 0 (a truncated Matroska file does).
+            logging.debug(f"Stream read test: {video_file.name}")
             success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
                 ffmpeg_cmd
                 + [
                     "-v",
-                    "error",  # Only show errors
+                    "error",
+                    "-nostats",
+                    "-progress",
+                    "pipe:1",
                     "-i",
-                    str(video_file),  # Input file
+                    str(video_file),
                     "-map",
-                    "0:v:0",  # Only decode first video stream (faster)
+                    "0:v:0",
                     "-c:v",
-                    "copy",  # Copy codec (fast - just demux)
+                    "copy",
                     "-f",
-                    "null",  # Null output
+                    "null",
                     "-",
                 ],
                 timeout=SafetyLimits.VIDEO_CHECK_TIMEOUT,
@@ -165,7 +257,6 @@ class VideoProcessor:
                 process_tracker=self.process_tracker,
             )
 
-            # Check for errors in decode
             if not success:
                 log_error(
                     what_failed=f"Video decode test failed: {video_file.name}",
@@ -173,9 +264,11 @@ class VideoProcessor:
                     action="Check if file is playable and ffmpeg is working",
                     location=video_file.parent,
                 )
-                if check_quality:
-                    return (False, False, None, resolution)
-                return False
+                return self._fail(
+                    VideoVerdict(False, "corrupt", "video_read_failed", "ffmpeg did not finish"),
+                    check_quality,
+                    resolution,
+                )
 
             if code != 0:
                 log_error(
@@ -184,59 +277,61 @@ class VideoProcessor:
                     action="File may be corrupted - re-extract or re-download",
                     location=video_file.parent,
                 )
-                if check_quality:
-                    return (False, False, None, resolution)
-                return False
+                return self._fail(
+                    VideoVerdict(False, "corrupt", "video_read_failed", f"ffmpeg exit code {code}"),
+                    check_quality,
+                    resolution,
+                )
 
-            # Check stderr for corruption indicators
-            if stderr:
-                error_keywords = [
-                    "Invalid data",
-                    "corrupt",
-                    "truncated",
-                    "incomplete",
-                    "Error while decoding",
-                    "moov atom not found",
-                    "Header missing",
-                    "Premature end",
-                ]
+            stderr_lower = (stderr or "").lower()
+            for keyword in CORRUPTION_INDICATORS:
+                if keyword in stderr_lower:
+                    log_error(
+                        what_failed=f"Video corruption detected: {video_file.name}",
+                        reason=f"Corruption indicator found: {keyword}",
+                        action="Re-extract archive or re-download file",
+                        location=video_file.parent,
+                        details=f"ffmpeg output: {(stderr or '')[:300]}",
+                    )
+                    category = (
+                        "truncated" if keyword in ("ended prematurely", "partial file", "truncated") else "corrupt"
+                    )
+                    return self._fail(
+                        VideoVerdict(False, category, f"video_{category}", f"ffmpeg reported '{keyword}'"),
+                        check_quality,
+                        resolution,
+                    )
 
-                stderr_lower = stderr.lower()
-                for keyword in error_keywords:
-                    if keyword.lower() in stderr_lower:
-                        log_error(
-                            what_failed=f"Video corruption detected: {video_file.name}",
-                            reason=f"Corruption indicator found: {keyword}",
-                            action="Re-extract archive or re-download file",
-                            location=video_file.parent,
-                            details=f"ffmpeg output: {stderr[:300]}",
-                        )
-                        if check_quality:
-                            return (False, False, None, resolution)
-                        return False
+            reached = parse_progress_seconds(stdout or "")
+            if (
+                reached is not None
+                and reached < duration_seconds * TRUNCATION_MIN_RATIO
+                and duration_seconds - reached > TRUNCATION_MIN_GAP_SECONDS
+            ):
+                detail = f"stream ends at {reached:.1f}s of a declared {duration_seconds:.1f}s"
+                log_error(
+                    what_failed=f"Video appears truncated: {video_file.name}",
+                    reason=detail,
+                    action="Re-extract archive or re-download file",
+                    location=video_file.parent,
+                )
+                return self._fail(
+                    VideoVerdict(False, "truncated", "video_truncated", detail), check_quality, resolution
+                )
 
-            # Video is healthy - now check quality if requested
+            is_low_quality = False
+            quality_reason: Optional[str] = None
             if check_quality:
-                is_low_quality = False
-                quality_reason: Optional[str] = None
-
-                # Check for low resolution (480p or less)
                 if resolution:
                     width, height = resolution
                     if height <= 480:
                         is_low_quality = True
                         quality_reason = f"Low resolution ({width}x{height})"
-
-                # Check for very low bitrate (< 1000 kb/s is poor for any video)
                 if not is_low_quality and bitrate_kbps and bitrate_kbps < 1000:
                     is_low_quality = True
                     quality_reason = f"Low bitrate ({bitrate_kbps:.0f} kb/s)"
-
-                # Check for low bitrate relative to resolution
                 if not is_low_quality and resolution and bitrate_kbps:
                     width, height = resolution
-                    # Expected bitrates: 720p ~2500kbps, 1080p ~5000kbps
-                    # Use conservative thresholds
                     if height >= 1080 and bitrate_kbps < 3000:
                         is_low_quality = True
                         quality_reason = f"Low bitrate for 1080p ({bitrate_kbps:.0f} kb/s)"
@@ -244,48 +339,33 @@ class VideoProcessor:
                         is_low_quality = True
                         quality_reason = f"Low bitrate for 720p ({bitrate_kbps:.0f} kb/s)"
 
-                quality_suffix = f" - {quality_reason}" if quality_reason else ""
-                logging.info(
-                    f"Video health check PASSED: {video_file.name} ({file_size_mb:.1f}MB, "
-                    f"{duration_seconds:.1f}s){quality_suffix}"
-                )
-
-                # Register validated video with ValidationCache to prevent accidental deletion
-                decision = ValidationDecision.FAIL_LOW_QUALITY if is_low_quality else ValidationDecision.PASS
-                ValidationCache.set(
-                    video_file,
-                    ValidationResult(
-                        path=video_file,
-                        decision=decision,
-                        timestamp=datetime.now(),
-                        metadata={"size_mb": file_size_mb, "duration_s": duration_seconds, "resolution": resolution},
-                    ),
-                )
-
-                return (True, is_low_quality, quality_reason, resolution)
-
+            quality_suffix = f" - {quality_reason}" if quality_reason else ""
             logging.info(
-                f"Video health check PASSED: {video_file.name} ({file_size_mb:.1f}MB, {duration_seconds:.1f}s)"
+                f"Video health check PASSED: {video_file.name} ({file_size_mb:.1f}MB, "
+                f"{duration_seconds:.1f}s){quality_suffix}"
             )
+            self.last_verdict = VideoVerdict(True, "healthy", "video_ok", f"{duration_seconds:.1f}s")
 
             # Register validated video with ValidationCache to prevent accidental deletion
+            metadata: dict = {"size_mb": file_size_mb, "duration_s": duration_seconds}
+            if check_quality:
+                metadata["resolution"] = resolution
+            decision = ValidationDecision.FAIL_LOW_QUALITY if is_low_quality else ValidationDecision.PASS
             ValidationCache.set(
                 video_file,
-                ValidationResult(
-                    path=video_file,
-                    decision=ValidationDecision.PASS,
-                    timestamp=datetime.now(),
-                    metadata={"size_mb": file_size_mb, "duration_s": duration_seconds},
-                ),
+                ValidationResult(path=video_file, decision=decision, timestamp=datetime.now(), metadata=metadata),
             )
 
+            if check_quality:
+                return (True, is_low_quality, quality_reason, resolution)
             return True
 
         except FileNotFoundError:
             logging.warning("FFMPEG is not installed. Skipping health check - ASSUMING VIDEO IS GOOD")
+            self.last_verdict = VideoVerdict(True, "unverified", "video_unverified_no_ffmpeg", "ffmpeg not found")
             if check_quality:
                 return (True, False, None, None)
-            return True  # Assume healthy if can't check
+            return True
         except Exception as e:
             log_error(
                 what_failed=f"Video health check failed: {video_file.name}",
@@ -293,9 +373,7 @@ class VideoProcessor:
                 action="Check if file is accessible and ffmpeg is working",
                 location=video_file.parent,
             )
-            if check_quality:
-                return (False, False, None, None)
-            return False
+            return self._fail(VideoVerdict(False, "corrupt", "video_check_error", str(e)[:200]), check_quality)
 
     def is_sample_file(self, video_file: Path, min_size_mb: int = 50) -> bool:
         """

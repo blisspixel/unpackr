@@ -4,9 +4,11 @@ Handles RAR extraction and PAR2 repair operations.
 """
 
 import logging
+import re
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from core.safety_invariants import InvariantEnforcer
 from utils.defensive import StateValidator
@@ -14,6 +16,154 @@ from utils.error_messages import log_error
 from utils.filesystem_policy import containment_violation
 from utils.safety import LoopSafety, ProcessTracker, SafetyLimits, SubprocessSafety
 from utils.system_check import SystemCheck
+
+_SPLIT_7Z = re.compile(r"^(?P<base>.+\.7z)\.(?P<num>\d{3})$", re.IGNORECASE)
+_RAR_PART = re.compile(r"^(?P<base>.+)\.part(?P<num>\d+)\.rar$", re.IGNORECASE)
+_RAR_OLD_VOLUME = re.compile(r"^(?P<base>.+)\.r(?P<num>\d{2})$", re.IGNORECASE)
+
+# Outcomes that leave the archive volumes in place so the user can fix and retry.
+HELD_STATUSES = ("held",)
+
+
+@dataclass
+class ArchiveSet:
+    """One logical archive: a single file or a numbered multi-volume set."""
+
+    name: str
+    kind: str
+    volumes: List[Path] = field(default_factory=list)
+    first: Optional[Path] = None
+    missing: List[str] = field(default_factory=list)
+
+
+@dataclass
+class ArchiveOutcome:
+    """What happened to one archive set during a run.
+
+    status is "extracted", "held" (kept for the user to fix and retry),
+    "blocked" (unsafe contents) or "failed" (damaged; treated as junk).
+    """
+
+    name: str
+    status: str
+    reason_code: str
+    detail: str
+    volumes: List[Path] = field(default_factory=list)
+
+
+def _volume_gaps(numbers: List[int], start: int) -> List[int]:
+    if not numbers:
+        return []
+    present = set(numbers)
+    return [n for n in range(start, max(numbers) + 1) if n not in present]
+
+
+def find_archive_sets(folder: Path) -> List[ArchiveSet]:
+    """Group the archive files in a folder into sets and report missing volumes.
+
+    Recognizes plain ``.7z`` and ``.rar`` files, split 7z sets (``.7z.001``),
+    RAR part sets (``.part01.rar``) and old-style RAR sets (``.rar`` + ``.r00``).
+    Missing volumes are reported for gaps in the numbering and for a missing
+    first volume; a missing final volume cannot be seen from names alone.
+    """
+    try:
+        files = sorted(f for f in folder.iterdir() if f.is_file())
+    except OSError:
+        return []
+
+    split_7z: Dict[str, Dict[int, Path]] = {}
+    rar_parts: Dict[str, Dict[int, Tuple[Path, int]]] = {}
+    old_rar_volumes: Dict[str, Dict[int, Path]] = {}
+    plain_rar: Dict[str, Path] = {}
+    sets: List[ArchiveSet] = []
+
+    for f in files:
+        name = f.name
+        lower = name.lower()
+        m = _SPLIT_7Z.match(name)
+        if m:
+            split_7z.setdefault(m.group("base"), {})[int(m.group("num"))] = f
+            continue
+        m = _RAR_PART.match(name)
+        if m:
+            rar_parts.setdefault(m.group("base"), {})[int(m.group("num"))] = (f, len(m.group("num")))
+            continue
+        m = _RAR_OLD_VOLUME.match(name)
+        if m:
+            old_rar_volumes.setdefault(m.group("base"), {})[int(m.group("num"))] = f
+            continue
+        if lower.endswith(".7z"):
+            sets.append(ArchiveSet(name=name, kind="7z", volumes=[f], first=f))
+        elif lower.endswith(".rar"):
+            plain_rar[name[:-4]] = f
+
+    for base, vols in split_7z.items():
+        nums = sorted(vols)
+        missing = [f"{base}.{n:03d}" for n in _volume_gaps(nums, 1)]
+        sets.append(
+            ArchiveSet(
+                name=base,
+                kind="7z-split",
+                volumes=[vols[n] for n in nums],
+                first=vols.get(1),
+                missing=missing,
+            )
+        )
+
+    for base, parts in rar_parts.items():
+        nums = sorted(parts)
+        width = parts[nums[0]][1]
+        missing = [f"{base}.part{n:0{width}d}.rar" for n in _volume_gaps(nums, 1)]
+        first = parts[1][0] if 1 in parts else None
+        sets.append(
+            ArchiveSet(
+                name=f"{base}.rar",
+                kind="rar-parts",
+                volumes=[parts[n][0] for n in nums],
+                first=first,
+                missing=missing,
+            )
+        )
+
+    for base, head in plain_rar.items():
+        vols = old_rar_volumes.pop(base, {})
+        nums = sorted(vols)
+        missing = [f"{base}.r{n:02d}" for n in _volume_gaps(nums, 0)]
+        sets.append(
+            ArchiveSet(
+                name=head.name,
+                kind="rar" if not vols else "rar-volumes",
+                volumes=[head] + [vols[n] for n in nums],
+                first=head,
+                missing=missing,
+            )
+        )
+
+    # .rNN volumes whose .rar head is missing
+    for base, vols in old_rar_volumes.items():
+        nums = sorted(vols)
+        missing = [f"{base}.rar"] + [f"{base}.r{n:02d}" for n in _volume_gaps(nums, 0)]
+        sets.append(
+            ArchiveSet(name=f"{base}.rar", kind="rar-volumes", volumes=[vols[n] for n in nums], missing=missing)
+        )
+
+    return sorted(sets, key=lambda s: s.name.lower())
+
+
+def classify_extract_failure(stdout: str, stderr: str, code: int, timeout: int) -> Tuple[str, str, str]:
+    """Map a failed 7z extraction to (status, reason_code, detail)."""
+    text = f"{stdout}\n{stderr}".lower()
+    if "timeout" in text:
+        return "held", "archive_timeout", f"Operation timed out after {timeout}s"
+    if "password" in text or "wrong password" in text:
+        return "held", "archive_password", "Archive is password-protected"
+    if any(k in text for k in ("missing volume", "unexpected end of archive", "unavailable data", "is not archive")):
+        return "held", "archive_incomplete", "Archive is incomplete (a volume is missing or cut short)"
+    if any(k in text for k in ("crc failed", "data error", "corrupt", "broken", "headers error")):
+        return "failed", "archive_corrupt", "Archive data is damaged (CRC or data error)"
+    if "cannot find" in text or "can not open" in text:
+        return "held", "archive_unreadable", "Archive file not accessible"
+    return "held", "archive_extract_failed", f"7z returned error code {code}"
 
 
 class ArchiveProcessor:
@@ -38,6 +188,14 @@ class ArchiveProcessor:
         self.enforcer = None
         if destination_root:
             self.enforcer = InvariantEnforcer(destination_root, config)
+        self.last_outcomes: List[ArchiveOutcome] = []
+        self._last_path_check = "archive_unsafe_paths"
+
+    @staticmethod
+    def describe_missing(missing: List[str], limit: int = 3) -> str:
+        shown = ", ".join(missing[:limit])
+        more = len(missing) - limit
+        return f"{shown} and {more} more" if more > 0 else shown
 
     def process_rar_files(
         self,
@@ -54,171 +212,41 @@ class ArchiveProcessor:
         Returns:
             True if processing completed successfully, False otherwise
         """
+        self.last_outcomes = []
         try:
-            # Find RAR files - only process .part001.rar or .rar (not .part002+)
-            all_rar_files = list(folder.glob("*.rar"))
-            rar_files = []
-            for rar in all_rar_files:
-                name_lower = rar.name.lower()
-                # Skip .part002 and higher - only extract .part001 or non-part RARs
-                if ".part" in name_lower:
-                    if ".part001." in name_lower or ".part01." in name_lower or ".part1." in name_lower:
-                        rar_files.append(rar)
-                else:
-                    rar_files.append(rar)
-
-            # Find 7z files - only .7z or .7z.001 (7z auto-handles .7z.002+)
-            sevenz_files = list(folder.glob("*.7z")) + list(folder.glob("*.7z.001"))
-
-            # Check for incomplete 7z archives starting at higher part numbers (e.g., .7z.100)
-            # These indicate an incomplete download and should be warned about
-            all_7z_parts = list(folder.glob("*.7z.*"))
-            for file in all_7z_parts:
-                filename_lower = file.name.lower()
-                # Look for pattern like .7z.XXX where XXX > 1
-                if ".7z." in filename_lower:
-                    parts = filename_lower.split(".7z.")
-                    if len(parts) == 2 and parts[1].isdigit():
-                        part_num = int(parts[1])
-                        if part_num > 1 and not any(
-                            ".7z.001" in f.name.lower() or f.name.lower().endswith(".7z") for f in all_7z_parts
-                        ):
-                            logging.warning(
-                                f"Incomplete 7z archive detected in {folder}: {file.name} (missing parts 1-{part_num - 1})"
-                            )
-                            break  # Only warn once per folder
-
-            archive_files = rar_files + sevenz_files
-
-            if not archive_files:
+            archive_sets = find_archive_sets(folder)
+            if not archive_sets:
                 return True  # No archive files to process
 
-            # Safety: limit number of archive files
+            # Safety: limit number of archive sets
             loop_limit = getattr(self.config, "archive_extraction_loop_limit", 100)
             loop_guard = LoopSafety(loop_limit, "Archive extraction loop")
             success_count = 0
-            total_count = len(archive_files)
+            total_count = len(archive_sets)
 
-            for idx, archive_file in enumerate(archive_files, 1):
-                # Show progress during extraction
+            for idx, archive_set in enumerate(archive_sets, 1):
                 if progress_callback:
-                    progress_callback(idx, total_count, f"Extracting: {archive_file.name[:50]}")
+                    progress_callback(idx, total_count, f"Extracting: {archive_set.name[:50]}")
 
                 if not loop_guard.tick():
-                    logging.error(f"RAR extraction loop safety triggered in {folder}")
+                    logging.error(f"Archive extraction loop safety triggered in {folder}")
                     break
 
-                try:
-                    # Get 7z command from config
-                    sevenzip_cmd = self.system_check.get_tool_command("7z")
-                    if not sevenzip_cmd:
-                        logging.error("7-Zip executable unavailable or configured with an unsafe relative path")
-                        continue
+                outcome = self._process_archive_set(archive_set, folder)
+                self.last_outcomes.append(outcome)
+                if outcome.status == "extracted":
+                    success_count += 1
+                    # Only a set that extracted cleanly is removed; anything else stays for review.
+                    self._delete_volumes(outcome.volumes)
 
-                    # Log start time for this archive
-                    start_time = time.time()
-
-                    # Get file size before extraction (for logging, disk space check, and timeout calculation)
-                    try:
-                        file_size_bytes = archive_file.stat().st_size
-                        file_size_mb = file_size_bytes / (1024 * 1024)
-                    except OSError:
-                        file_size_bytes = 0
-                        file_size_mb = 0
-
-                    # Check disk space before extraction (archives typically expand 1.5-3x)
-                    # Use 3x multiplier as conservative estimate for extraction space needed
-                    required_space_mb = int(file_size_mb * 3)
-                    if not StateValidator.check_disk_space(folder, required_mb=required_space_mb):
-                        import shutil
-
-                        available = shutil.disk_usage(folder).free / (1024 * 1024)
-                        log_error(
-                            what_failed=f"Cannot extract {archive_file.name}",
-                            reason=f"Disk full (need {required_space_mb}MB, have {int(available)}MB)",
-                            action="Free up space or skip this file",
-                            location=folder,
-                        )
-                        continue  # Skip this archive
-
-                    # SECURITY: Check archive contents for path traversal before extraction
-                    if not self._validate_archive_paths(archive_file, folder, sevenzip_cmd):
-                        log_error(
-                            what_failed=f"SECURITY: Blocked {archive_file.name}",
-                            reason="Archive contains unsafe paths (path traversal attempt)",
-                            action="Do not extract this archive - it may be malicious",
-                            location=archive_file.parent,
-                        )
-                        continue  # Skip this malicious archive
-
-                    # PERFORMANCE: Calculate dynamic timeout based on file size (handles 50GB+ archives)
-                    extraction_timeout = SafetyLimits.calculate_rar_timeout(file_size_bytes)
-                    if extraction_timeout > SafetyLimits.RAR_EXTRACTION_TIMEOUT:
-                        logging.info(
-                            f"Using extended timeout {extraction_timeout}s for large archive ({file_size_mb:.1f}MB)"
-                        )
-
-                    # Use safe subprocess with dynamic timeout
-                    success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
-                        sevenzip_cmd + ["x", str(archive_file), f"-o{folder}", "-aoa"],
-                        timeout=extraction_timeout,
-                        cwd=folder,
-                        operation=f"Archive extraction: {archive_file.name}",
-                        use_temp_files=True,
-                        process_tracker=self.process_tracker,
-                    )
-
-                    elapsed = time.time() - start_time
-
-                    if success:
-                        success_count += 1
-                        speed_mbps = file_size_mb / elapsed if elapsed > 0 else 0
-                        logging.info(
-                            f"Extracted {archive_file.name} ({file_size_mb:.1f}MB in {elapsed:.1f}s, {speed_mbps:.1f}MB/s)"
-                        )
-                    else:
-                        # Determine reason from stderr
-                        reason = "Unknown error"
-                        if "timeout" in stderr.lower() or "timeout" in stdout.lower():
-                            reason = f"Operation timed out after {extraction_timeout}s"
-                        elif "password" in stderr.lower():
-                            reason = "Archive is password-protected"
-                        elif "corrupt" in stderr.lower() or "broken" in stderr.lower():
-                            reason = "Archive is corrupted or incomplete"
-                        elif "cannot find" in stderr.lower():
-                            reason = "Archive file not accessible"
-                        else:
-                            reason = f"7z returned error code {code}"
-
-                        log_error(
-                            what_failed=f"Failed to extract {archive_file.name}",
-                            reason=reason,
-                            action="Check if archive is complete, not password-protected, and not corrupted",
-                            location=archive_file.parent,
-                            details=stderr[:300] if stderr else None,
-                        )
-
-                except Exception as e:
-                    log_error(
-                        what_failed=f"Unexpected error extracting {archive_file.name}",
-                        reason=str(e),
-                        action="Check archive file is accessible and not locked by another process",
-                        location=archive_file.parent,
-                    )
-
-            # Delete RAR files after extraction attempt
-            self._delete_archive_files(folder)
-
-            # Return True only if at least one archive extracted successfully
             if success_count == 0:
                 logging.warning(f"All {total_count} archive extractions failed in {folder}")
                 return False
-            elif success_count < total_count:
+            if success_count < total_count:
                 logging.warning(f"Partial extraction: {success_count}/{total_count} archives succeeded in {folder}")
                 return True
-            else:
-                logging.info(f"All {total_count} archives extracted successfully in {folder}")
-                return True
+            logging.info(f"All {total_count} archives extracted successfully in {folder}")
+            return True
 
         except Exception as e:
             log_error(
@@ -228,6 +256,116 @@ class ArchiveProcessor:
                 location=folder,
             )
             return False
+
+    def _process_archive_set(self, archive_set: ArchiveSet, folder: Path) -> ArchiveOutcome:
+        """Extract one archive set and report what happened to it."""
+
+        def outcome(status: str, code: str, detail: str) -> ArchiveOutcome:
+            return ArchiveOutcome(archive_set.name, status, code, detail, list(archive_set.volumes))
+
+        if archive_set.missing or archive_set.first is None:
+            missing = self.describe_missing(archive_set.missing)
+            if archive_set.kind == "7z-split":
+                logging.warning(f"Incomplete 7z archive detected in {folder}: {archive_set.name} (missing {missing})")
+            log_error(
+                what_failed=f"Incomplete archive set: {archive_set.name}",
+                reason=f"Missing volume(s): {missing}",
+                action="Download the missing volume(s) and run again; the other volumes were kept",
+                location=folder,
+            )
+            return outcome("held", "archive_volume_missing", f"missing {missing}")
+
+        archive_file = archive_set.first
+        try:
+            sevenzip_cmd = self.system_check.get_tool_command("7z")
+            if not sevenzip_cmd:
+                logging.error("7-Zip executable unavailable or configured with an unsafe relative path")
+                return outcome("held", "tool_missing", "7-Zip unavailable")
+
+            start_time = time.time()
+            try:
+                file_size_bytes = sum(v.stat().st_size for v in archive_set.volumes)
+            except OSError:
+                file_size_bytes = 0
+            file_size_mb = file_size_bytes / (1024 * 1024)
+
+            # Check disk space before extraction (archives typically expand 1.5-3x)
+            required_space_mb = int(file_size_mb * 3)
+            if not StateValidator.check_disk_space(folder, required_mb=required_space_mb):
+                import shutil
+
+                available = shutil.disk_usage(folder).free / (1024 * 1024)
+                log_error(
+                    what_failed=f"Cannot extract {archive_file.name}",
+                    reason=f"Disk full (need {required_space_mb}MB, have {int(available)}MB)",
+                    action="Free up space or skip this file",
+                    location=folder,
+                )
+                return outcome("held", "disk_space_low", f"need {required_space_mb}MB")
+
+            # SECURITY: Check archive contents for path traversal before extraction
+            self._last_path_check = "archive_unsafe_paths"
+            if not self._validate_archive_paths(archive_file, folder, sevenzip_cmd):
+                if self._last_path_check == "archive_unlistable":
+                    log_error(
+                        what_failed=f"Could not read {archive_file.name}",
+                        reason="7-Zip could not list the archive (a volume is missing, it is damaged, or it is password-protected)",
+                        action="Check the download is complete; the volumes were kept",
+                        location=archive_file.parent,
+                    )
+                    return outcome("held", "archive_unlistable", "7-Zip could not list the archive")
+                log_error(
+                    what_failed=f"SECURITY: Blocked {archive_file.name}",
+                    reason="Archive contains unsafe paths (path traversal attempt)",
+                    action="Do not extract this archive - it may be malicious",
+                    location=archive_file.parent,
+                )
+                return outcome("blocked", "archive_unsafe_paths", "entries would extract outside the folder")
+
+            extraction_timeout = SafetyLimits.calculate_rar_timeout(file_size_bytes)
+            if extraction_timeout > SafetyLimits.RAR_EXTRACTION_TIMEOUT:
+                logging.info(f"Using extended timeout {extraction_timeout}s for large archive ({file_size_mb:.1f}MB)")
+
+            success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
+                sevenzip_cmd + ["x", str(archive_file), f"-o{folder}", "-aoa"],
+                timeout=extraction_timeout,
+                cwd=folder,
+                operation=f"Archive extraction: {archive_file.name}",
+                use_temp_files=True,
+                process_tracker=self.process_tracker,
+            )
+            elapsed = time.time() - start_time
+
+            if success:
+                speed_mbps = file_size_mb / elapsed if elapsed > 0 else 0
+                logging.info(
+                    f"Extracted {archive_file.name} ({file_size_mb:.1f}MB in {elapsed:.1f}s, {speed_mbps:.1f}MB/s)"
+                )
+                return outcome("extracted", "archive_extracted", f"{file_size_mb:.1f}MB in {elapsed:.1f}s")
+
+            status, reason_code, reason = classify_extract_failure(stdout or "", stderr or "", code, extraction_timeout)
+            log_error(
+                what_failed=f"Failed to extract {archive_file.name}",
+                reason=reason,
+                action="Check if archive is complete, not password-protected, and not corrupted",
+                location=archive_file.parent,
+                details=stderr[:300] if stderr else None,
+            )
+            return outcome(status, reason_code, reason)
+
+        except Exception as e:
+            log_error(
+                what_failed=f"Unexpected error extracting {archive_file.name}",
+                reason=str(e),
+                action="Check archive file is accessible and not locked by another process",
+                location=archive_file.parent,
+            )
+            return outcome("held", "archive_extract_error", str(e)[:200])
+
+    def _delete_volumes(self, volumes: List[Path]) -> None:
+        """Delete the volumes of one successfully extracted set."""
+        for volume in volumes:
+            self._delete_path(volume)
 
     def process_par2_files(self, folder: Path) -> bool:
         """
@@ -379,36 +517,40 @@ class ArchiveProcessor:
             extension: File extension to delete (e.g., '.rar')
         """
         for file in folder.glob("*" + extension):
-            # Safety check: enforce invariants before deletion if enforcer is configured
-            if self.enforcer:
-                try:
-                    # For archives, pass extraction_verified=True since we only call this after successful extraction
-                    self.enforcer.enforce_delete(file, extraction_verified=True)
-                except Exception as e:
-                    logging.error(f"Safety check prevented deletion of {file}: {e}")
-                    continue  # Skip this file
+            self._delete_path(file)
 
-            # Try deleting with retries for locked files
-            for attempt in range(3):
-                try:
-                    file.unlink()
-                    logging.info(f"Deleted file: {file}")
-                    break  # Success
-                except PermissionError:
-                    if attempt < 2:
-                        # File is locked, wait and retry
-                        logging.warning(f"File locked (attempt {attempt + 1}/3): {file}")
-                        time.sleep(1)
-                    else:
-                        # Final attempt failed - try forcing via unlink with missing_ok
-                        try:
-                            file.unlink(missing_ok=True)
-                            logging.info(f"Force deleted file: {file}")
-                        except Exception as e2:
-                            logging.error(f"Failed to delete locked file {file} after 3 attempts: {e2}")
-                except Exception as e:
-                    logging.error(f"Failed to delete file {file}: {e}")
-                    break
+    def _delete_path(self, file: Path) -> None:
+        """Delete one archive-related file with invariant checks and lock retries."""
+        # Safety check: enforce invariants before deletion if enforcer is configured
+        if self.enforcer:
+            try:
+                # Callers only delete volumes of a set that extracted, or of a set PAR2 could not repair.
+                self.enforcer.enforce_delete(file, extraction_verified=True)
+            except Exception as e:
+                logging.error(f"Safety check prevented deletion of {file}: {e}")
+                return
+
+        # Try deleting with retries for locked files
+        for attempt in range(3):
+            try:
+                file.unlink()
+                logging.info(f"Deleted file: {file}")
+                break  # Success
+            except PermissionError:
+                if attempt < 2:
+                    # File is locked, wait and retry
+                    logging.warning(f"File locked (attempt {attempt + 1}/3): {file}")
+                    time.sleep(1)
+                else:
+                    # Final attempt failed - try forcing via unlink with missing_ok
+                    try:
+                        file.unlink(missing_ok=True)
+                        logging.info(f"Force deleted file: {file}")
+                    except Exception as e2:
+                        logging.error(f"Failed to delete locked file {file} after 3 attempts: {e2}")
+            except Exception as e:
+                logging.error(f"Failed to delete file {file}: {e}")
+                break
 
     def _validate_archive_paths(self, archive_file: Path, target_folder: Path, sevenzip_cmd: list) -> bool:
         """
@@ -470,7 +612,8 @@ class ArchiveProcessor:
                 return False
 
             if not success or code != 0:
-                logging.warning(f"Could not list archive contents for {archive_file.name} - assuming unsafe")
+                logging.warning(f"Could not list archive contents for {archive_file.name} - not extracting")
+                self._last_path_check = "archive_unlistable"
                 return False
 
             # Every line in the full (untruncated) listing passed validation.
@@ -478,4 +621,5 @@ class ArchiveProcessor:
 
         except Exception as e:
             logging.error(f"Error validating archive paths for {archive_file.name}: {e}")
+            self._last_path_check = "archive_unlistable"
             return False  # Fail closed on errors

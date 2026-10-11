@@ -166,13 +166,26 @@ class TestArchivePartSelectionMatrix:
     def test_7z_only_base_and_001(self, processor, tmp_path):
         folder = tmp_path / "7zset"
         folder.mkdir()
-        for name in ("pack.7z", "split.7z.001", "split.7z.002", "split.7z.100"):
+        for name in ("pack.7z", "split.7z.001", "split.7z.002", "split.7z.003"):
             (folder / name).write_bytes(b"x")
 
         extracted = set(self._extracted_names(processor, folder))
         assert extracted == {"pack.7z", "split.7z.001"}
         assert "split.7z.002" not in extracted
-        assert "split.7z.100" not in extracted
+        assert "split.7z.003" not in extracted
+
+    def test_7z_set_with_gap_is_held_not_extracted(self, processor, tmp_path):
+        folder = tmp_path / "gapset"
+        folder.mkdir()
+        for name in ("split.7z.001", "split.7z.002", "split.7z.100"):
+            (folder / name).write_bytes(b"x")
+
+        extracted = set(self._extracted_names(processor, folder))
+        assert extracted == set()
+        [outcome] = processor.last_outcomes
+        assert outcome.status == "held"
+        assert outcome.reason_code == "archive_volume_missing"
+        assert "split.7z.003" in outcome.detail
 
 
 # ---------------------------------------------------------------------------

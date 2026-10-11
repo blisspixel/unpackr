@@ -137,6 +137,9 @@ def test_main_cleanup_warning_and_vhealth_exception(monkeypatch, tmp_path):
             self.cleanup_calls = 0
             self.stats = types.SimpleNamespace(get_snapshot=lambda: {})
 
+        def finish_issues(self):
+            return [], []
+
         def _stop_spinner_thread(self):
             pass
 

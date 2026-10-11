@@ -1,6 +1,7 @@
 import types
 
 import unpackr
+from conftest import bind_app_helpers
 
 
 class _DryRunPlan:
@@ -62,6 +63,8 @@ def test_process_folder_dry_run_full_path(tmp_path):
         video_processor=types.SimpleNamespace(check_video_health=lambda *_: True),
     )
 
+    bind_app_helpers(app)
+
     moved = unpackr.UnpackrApp.process_folder(app, folder, destination, 1, 1)
     assert moved == 1
     assert app.stats["videos_moved"] == 1
@@ -120,6 +123,8 @@ def test_process_folder_live_path_with_corrupt_and_failed_delete(tmp_path):
         failed_deletions=[],
         video_processor=types.SimpleNamespace(check_video_health=check_video),
     )
+
+    bind_app_helpers(app)
 
     moved = unpackr.UnpackrApp.process_folder(app, folder, destination, 1, 1)
     assert moved == 1
