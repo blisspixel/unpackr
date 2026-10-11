@@ -114,6 +114,20 @@ Source and destination must be provided together. Incomplete or conflicting path
 
 If the installed launcher is unavailable, run the same command as `python -m unpackr ...` from the repository checkout, then reinstall with `python -m pip install .`.
 
+## Running Unattended
+
+On Linux with a systemd user session (most desktops, including Omarchy and other Hyprland setups), Unpackr can keep a downloads folder clean on its own:
+
+```bash
+unpackr service install --source "~/Downloads" --destination "~/Videos" --every 15m --on-change
+unpackr service status
+unpackr service uninstall --source "~/Downloads"
+```
+
+`install` shows the units it will write to `~/.config/systemd/user/` and enables them only after you confirm (`--yes` skips the prompt). The timer runs every `--every`; `--on-change` also runs when the top level of the source folder changes. `uninstall` disables the units and removes every file `install` wrote. Logs: `journalctl --user -u unpackr-<id>.service`, plus the usual log files under `~/.local/state/unpackr/logs`. A desktop notification (`notify-send`) is shown when a run moved something or needs attention; pass `--no-notify` to turn it off.
+
+For cron, launchd or Task Scheduler, run `unpackr --unattended --source ... --destination ...` yourself. `--unattended` turns off animation, the countdown and prompts and prints one line per folder. It also takes a lock so overlapping runs on the same source exit cleanly, and skips any download changed in the last `settle_minutes` (default 2) so a later run picks it up once it is complete. Add `--notify` for the desktop notification.
+
 ## Safety
 
 Unpackr is intended to clean messy download folders and produce clean, validated video outputs.

@@ -28,7 +28,7 @@ unpackr --source "~/Downloads" --destination "~/Videos" --dry-run --json
 When `--json` is set, Unpackr prints a single JSON object to stdout after the run (human progress remains on the terminal). The object includes:
 
 - `timestamp_utc`, `tool`, `version`
-- `exit_code`, `status` (`completed` \| `completed_with_errors` \| `cancelled` \| `failed` \| `planned`)
+- `exit_code`, `status` (`completed` \| `completed_with_errors` \| `cancelled` \| `failed` \| `planned` \| `skipped`). `skipped` (exit `0`) means an `--unattended` run found another run already working on the source; without `--unattended` the same situation is `failed` (exit `1`) with `run_locked`.
 - `dry_run`, `cancelled`
 - `paths.source`, `paths.destination`
 - `counts.*` processing counters
@@ -51,6 +51,8 @@ Entries in `errors` and `warnings` start with a reason code in brackets, then `f
 | `security_rename_script`, `security_known_marker` | warning | Removed, but the release continues |
 | `download_in_progress` | warning | Release still downloading; skipped this run |
 | `disc_structure_kept` | warning | `VIDEO_TS`/`BDMV` release kept whole |
+| `folder_still_growing` | warning | Unattended run: the download changed within `settle_minutes`; skipped this run |
+| `run_locked` | warning or error | Another run holds `<source>/.unpackr-lock` |
 | `layout_unparsed` | warning | Name did not fit `output_layout`; moved with the flat layout |
 | `renamed_deobfuscated` | item | Obfuscated video name replaced with the release name |
 | `subtitle_moved` | item | Subtitle moved next to its video |
@@ -128,3 +130,13 @@ vhealth "~/Videos" --min-resolution 720p
 ## Versioning
 
 Package version is defined in `version.py` and shown by `vhealth --version` and in unpackr JSON `version`.
+
+## `unpackr service`
+
+| Command | `0` | `1` | `2` |
+|---|---|---|---|
+| `service install` | Units written and enabled | Not confirmed, or `systemctl` failed (files are reported) | No systemd user session or not Linux |
+| `service status` | Shown (also with nothing installed) | Several services and no `--source`/`--name` | |
+| `service uninstall` | Removed (each file is listed) | Nothing matched, or ambiguous | |
+
+The service unit treats exit `3` (completed with items needing attention) as success, so `systemctl --user status` does not show a failed unit for a run that reported problems; they are in the notification, the journal and the log.
