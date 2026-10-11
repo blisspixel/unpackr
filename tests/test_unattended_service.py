@@ -120,7 +120,8 @@ class TestUnits:
         plan = svc.build_plan(src, dst, every="30m", config=tmp_path / "100%.json")
         service = plan.units[f"{plan.name}.service"]
         assert "Type=oneshot" in service and "SuccessExitStatus=3" in service
-        assert f'--source "{src}"' in service  # spaces quoted for systemd
+        assert f"--source {svc._quote(str(src))}" in service
+        assert svc._quote("/a b/c") == '"/a b/c"'  # spaces quoted for systemd
         assert "100%%.json" in service  # % escaped
         assert service.rstrip().splitlines()[-4].endswith("--notify") or "--notify" in service
         timer = plan.units[f"{plan.name}.timer"]

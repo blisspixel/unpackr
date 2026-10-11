@@ -17,6 +17,8 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 from core.remover import is_internal
 
 LOCK_NAME = ".unpackr-lock"
+# Windows byte-range locks block reads of the locked bytes; lock one far past the PID text.
+_WIN_LOCK_OFFSET = 1 << 20
 
 
 class RunLock:
@@ -36,7 +38,7 @@ class RunLock:
             if sys.platform == "win32":
                 import msvcrt
 
-                handle.seek(0)
+                handle.seek(_WIN_LOCK_OFFSET)
                 msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
             else:
                 import fcntl
@@ -60,7 +62,7 @@ class RunLock:
             if sys.platform == "win32":
                 import msvcrt
 
-                handle.seek(0)
+                handle.seek(_WIN_LOCK_OFFSET)
                 msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
             else:
                 import fcntl
