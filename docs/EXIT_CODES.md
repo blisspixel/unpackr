@@ -51,6 +51,9 @@ Entries in `errors` and `warnings` start with a reason code in brackets, then `f
 | `security_rename_script`, `security_known_marker` | warning | Removed, but the release continues |
 | `download_in_progress` | warning | Release still downloading; skipped this run |
 | `disc_structure_kept` | warning | `VIDEO_TS`/`BDMV` release kept whole |
+| `layout_unparsed` | warning | Name did not fit `output_layout`; moved with the flat layout |
+| `renamed_deobfuscated` | item | Obfuscated video name replaced with the release name |
+| `subtitle_moved` | item | Subtitle moved next to its video |
 | `video_move_failed` | warning | A valid video could not be moved |
 | `no_videos_kept` | warning | Videos were found but every one was removed as a preview, sample or damaged file |
 

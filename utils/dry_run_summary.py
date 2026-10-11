@@ -22,6 +22,7 @@ class DryRunPlan:
     videos_to_move: List[Tuple[Path, int, str]] = field(default_factory=list)  # (video_path, size_bytes, resolution)
     videos_to_skip: List[Tuple[Path, str]] = field(default_factory=list)  # (video_path, reason)
     videos_to_delete: List[Tuple[Path, str]] = field(default_factory=list)  # (sample_path, reason)
+    video_destinations: Dict[str, str] = field(default_factory=dict)  # str(video) -> relative destination
 
     # Cleanup operations
     junk_files: List[Path] = field(default_factory=list)
@@ -39,9 +40,11 @@ class DryRunPlan:
         """Record skipped archive."""
         self.archives_to_skip.append((archive, reason))
 
-    def add_video_move(self, video: Path, size_bytes: int, resolution: str = "unknown"):
-        """Record video move."""
+    def add_video_move(self, video: Path, size_bytes: int, resolution: str = "unknown", destination: str = ""):
+        """Record video move (destination: final path relative to the destination folder)."""
         self.videos_to_move.append((video, size_bytes, resolution))
+        if destination:
+            self.video_destinations[str(video)] = destination
 
     def add_video_skip(self, video: Path, reason: str):
         """Record skipped video."""
@@ -112,6 +115,8 @@ class DryRunPlan:
             for video, size, resolution in self.videos_to_move:
                 res_str = f", {resolution}" if resolution != "unknown" else ""
                 print(f"  Move: {video.name} ({self.format_size(size)}{res_str}, validated during the live run)")
+                if str(video) in self.video_destinations:
+                    print(f"        -> {self.video_destinations[str(video)]}")
 
             if self.videos_to_delete:
                 print(f"\n  DELETE SAMPLES ({len(self.videos_to_delete)}):")

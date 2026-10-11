@@ -33,6 +33,7 @@ from core.junk_rules import (
     has_disc_structure,
     is_incomplete_marker,
 )
+from core.naming import DEFAULT_LAYOUT, SUBTITLE_EXTENSIONS, pick_base_name, render_layout, subtitle_suffix
 from core.remover import Remover, is_internal, new_run_id, purge_quarantine
 from core.run_report import ReportItem, RunReport
 from core.video_processor import VideoProcessor
@@ -355,6 +356,7 @@ class UnpackrApp:
         # Problems a person should look at; errors make a live run exit non-zero.
         self.run_errors: List[str] = []
         self.run_warnings: List[str] = []
+        self.last_renamed_from: Optional[str] = None
         # Per-file decisions for --json items and --report.
         self.report = RunReport()
         self.file_handler.report = self.report
@@ -923,6 +925,67 @@ class UnpackrApp:
             remaining = [v for v in videos if v not in samples]
             self.release_samples.update(decide_duplicate_encodes(remaining, sizes))
 
+    def _release_name(self, video_file: Path) -> Optional[str]:
+        """Name of the top-level release folder holding a video (None for loose videos)."""
+        root = getattr(self, "source_root", None)
+        if root is None:
+            return video_file.parent.name or None
+        try:
+            parts = video_file.relative_to(root).parts
+        except ValueError:
+            return None
+        return parts[0] if len(parts) > 1 else None
+
+    def _plan_destination(self, video_file: Path, destination_dir: Path) -> Tuple[Path, str]:
+        """(target folder, file name) for a video according to output_layout and deobfuscation."""
+        config = getattr(self, "config", None)
+        get = getattr(config, "get", lambda *_a: None)
+        layout = get("output_layout", DEFAULT_LAYOUT) or DEFAULT_LAYOUT
+        deobfuscate = get("deobfuscate_names", True) is not False
+        release = self._release_name(video_file)
+        self.last_renamed_from = release if pick_base_name(video_file, release, deobfuscate)[1] else None
+        rel = render_layout(layout, video_file, release, deobfuscate)
+        if rel is None:
+            self._note(
+                "warning",
+                video_file.parent,
+                video_file.name,
+                "layout_unparsed",
+                f"name does not fit output_layout {layout!r}; used the flat layout",
+            )
+            rel = render_layout(DEFAULT_LAYOUT, video_file, release, deobfuscate) or Path(video_file.name)
+        return destination_dir / rel.parent, rel.name
+
+    def _move_subtitles(self, video_file: Path, final_path: Path) -> None:
+        """Move subtitles that belong to a video next to its new location with a matching name."""
+        config = getattr(self, "config", None)
+        if getattr(config, "get", lambda *_a: True)("keep_subtitles", True) is False:
+            return
+        root = getattr(self, "source_root", None)
+        release = self._release_name(video_file)
+        scope = (root / release) if (root is not None and release) else video_file.parent
+        files = [f for f in self._release_files(scope) if f.exists()]
+        video_exts = set(getattr(config, "video_extensions", []) or [])
+        single_video = sum(1 for f in files if f.suffix.lower() in video_exts) <= 1
+        for subtitle in files:
+            if subtitle.suffix.lower() not in SUBTITLE_EXTENSIONS:
+                continue
+            suffix = subtitle_suffix(subtitle, video_file)
+            if suffix is None:
+                continue
+            if subtitle.parent.name.lower() in ("subs", "subtitles", "sub") and not single_video:
+                continue  # a shared Subs folder in a season pack cannot be matched safely
+            target = final_path.with_name(f"{final_path.stem}{suffix}{subtitle.suffix.lower()}")
+            if self.dry_run:
+                self._record(subtitle, "moved", "subtitle_moved", destination=target)
+                continue
+            counter = 1
+            while target.exists():
+                target = final_path.with_name(f"{final_path.stem}{suffix}.{counter}{subtitle.suffix.lower()}")
+                counter += 1
+            if self.file_handler.move_file(subtitle, target.parent, target_name=target.name):
+                self._record(subtitle, "moved", "subtitle_moved", destination=target)
+
     def _handle_video(self, video_file: Path, destination_dir: Path) -> bool:
         """Validate one video, then move it to the destination or remove it.
 
@@ -960,34 +1023,55 @@ class UnpackrApp:
                 self._record(video_file, "deleted", preview.reason_code, preview.detail, size=size_bytes)
                 logging.info(f"[DRY-RUN] Would remove preview/sample video: {video_file.name} ({preview.detail})")
                 return False
+            target_dir, target_name = self._plan_destination(video_file, destination_dir)
+            planned = target_dir / target_name
             if self.dry_run_plan:
-                self.dry_run_plan.add_video_move(video_file, size_bytes, "unknown")
+                try:
+                    shown = str(planned.relative_to(destination_dir))
+                except ValueError:
+                    shown = str(planned)
+                self.dry_run_plan.add_video_move(video_file, size_bytes, "unknown", destination=shown)
+            renamed_from = getattr(self, "last_renamed_from", None)
             self._record(
                 video_file,
                 "moved",
-                "video_pending_validation",
-                "validated during the live run",
-                destination=destination_dir / video_file.name,
+                "renamed_deobfuscated" if renamed_from else "video_pending_validation",
+                "validated during the live run"
+                + (f"; obfuscated name replaced with release name {renamed_from}" if renamed_from else ""),
+                destination=planned,
                 size=size_bytes,
             )
+            self._move_subtitles(video_file, planned)
             logging.info(f"[DRY-RUN] Would validate and move {video_file.name} to {destination_dir}")
             self.stats["videos_moved"] += 1
             return True
 
         if self.video_processor.check_video_health(video_file):
             self.stats["videos_healthy"] += 1
-            if self.file_handler.move_file(video_file, destination_dir):
+            target_dir, target_name = self._plan_destination(video_file, destination_dir)
+            try:
+                target_dir.mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                logging.error(f"Cannot create {target_dir}: {e}")
+                target_dir, target_name = destination_dir, video_file.name
+            if self.file_handler.move_file(video_file, target_dir, target_name=target_name):
                 self.stats["videos_moved"] += 1
                 logging.info(f"MOVED: {video_file.name} ({size_bytes / (1024 * 1024):.1f}MB) -> {destination_dir}")
                 verdict = getattr(self.video_processor, "last_verdict", None)
+                renamed_from = getattr(self, "last_renamed_from", None)
                 self._record(
                     video_file,
                     "moved",
-                    verdict.reason_code if verdict else "video_ok",
-                    verdict.detail if verdict else "",
-                    destination=getattr(self.file_handler, "last_moved_to", None) or destination_dir / video_file.name,
+                    "renamed_deobfuscated" if renamed_from else (verdict.reason_code if verdict else "video_ok"),
+                    f"obfuscated name replaced with release name {renamed_from}"
+                    if renamed_from
+                    else (verdict.detail if verdict else ""),
+                    destination=getattr(self.file_handler, "last_moved_to", None) or target_dir / target_name,
                     size=size_bytes,
                 )
+                final_path = getattr(self.file_handler, "last_moved_to", None) or target_dir / target_name
+                if isinstance(final_path, Path):
+                    self._move_subtitles(video_file, final_path)
                 return True
             self._note(
                 "warning", video_file.parent, video_file.name, "video_move_failed", "could not move to destination"

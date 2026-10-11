@@ -764,7 +764,7 @@ class FileHandler:
         except Exception as e:
             logging.warning(f"Error killing processes for {folder}: {e}")
 
-    def move_file(self, source: Path, destination_dir: Path) -> bool:
+    def move_file(self, source: Path, destination_dir: Path, target_name: Optional[str] = None) -> bool:
         """
         Move a file to the destination directory.
 
@@ -828,7 +828,7 @@ class FileHandler:
         # Perform move with defensive error recovery
         try:
             # Sanitize filename before moving
-            sanitized_name = self.sanitize_filename(source.name)
+            sanitized_name = self.sanitize_filename(target_name or source.name)
             destination_file = destination_dir / sanitized_name
 
             # Safety check: enforce invariants before moving if enforcer is configured

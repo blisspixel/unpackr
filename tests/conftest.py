@@ -80,6 +80,9 @@ def bind_app_helpers(app):
         "_screen_release",
         "_decide_release_samples",
         "_longer_than_sample_cap",
+        "_release_name",
+        "_plan_destination",
+        "_move_subtitles",
     ):
         if not hasattr(app, name):
             setattr(app, name, types.MethodType(getattr(unpackr.UnpackrApp, name), app))

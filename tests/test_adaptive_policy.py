@@ -75,12 +75,15 @@ class TestEnvironmentProfiler:
         profiler = EnvironmentProfiler(cache_file=cache_file)
         profile1 = profiler.get_profile()
 
-        # Force refresh should profile again
+        # Force refresh should profile again rather than return the cached object.
+        # The disk benchmark itself is timing based, so its classification is not
+        # compared between runs (it can differ on a loaded machine).
         profile2 = profiler.get_profile(force_refresh=True)
 
         assert profile2 is not None
-        # May have different values, but should be valid
-        assert profile2.disk_type != DiskType.UNKNOWN or profile1.disk_type == DiskType.UNKNOWN
+        assert profile2 is not profile1
+        assert profile2.last_updated >= profile1.last_updated
+        assert isinstance(profile2.disk_type, DiskType)
 
     def test_update_learned_metrics(self, cache_file):
         """Test updating learned metrics from operations."""
