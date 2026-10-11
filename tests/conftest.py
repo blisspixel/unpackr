@@ -83,6 +83,7 @@ def bind_app_helpers(app):
         "_release_name",
         "_plan_destination",
         "_move_subtitles",
+        "_is_settling",
     ):
         if not hasattr(app, name):
             setattr(app, name, types.MethodType(getattr(unpackr.UnpackrApp, name), app))

@@ -6,6 +6,7 @@ A specialized tool for cleaning up download folders from Usenet/newsgroups.
 Extracts archives, repairs files, validates videos, and removes garbage.
 """
 
+import atexit
 import json
 import logging
 import os
@@ -36,6 +37,7 @@ from core.junk_rules import (
 from core.naming import DEFAULT_LAYOUT, SUBTITLE_EXTENSIONS, pick_base_name, render_layout, subtitle_suffix
 from core.remover import Remover, is_internal, new_run_id, purge_quarantine
 from core.run_report import ReportItem, RunReport
+from core.unattended import RunLock, notification_text, send_notification, settling_entries
 from core.video_processor import VideoProcessor
 from utils.cli_prompts import clean_path, countdown_prompt, get_user_input, quick_preflight, resolve_cli_presentation
 from utils.cli_render import create_renderer
@@ -357,6 +359,9 @@ class UnpackrApp:
         self.run_errors: List[str] = []
         self.run_warnings: List[str] = []
         self.last_renamed_from: Optional[str] = None
+        self.settling: set[Path] = set()  # top-level entries still being written (unattended runs)
+        self.plain_progress = False  # one plain line per folder instead of redrawing (no terminal)
+        self._last_plain_progress = 0
         # Per-file decisions for --json items and --report.
         self.report = RunReport()
         self.file_handler.report = self.report
@@ -433,7 +438,7 @@ class UnpackrApp:
         # Show progress during scan
         for i, folder in enumerate(folders, 1):
             # Emit progress at stable checkpoints to avoid log spam in captured output.
-            if i == 1 or i == len(folders) or i % 50 == 0:
+            if (i == 1 or i == len(folders) or i % 50 == 0) and not getattr(self, "plain_progress", False):
                 sys.stdout.write(f"\r[PRE-SCAN] Analyzing {i}/{len(folders)} folders...")
                 sys.stdout.flush()
 
@@ -575,7 +580,8 @@ class UnpackrApp:
             if is_regular_file and item.suffix.lower() in video_extensions:
                 plan.add_loose_video(item)
 
-        sys.stdout.write("\r" + " " * 80 + "\r")
+        if not getattr(self, "plain_progress", False):
+            sys.stdout.write("\r" + " " * 80 + "\r")
 
         plan.calculate_time_estimate()
         self.work_plan = plan
@@ -836,6 +842,18 @@ class UnpackrApp:
         except (OSError, TypeError):
             return []
 
+    def _is_settling(self, path: Path, root: Optional[Path] = None) -> bool:
+        """True when the top-level entry holding ``path`` is still being written."""
+        settling = getattr(self, "settling", None)
+        root = root or getattr(self, "source_root", None)
+        if not settling or root is None:
+            return False
+        try:
+            parts = path.relative_to(root).parts
+        except ValueError:
+            return False
+        return bool(parts) and (root / parts[0]) in settling
+
     def _screen_release(self, folder: Path) -> bool:
         """Return False when a release must not be processed this run.
 
@@ -848,6 +866,12 @@ class UnpackrApp:
         if not files:
             return True
         config = getattr(self, "config", None)
+
+        if folder != getattr(self, "source_root", None) and UnpackrApp._is_settling(self, folder):
+            self._note("warning", folder, folder.name, "folder_still_growing", "changed recently; skipped this run")
+            for path in files:
+                self._record(path, "skipped", "folder_still_growing")
+            return False
 
         partial = [f for f in files if is_incomplete_marker(f, config)]
         if partial:
@@ -1216,7 +1240,7 @@ class UnpackrApp:
 
     def _start_spinner_thread(self):
         """Start background thread to animate spinner."""
-        if getattr(self, "renderer", None) is not None:
+        if getattr(self, "renderer", None) is not None or getattr(self, "plain_progress", False):
             return
         if not self.spinner_running:
             self.spinner_running = True
@@ -1492,6 +1516,14 @@ class UnpackrApp:
         time_saved_hours = manual_time_minutes / 60
         time_saved_str = f"{int(manual_time_minutes)} min" if time_saved_hours < 1 else f"{time_saved_hours:.1f} hrs"
         throughput_str = f"{throughput:>5.1f}" if throughput is not None else "  ---"
+
+        # Without a terminal (service, cron, pipes) redraws would only fill the log: one line per folder.
+        if getattr(self, "plain_progress", False):
+            if current != getattr(self, "_last_plain_progress", 0):
+                self._last_plain_progress = current
+                _verb, target = UnpackrApp._derive_progress_context(action)
+                print(f"[{current}/{total}] {UnpackrApp._sanitize_console_text(target)}", flush=True)
+            return
 
         # Rich/plain renderer path for cross-platform terminals.
         renderer = getattr(self, "renderer", None)
@@ -1800,6 +1832,16 @@ class UnpackrApp:
                         break
                     if source_dir in self.failed_releases:
                         break
+                    if UnpackrApp._is_settling(self, video):
+                        self._note(
+                            "warning",
+                            source_dir,
+                            video.name,
+                            "folder_still_growing",
+                            "changed recently; skipped this run",
+                        )
+                        self._record(video, "skipped", "folder_still_growing")
+                        continue
                     try:
                         self._handle_video(video, destination_dir)
                     except Exception as e:
@@ -1835,8 +1877,9 @@ class UnpackrApp:
             # Stop spinner thread
             self._stop_spinner_thread()
             # Clear progress line
-            sys.stdout.write("\r" + " " * 100 + "\r")
-            sys.stdout.flush()
+            if not getattr(self, "plain_progress", False):
+                sys.stdout.write("\r" + " " * 100 + "\r")
+                sys.stdout.flush()
 
             # Print dry-run summary if in dry-run mode
             if self.dry_run and self.dry_run_plan:
@@ -1919,6 +1962,8 @@ class UnpackrApp:
                         folder = Path(root) / dir_name
                         if is_internal(folder.relative_to(source_dir)):
                             continue
+                        if UnpackrApp._is_settling(self, folder, source_dir):
+                            continue  # a downloader may have just created it
                         folders_checked += 1
 
                         # Show progress every 50 folders (only on first pass and if enabled)
@@ -1997,7 +2042,8 @@ class UnpackrApp:
         elapsed_str = str(timedelta(seconds=int(elapsed))).split(".")[0]
 
         # Clear screen and show final summary
-        sys.stdout.write("\033[2J\033[H")
+        if not getattr(self, "plain_progress", False):
+            sys.stdout.write("\033[2J\033[H")
 
         total_cleaned = self.stats["folders_deleted"] + self.stats["empty_folders_deleted"]
 
@@ -2136,6 +2182,9 @@ def main():
         parser = build_unpackr_arg_parser()
         args = parser.parse_args()
         json_mode = bool(getattr(args, "json", False))
+        unattended = bool(getattr(args, "unattended", False))
+        if unattended:
+            args.animations = "off"
         if getattr(args, "report", None):
             report_path = Path(os.path.expanduser(args.report))
         dry_run = bool(args.dry_run)
@@ -2161,7 +2210,8 @@ def main():
         if no_color:
             init(strip=True)
 
-        print((ASCII_ART if no_color else Fore.YELLOW + ASCII_ART + Style.RESET_ALL))
+        if not unattended:
+            print((ASCII_ART if no_color else Fore.YELLOW + ASCII_ART + Style.RESET_ALL))
 
         # Set up logging
         try:
@@ -2231,6 +2281,24 @@ def main():
         source_for_summary = str(source_dir)
         dest_for_summary = str(destination_dir)
 
+        # One live run per source: a timer firing during a manual run (or a slow run) exits cleanly.
+        if not (args.dry_run or args.show_plan):
+            run_lock = RunLock(source_dir)
+            try:
+                locked = run_lock.acquire()
+            except OSError as e:
+                logging.warning(f"Could not create lock {run_lock.path}: {e}")
+                locked = True
+            if not locked:
+                holder = run_lock.holder()
+                message = f"another unpackr run is working on {source_dir}" + (f" (pid {holder})" if holder else "")
+                print(f"{Fore.YELLOW}Skipped: {message}.{Style.RESET_ALL}")
+                logging.info(f"Skipped: {message}")
+                if unattended:
+                    emit_json_and_exit(0, "skipped", warnings=[f"[run_locked] {message}"])
+                emit_json_and_exit(1, "failed", errors=[f"[run_locked] {message}"])
+            atexit.register(run_lock.release)
+
         # Defensive: Additional checks on paths
         writable_target = destination_dir if destination_dir.exists() else destination_dir.parent
         if not StateValidator.check_dir_writable(writable_target):
@@ -2274,6 +2342,13 @@ def main():
         if runtime_app is None:
             emit_json_and_exit(1, "failed", errors=["application failed to initialize"])
 
+        runtime_app.plain_progress = unattended or (app.renderer is None and not _is_interactive())
+        if unattended:
+            settle_seconds = float(getattr(config, "get", lambda *_a: 2)("settle_minutes", 2) or 0) * 60
+            runtime_app.settling = settling_entries(source_dir, settle_seconds)
+            if runtime_app.settling:
+                names = ", ".join(sorted(p.name for p in runtime_app.settling))
+                logging.info(f"Still being written (skipped this run): {names}")
         runtime_app.resume_enabled = bool(getattr(args, "resume", False))
         state_path = default_state_path(source_dir)
         runtime_app.run_state = RunState.load(state_path) if runtime_app.resume_enabled else RunState(path=state_path)
@@ -2344,7 +2419,9 @@ def main():
 
         # The countdown is a chance to cancel a live run; dry runs change nothing and
         # automation (--json, no terminal) cannot answer it.
-        if json_mode:
+        if unattended:
+            logging.info("Unattended: skipping countdown")
+        elif json_mode:
             logging.info("JSON mode: skipping interactive countdown")
         elif args.dry_run:
             logging.info("Dry run: skipping countdown")
@@ -2413,6 +2490,10 @@ def main():
             if runtime_app.run_state is not None:
                 runtime_app.run_state.clear()
             run_errors, run_warnings = runtime_app.finish_issues()
+            if getattr(args, "notify", False) or getattr(config, "get", lambda *_a: False)("notify", False) is True:
+                text = notification_text(runtime_app.stats.get_snapshot(), run_errors, dry_run=bool(args.dry_run))
+                if text is not None:
+                    send_notification(*text, urgency="critical" if run_errors else "normal")
             if run_errors and not runtime_app.dry_run:
                 logging.warning(f"Completed with {len(run_errors)} item(s) needing attention")
                 emit_json_and_exit(
