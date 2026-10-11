@@ -83,7 +83,6 @@ def bind_app_helpers(app):
         "_release_name",
         "_plan_destination",
         "_move_subtitles",
-        "_is_settling",
         "_apply_archive_outcomes",
         "_verify_par2",
         "_finish_par2",

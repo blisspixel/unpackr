@@ -6,11 +6,11 @@ Commercial/enterprise products require separate license from Nick Seal.
 
 # Unpackr
 
-**Version 1.5.1** · October 2026
+**Version 1.6.0** · October 2026
 
 Unpackr turns a messy downloads folder (Usenet, torrents, whatever landed there) into a clean one. It repairs and unpacks archives, checks every video, moves the good ones to your library, keeps the music, photos and documents it finds, and **deletes everything else**. Deleting the junk is the point. It runs on **Windows, Linux, and macOS**.
 
-Point it at a downloads folder, not at folders you curate by hand. Run it when you are ready to clean: a manual run treats anything unfinished (`.part`, `.!qB`, half-written files, damaged downloads) as junk. The unattended service is the exception and waits for downloads to finish.
+Point it at a downloads folder, not at folders you curate by hand, and run it yourself when you are ready to clean. Anything unfinished or broken (`.part`, `.!qB`, half-written files, archives that cannot be unpacked, damaged videos) is treated as junk. Unpackr is meant to be run by hand, not on a schedule.
 
 ![Unpackr live dashboard mock](docs/assets/unpackr-dashboard.png)
 
@@ -116,20 +116,6 @@ unpackr "~/Downloads" "~/Videos"
 Source and destination must be provided together. Incomplete or conflicting path arguments fail with a usage error instead of falling into interactive mode.
 
 If the installed launcher is unavailable, run the same command as `python -m unpackr ...` from the repository checkout, then reinstall with `python -m pip install .`.
-
-## Running Unattended
-
-On Linux with a systemd user session (most desktops, including Omarchy and other Hyprland setups), Unpackr can keep a downloads folder clean on its own:
-
-```bash
-unpackr service install --source "~/Downloads" --destination "~/Videos" --every 15m --on-change
-unpackr service status
-unpackr service uninstall --source "~/Downloads"
-```
-
-`install` shows the units it will write to `~/.config/systemd/user/` and enables them only after you confirm (`--yes` skips the prompt). The timer runs every `--every`; `--on-change` also runs when the top level of the source folder changes. `uninstall` disables the units and removes every file `install` wrote. Logs: `journalctl --user -u unpackr-<id>.service`, plus the usual log files under `~/.local/state/unpackr/logs`. A desktop notification (`notify-send`) is shown when a run moved something or needs attention; pass `--no-notify` to turn it off.
-
-For cron, launchd or Task Scheduler, run `unpackr --unattended --source ... --destination ...` yourself. `--unattended` turns off animation, the countdown and prompts and prints one line per folder. It also takes a lock so overlapping runs on the same source exit cleanly, and, unlike a manual run, leaves unfinished downloads alone: releases with `.part`/`.!qB` files and anything changed in the last `settle_minutes` (default 2) are picked up by a later run. Add `--notify` for the desktop notification.
 
 ## Safety
 

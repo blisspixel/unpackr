@@ -326,22 +326,7 @@ class TestAppWiring:
         assert "preview" in plan.add_video_delete.call_args.args[1]
         plan.add_video_move.assert_not_called()
 
-    def test_unattended_run_holds_incomplete_set(self, tmp_path):
-        _touch(tmp_path, "clip.7z.001", "clip.7z.003")
-        processor = ArchiveProcessor(Config())
-        held = []
-        app = _fake_app(
-            False,
-            archive_processor=processor,
-            file_handler=types.SimpleNamespace(hold_paths=lambda paths, reason: held.append((paths, reason))),
-        )
-        app.unattended = True
-        archive_error, count = app._process_archives(tmp_path)
-        assert archive_error is True and count == 1
-        assert held and held[0][1] == "archive_volume_missing"
-        assert app.run_errors and "archive_volume_missing" in app.run_errors[0]
-
-    def test_manual_run_removes_incomplete_set_as_junk(self, tmp_path):
+    def test_incomplete_set_is_removed_as_junk(self, tmp_path):
         _touch(tmp_path, "clip.7z.001", "clip.7z.003")
         processor = ArchiveProcessor(Config())
         removed = []
@@ -349,7 +334,7 @@ class TestAppWiring:
             False,
             archive_processor=processor,
             file_handler=types.SimpleNamespace(
-                hold_paths=lambda *_a: pytest.fail("a manual run must not hold a broken set"),
+                hold_paths=lambda *_a: pytest.fail("a broken set must not be held"),
                 remove_file=lambda path, reason: removed.append((path.name, reason)) or True,
             ),
         )
@@ -359,7 +344,7 @@ class TestAppWiring:
         assert not app.run_errors
         assert app.damaged and "clip.7z" in app.damaged[0]
 
-    def test_machine_problems_are_held_even_on_a_manual_run(self, tmp_path):
+    def test_machine_problems_are_held(self, tmp_path):
         from core.archive_processor import ArchiveOutcome
 
         held = []

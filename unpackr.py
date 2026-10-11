@@ -46,9 +46,9 @@ from core.junk_rules import (
 )
 from core.naming import DEFAULT_LAYOUT, SUBTITLE_EXTENSIONS, pick_base_name, render_layout, subtitle_suffix
 from core.remover import Remover, is_internal, new_run_id, purge_quarantine
+from core.run_lock import RunLock
 from core.run_report import ReportItem, RunReport
 from core.safety_invariants import InvariantEnforcer
-from core.unattended import RunLock, notification_text, send_notification, settle_minutes_from, settling_entries
 from core.video_processor import VideoProcessor
 from utils.cli_prompts import clean_path, countdown_prompt, get_user_input, quick_preflight, resolve_cli_presentation
 from utils.cli_render import create_renderer
@@ -78,7 +78,6 @@ class ThreadSafeStats:
         self._lock = threading.Lock()
         self._stats: dict[str, int] = {
             "folders_processed": 0,
-            "folders_settling": 0,  # skipped because they changed within settle_minutes
             "folders_deleted": 0,
             "folders_preserved": 0,
             "empty_folders_deleted": 0,
@@ -344,22 +343,6 @@ class WorkPlan:
         print(f"{Fore.CYAN}{'=' * 80}{Style.RESET_ALL}\n")
 
 
-def _bump(stats: Any, key: str) -> None:
-    """Increment a counter on ThreadSafeStats or a plain dict (tests use both)."""
-    if stats is None:
-        return
-    if hasattr(stats, "increment"):
-        stats.increment(key)
-    else:
-        stats[key] = stats.get(key, 0) + 1
-
-
-def _stat(stats: ThreadSafeStats | dict[str, int], key: str) -> int:
-    """Read a counter from ThreadSafeStats (missing keys read 0) or a plain dict."""
-    value = stats.get(key, 0) if isinstance(stats, dict) else stats[key]
-    return int(value)
-
-
 def _config_get(config: object, key: str, default: object) -> Any:
     """``config.get(key, default)`` for a Config or a dict; ``default`` when there is no ``get``.
 
@@ -454,9 +437,6 @@ class UnpackrApp:
         # Damaged downloads removed or left as junk this run: worth re-downloading.
         self.damaged: list[str] = []
         self.last_renamed_from: str | None = None
-        self.settling: set[Path] = set()  # top-level entries still being written (skipped this run)
-        self.unattended = False  # timer/service run: leave unfinished downloads alone
-        self.settle_minutes = 0.0  # unattended only: skip downloads changed this recently
         self.plain_progress = False  # one plain line per folder instead of redrawing (no terminal)
         self._last_plain_progress = 0
         # Per-file decisions for --json items and --report.
@@ -926,9 +906,7 @@ class UnpackrApp:
         """Record each set's outcome, hold what must stay and note what needs a look."""
         for outcome in outcomes:
             broken = outcome.status == "failed" or (
-                outcome.status == "held"
-                and outcome.reason_code in BROKEN_SET_REASONS
-                and not getattr(self, "unattended", False)
+                outcome.status == "held" and outcome.reason_code in BROKEN_SET_REASONS
             )
             if broken:
                 # A manual run means "clean now": a set that cannot be unpacked is junk.
@@ -1073,18 +1051,6 @@ class UnpackrApp:
         except (OSError, TypeError):
             return []
 
-    def _is_settling(self, path: Path, root: Path | None = None) -> bool:
-        """True when the top-level entry holding ``path`` is still being written."""
-        settling = getattr(self, "settling", None)
-        root = root or getattr(self, "source_root", None)
-        if not settling or root is None:
-            return False
-        try:
-            parts = path.relative_to(root).parts
-        except ValueError:
-            return False
-        return bool(parts) and (root / parts[0]) in settling
-
     def _screen_release(self, folder: Path) -> bool:
         """Return False when a release must not be processed this run.
 
@@ -1098,24 +1064,9 @@ class UnpackrApp:
             return True
         config = getattr(self, "config", None)
 
-        if folder != getattr(self, "source_root", None) and UnpackrApp._is_settling(self, folder):
-            _bump(getattr(self, "stats", None), "folders_settling")
-            self._note("warning", folder, folder.name, "folder_still_growing", "changed recently; skipped this run")
-            for path in files:
-                self._record(path, "skipped", "folder_still_growing")
-            return False
-
         partial = [f for f in files if is_incomplete_marker(f, config)]
-        if partial and getattr(self, "unattended", False):
-            # A timer cannot know the user is done waiting; leave the download running.
-            self._note(
-                "warning", folder, partial[0].name, "download_in_progress", "still downloading; skipped this run"
-            )
-            for path in files:
-                self._record(path, "skipped", "download_in_progress")
-            return False
         if partial:
-            # A manual run means "clean now": unfinished downloads are junk. Complete files
+            # Running Unpackr means "clean now": unfinished downloads are junk. Complete files
             # in the same release are still processed and kept.
             for path in partial:
                 if self.dry_run or self.file_handler.remove_file(path, "download_incomplete"):
@@ -1391,8 +1342,7 @@ class UnpackrApp:
 
         # Unfinished downloads, disc structures and bait releases are left alone (bait is quarantined).
         if not self._screen_release(folder):
-            if not UnpackrApp._is_settling(self, folder):
-                self.stats["folders_processed"] += 1
+            self.stats["folders_processed"] += 1
             return 0
 
         # PAR2 first: repair damaged or renamed volumes before extraction. It never removes
@@ -2005,16 +1955,6 @@ class UnpackrApp:
                         break
                     if source_dir in self.failed_releases:
                         break
-                    if UnpackrApp._is_settling(self, video):
-                        self._note(
-                            "warning",
-                            source_dir,
-                            video.name,
-                            "folder_still_growing",
-                            "changed recently; skipped this run",
-                        )
-                        self._record(video, "skipped", "folder_still_growing")
-                        continue
                     try:
                         self._handle_video(video, destination_dir)
                     except Exception as e:
@@ -2026,17 +1966,6 @@ class UnpackrApp:
                 for junk_folder in self.work_plan.junk_folders:
                     if self.cancellation_requested:
                         break
-                    if UnpackrApp._is_settling(self, junk_folder):
-                        # A download that has only written its .nfo so far looks like junk.
-                        _bump(self.stats, "folders_settling")
-                        self._note(
-                            "warning",
-                            junk_folder,
-                            junk_folder.name,
-                            "folder_still_growing",
-                            "changed recently; skipped this run",
-                        )
-                        continue
                     try:
                         if self.dry_run:
                             self._record_folder_removed(junk_folder, "junk_folder")
@@ -2146,8 +2075,6 @@ class UnpackrApp:
                         folder = Path(root) / dir_name
                         if is_internal(folder.relative_to(source_dir)):
                             continue
-                        if UnpackrApp._is_settling(self, folder, source_dir):
-                            continue  # a downloader may have just created it
                         folders_checked += 1
 
                         # Show progress every 50 folders (only on first pass and if enabled)
@@ -2248,15 +2175,6 @@ class UnpackrApp:
   {Style.DIM}FOLDERS{Style.RESET_ALL}  processed: {Fore.WHITE}{self.stats["folders_processed"]:>4}{Style.RESET_ALL}  |  deleted: {Fore.GREEN}{self.stats["folders_deleted"]:>4}{Style.RESET_ALL}  |  empty: {Fore.CYAN}{self.stats["empty_folders_deleted"]:>4}{Style.RESET_ALL}  |  preserved: {Fore.MAGENTA}{self.stats["folders_preserved"]:>4}{Style.RESET_ALL}  |  {Fore.GREEN}total cleaned: {total_cleaned}{Style.RESET_ALL}
   {Style.DIM}VIDEOS{Style.RESET_ALL}   found: {Fore.WHITE}{self.stats["videos_found"]:>4}{Style.RESET_ALL}  |  processed: {Fore.GREEN}{self.stats["videos_moved"]:>4}{Style.RESET_ALL}  |  samples: {Fore.YELLOW}{self.stats["videos_sample"]:>4}{Style.RESET_ALL}  |  corrupt: {Fore.RED}{self.stats["videos_corrupt"]:>4}{Style.RESET_ALL}  |  failed: {Fore.RED}{self.stats["videos_failed"]:>4}{Style.RESET_ALL}
   {Style.DIM}ARCHIVES{Style.RESET_ALL} extracted: {Fore.CYAN}{self.stats["rars_extracted"]:>4}{Style.RESET_ALL}  |  repaired: {Fore.MAGENTA}{self.stats["par2s_repaired"]:>4}{Style.RESET_ALL}""")
-
-        settling_count = _stat(self.stats, "folders_settling")
-        if settling_count > 0:
-            minutes = getattr(self, "settle_minutes", 2)
-            print(
-                f"  {Style.DIM}WAITING{Style.RESET_ALL}  still being written: {Fore.YELLOW}{settling_count:>4}"
-                f"{Style.RESET_ALL}  {Style.DIM}(changed in the last {minutes:g} min; the next run picks them up)"
-                f"{Style.RESET_ALL}"
-            )
 
         if self.stats["files_sanitized"] > 0:
             print(
@@ -2378,6 +2296,15 @@ def main() -> None:
         removable = getattr(getattr(app, "config", None), "removable_extensions", [])
         report_items = [item.to_dict() for item in report.finalize(removable)]
 
+    if len(sys.argv) > 1 and sys.argv[1] == "service":
+        print(
+            "unpackr service was removed in 1.6.0: Unpackr is run by hand, not on a schedule.\n"
+            "To remove an installed timer: delete ~/.config/systemd/user/unpackr-* and run "
+            "`systemctl --user daemon-reload`.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+
     if len(sys.argv) > 1 and sys.argv[1] in SUBCOMMANDS:
         raise SystemExit(run_subcommand(sys.argv[1:]))
 
@@ -2390,9 +2317,6 @@ def main() -> None:
             # stdout carries only the JSON summary (so `unpackr --json | jq` works); the
             # banner, progress and summary screen go to stderr.
             sys.stdout = sys.stderr
-        unattended = bool(getattr(args, "unattended", False))
-        if unattended:
-            args.animations = "off"
         if getattr(args, "report", None):
             report_path = Path(os.path.expanduser(args.report))
         dry_run = bool(args.dry_run)
@@ -2418,8 +2342,7 @@ def main() -> None:
         if no_color:
             init(strip=True)
 
-        if not unattended:
-            print(ASCII_ART if no_color else Fore.YELLOW + ASCII_ART + Style.RESET_ALL)
+        print(ASCII_ART if no_color else Fore.YELLOW + ASCII_ART + Style.RESET_ALL)
 
         # Set up logging
         try:
@@ -2489,7 +2412,7 @@ def main() -> None:
         source_for_summary = str(source_dir)
         dest_for_summary = str(destination_dir)
 
-        # One live run per source: a timer firing during a manual run (or a slow run) exits cleanly.
+        # One live run per source: a second run started on the same folder exits cleanly.
         if not (args.dry_run or args.show_plan):
             run_lock = RunLock(source_dir)
             try:
@@ -2502,8 +2425,6 @@ def main() -> None:
                 message = f"another unpackr run is working on {source_dir}" + (f" (pid {holder})" if holder else "")
                 print(f"{Fore.YELLOW}Skipped: {message}.{Style.RESET_ALL}")
                 logging.info(f"Skipped: {message}")
-                if unattended:
-                    emit_json_and_exit(0, "skipped", warnings=[f"[run_locked] {message}"])
                 emit_json_and_exit(1, "failed", errors=[f"[run_locked] {message}"])
             atexit.register(run_lock.release)
 
@@ -2548,16 +2469,7 @@ def main() -> None:
 
         runtime_app = app
 
-        runtime_app.unattended = unattended
-        runtime_app.plain_progress = unattended or (app.renderer is None and not _is_interactive())
-        # A manual run means "clean now": anything unfinished is junk. Timers and the service
-        # cannot know that, so they leave downloads changed in the last settle_minutes alone.
-        settle_minutes = settle_minutes_from(config) if unattended else 0.0
-        runtime_app.settle_minutes = settle_minutes
-        runtime_app.settling = settling_entries(source_dir, settle_minutes * 60)
-        if runtime_app.settling:
-            names = ", ".join(sorted(p.name for p in runtime_app.settling))
-            logging.info(f"Still being written (skipped this run): {names}")
+        runtime_app.plain_progress = app.renderer is None and not _is_interactive()
         runtime_app.resume_enabled = bool(getattr(args, "resume", False))
         state_path = default_state_path(source_dir)
         runtime_app.run_state = RunState.load(state_path) if runtime_app.resume_enabled else RunState(path=state_path)
@@ -2628,9 +2540,7 @@ def main() -> None:
 
         # The countdown is a chance to cancel a live run; dry runs change nothing and
         # automation (--json, no terminal) cannot answer it.
-        if unattended:
-            logging.info("Unattended: skipping countdown")
-        elif json_mode:
+        if json_mode:
             logging.info("JSON mode: skipping interactive countdown")
         elif args.dry_run:
             logging.info("Dry run: skipping countdown")
@@ -2698,15 +2608,6 @@ def main() -> None:
                 emit_json_and_exit(0, "cancelled", cancelled=True)
             runtime_app.run_state.clear()
             run_errors, run_warnings = runtime_app.finish_issues()
-            if getattr(args, "notify", False) or _config_get(config, "notify", False) is True:
-                text = notification_text(
-                    runtime_app.stats.get_snapshot(),
-                    run_errors,
-                    dry_run=bool(args.dry_run),
-                    damaged=runtime_app.damaged,
-                )
-                if text is not None:
-                    send_notification(*text, urgency="critical" if run_errors else "normal")
             if run_errors and not runtime_app.dry_run:
                 logging.warning(f"Completed with {len(run_errors)} item(s) needing attention")
                 emit_json_and_exit(

@@ -64,7 +64,7 @@ def build_unpackr_run_summary(
             actions.append("Re-run the same source/destination to process remaining work.")
         if dry_run and exit_code == 0:
             actions.append("Run without --dry-run to execute the planned actions.")
-        actions.append("Run `unpackr-doctor --json` and confirm status is ready before unattended live runs.")
+        actions.append("Run `unpackr-doctor --json` and confirm status is ready before live runs.")
 
     summary: dict[str, Any] = {
         "timestamp_utc": utc_now_iso(),
@@ -80,7 +80,6 @@ def build_unpackr_run_summary(
         },
         "counts": {
             "folders_processed": int(snapshot.get("folders_processed", 0)),
-            "folders_settling": int(snapshot.get("folders_settling", 0)),
             "folders_deleted": int(snapshot.get("folders_deleted", 0)),
             "videos_found": int(snapshot.get("videos_found", 0)),
             "videos_moved": int(snapshot.get("videos_moved", 0)),

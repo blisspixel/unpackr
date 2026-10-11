@@ -1,5 +1,5 @@
 """
-Issue #21: PAR2 never removes unextracted volumes, manual vs unattended handling of
+Issue #21: PAR2 never removes unextracted volumes, how unfinished and broken downloads are cleaned,
 unfinished downloads, dry-run/live parity, and the smaller findings from that report.
 """
 
@@ -24,7 +24,6 @@ from core.archive_processor import (
 )
 from core.config import Config
 from core.safety_invariants import FileOperation, OperationType, SafetyInvariants, is_archive_volume
-from core.unattended import notification_text, settle_minutes_from
 
 REPO = Path(__file__).resolve().parent.parent
 SEVENZ = shutil.which("7zz") or shutil.which("7z")
@@ -76,27 +75,6 @@ class TestArchiveInvariantI3:
     def test_videos_are_not_archive_volumes(self, tmp_path):
         assert not is_archive_volume(tmp_path / "movie.mkv")
         assert not is_archive_related(tmp_path / "movie.mkv")
-
-
-class TestNotificationText:
-    def test_damaged_and_waiting_are_mentioned(self):
-        title, body = notification_text(
-            {"videos_moved": 1, "folders_settling": 2}, [], damaged=["Rel/movie.mkv: truncated"]
-        )
-        assert "1 damaged (re-download)" in body and "2 still downloading" in body
-        assert "Rel/movie.mkv" in body
-
-    def test_damaged_alone_is_worth_a_notification(self):
-        assert notification_text({}, [], damaged=["Rel/x.mkv: corrupt"]) is not None
-
-    def test_nothing_done_stays_quiet(self):
-        assert notification_text({"folders_settling": 3}, []) is None
-
-
-def test_settle_minutes_from_config():
-    assert settle_minutes_from(Config()) == 2
-    assert settle_minutes_from({"settle_minutes": 0}) == 0
-    assert settle_minutes_from({"settle_minutes": "bad"}) == 2
 
 
 def test_bundled_config_treats_ts_and_m2ts_as_video():
@@ -300,8 +278,7 @@ def test_obfuscated_release_without_par2_is_kept(tmp_path):
 
 
 @pytest.mark.skipif(not SEVENZ, reason="needs 7-Zip")
-@pytest.mark.parametrize("unattended", [False, True])
-def test_header_encrypted_archive_is_reported_as_password(tmp_path, unattended):
+def test_header_encrypted_archive_is_junk(tmp_path):
     src, dst = tmp_path / "src", tmp_path / "dst"
     (src / "Locked").mkdir(parents=True)
     dst.mkdir()
@@ -314,21 +291,16 @@ def test_header_encrypted_archive_is_reported_as_password(tmp_path, unattended):
     _age(src)
 
     start = time.monotonic()
-    code, summary = _run(src, dst, tmp_path, *(["--unattended"] if unattended else []))
+    code, summary = _run(src, dst, tmp_path)
 
     assert time.monotonic() - start < 120
     items = {i["path"]: i for i in summary["items"]}
     assert items["Locked/locked.7z"]["reason_code"] == "archive_password"
-    if unattended:
-        # A timer keeps it: the user may know the password.
-        assert code == 3
-        assert (src / "Locked" / "locked.7z").exists()
-    else:
-        # A manual run means "clean now": an archive that cannot be opened is junk.
-        assert code == 0
-        assert items["Locked/locked.7z"]["action"] == "deleted"
-        assert any("locked.7z" in d for d in summary["damaged"])
-        assert not (src / "Locked").exists()
+    # Running Unpackr means "clean now": an archive that cannot be opened is junk.
+    assert code == 0
+    assert items["Locked/locked.7z"]["action"] == "deleted"
+    assert any("locked.7z" in d for d in summary["damaged"])
+    assert not (src / "Locked").exists()
 
 
 @pytest.mark.skipif(not (SEVENZ and FFMPEG), reason="needs 7-Zip and ffmpeg")
@@ -381,24 +353,8 @@ def test_dry_run_matches_live_run(tmp_path):
 
 
 @pytest.mark.skipif(not FFMPEG, reason="needs ffmpeg")
-def test_unattended_run_leaves_fresh_downloads_and_says_so(tmp_path):
-    src, dst = tmp_path / "src", tmp_path / "dst"
-    dst.mkdir()
-    for name in ("Fresh.One", "Fresh.Two"):
-        _video(src / name / f"{name}.mkv")
-
-    code, summary = _run(src, dst, tmp_path, "--unattended")
-
-    assert code == 0
-    assert summary["counts"]["folders_settling"] == 2
-    assert summary["counts"]["folders_processed"] == 0
-    assert not list(dst.iterdir())
-    assert (src / "Fresh.One" / "Fresh.One.mkv").exists()
-
-
-@pytest.mark.skipif(not FFMPEG, reason="needs ffmpeg")
 def test_manual_run_cleans_now(tmp_path):
-    """A manual run does not wait for settle_minutes: fresh files are processed right away."""
+    """Fresh files are processed right away and unfinished ones removed: running Unpackr means clean now."""
     src, dst = tmp_path / "src", tmp_path / "dst"
     dst.mkdir()
     _video(src / "Fresh.Movie" / "Fresh.Movie.mkv")
@@ -407,7 +363,6 @@ def test_manual_run_cleans_now(tmp_path):
     code, summary = _run(src, dst, tmp_path)
 
     assert code == 0, summary
-    assert summary["counts"]["folders_settling"] == 0
     assert [p.name for p in dst.rglob("*.mkv")] == ["Fresh.Movie.mkv"]
     items = {i["path"]: i for i in summary["items"]}
     assert items["Fresh.Movie/Next.Episode.mkv.part"]["reason_code"] == "download_incomplete"

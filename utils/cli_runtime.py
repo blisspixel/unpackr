@@ -128,19 +128,6 @@ def build_unpackr_arg_parser() -> argparse.ArgumentParser:
         help="Write one JSON line per file decision (moved, deleted, extracted, kept, skipped, blocked) to FILE.",
     )
     parser.add_argument(
-        "--unattended",
-        action="store_true",
-        help=(
-            "For timers and cron: no animation, countdown or prompts; one live run per source; "
-            "skip downloads changed in the last settle_minutes."
-        ),
-    )
-    parser.add_argument(
-        "--notify",
-        action="store_true",
-        help="Send one desktop notification (notify-send) when a run moved files or needs attention.",
-    )
-    parser.add_argument(
         "--resume",
         action="store_true",
         help="Skip folders already completed in <source>/.unpackr-state.json from a prior interrupted run.",

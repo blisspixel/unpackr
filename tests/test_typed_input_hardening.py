@@ -10,7 +10,6 @@ import pytest
 from core.adaptive_policy import DiskType, EnvironmentProfile, EnvironmentProfiler
 from core.remover import RunJournal
 from core.structured_events import EventAnalyzer, EventEmitter, EventType
-from utils import service
 from utils.defensive import InputValidator, ValidationError
 from utils.system_check import SystemCheck
 
@@ -19,14 +18,6 @@ def test_run_journal_skips_json_lines_that_are_not_objects(tmp_path):
     journal = tmp_path / "run.jsonl"
     journal.write_text('[1, 2]\n"text"\n{"op": "move"}\nnot json\n', encoding="utf-8")
     assert RunJournal.read(journal) == [{"op": "move"}]
-
-
-def test_service_manifests_skip_non_object_json(tmp_path, monkeypatch):
-    monkeypatch.setattr(service, "manifest_dir", lambda: tmp_path)
-    (tmp_path / "a.json").write_text("[]", encoding="utf-8")
-    (tmp_path / "b.json").write_text(json.dumps({"name": "unpackr-x"}), encoding="utf-8")
-    manifests = service._manifests()
-    assert [m["name"] for m in manifests] == ["unpackr-x"]
 
 
 def test_event_analyzer_keeps_loading_after_malformed_records(tmp_path):
