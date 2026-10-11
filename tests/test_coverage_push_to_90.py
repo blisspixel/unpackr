@@ -267,7 +267,7 @@ def test_vhealth_duplicate_and_main_branches(tmp_path, monkeypatch):
         def print_summary(self, auto_delete=False):
             return None
 
-        def _resolve_ffmpeg_command(self):
+        def resolve_ffmpeg_command(self):
             return ["ffmpeg"]
 
     args = types.SimpleNamespace(

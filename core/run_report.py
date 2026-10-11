@@ -15,9 +15,10 @@ from __future__ import annotations
 import json
 import re
 import threading
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any
 
 ACTIONS = ("moved", "deleted", "extracted", "kept", "skipped", "blocked")
 
@@ -36,13 +37,13 @@ class ReportItem:
     action: str
     reason_code: str
     detail: str = ""
-    bytes: Optional[int] = None
-    destination: Optional[str] = None
+    bytes: int | None = None
+    destination: str | None = None
     planned: bool = False
     inferred: bool = False
-    disposal: Optional[str] = None
+    disposal: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         return {k: v for k, v in data.items() if v not in (None, "") or k in ("path", "action", "reason_code")}
 
@@ -58,12 +59,12 @@ class RunReport:
     """Collects ReportItems for one run; safe to call from the worker thread only."""
 
     planned: bool = False
-    root: Optional[Path] = None
+    root: Path | None = None
     # How live deletions were disposed of: "quarantine", "trash" or "permanent".
-    disposal: Optional[str] = None
-    _items: Dict[str, ReportItem] = field(default_factory=dict)
-    _inventory: Dict[str, int] = field(default_factory=dict)
-    _removed_folders: Dict[str, _PendingRemoval] = field(default_factory=dict)
+    disposal: str | None = None
+    _items: dict[str, ReportItem] = field(default_factory=dict[str, ReportItem])
+    _inventory: dict[str, int] = field(default_factory=dict[str, int])
+    _removed_folders: dict[str, _PendingRemoval] = field(default_factory=dict[str, _PendingRemoval])
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     # ------------------------------------------------------------------ setup
@@ -97,6 +98,10 @@ class RunReport:
                 pass
         return path.as_posix()
 
+    def is_recorded(self, path: Path) -> bool:
+        """True when a decision about ``path`` has already been recorded."""
+        return self._rel(path) in self._items
+
     @staticmethod
     def _internal(rel: str) -> bool:
         return any(part.startswith(INTERNAL_PREFIXES) for part in rel.split("/"))
@@ -108,8 +113,8 @@ class RunReport:
         reason_code: str,
         detail: str = "",
         *,
-        destination: Optional[Path] = None,
-        size: Optional[int] = None,
+        destination: Path | None = None,
+        size: int | None = None,
     ) -> None:
         """Record the terminal action for a path (the latest record wins)."""
         if action not in ACTIONS:
@@ -147,7 +152,7 @@ class RunReport:
 
     # -------------------------------------------------------------- finalize
 
-    def _removed_by_folder(self, rel: str) -> Optional[_PendingRemoval]:
+    def _removed_by_folder(self, rel: str) -> _PendingRemoval | None:
         parts = rel.split("/")
         for depth in range(len(parts) - 1, 0, -1):
             hit = self._removed_folders.get("/".join(parts[:depth]))
@@ -169,7 +174,7 @@ class RunReport:
             return "junk_no_extension"
         return "folder_cleanup"
 
-    def finalize(self, removable_extensions: Iterable[str] = ()) -> List[ReportItem]:
+    def finalize(self, removable_extensions: Iterable[str] = ()) -> list[ReportItem]:
         """Give every inventoried file one terminal action and return all items."""
         removable = [e.lower() for e in removable_extensions]
         with self._lock:
@@ -213,19 +218,19 @@ class RunReport:
 
     # ---------------------------------------------------------------- output
 
-    def items(self) -> List[ReportItem]:
+    def items(self) -> list[ReportItem]:
         with self._lock:
             return sorted(self._items.values(), key=lambda i: i.path)
 
     @staticmethod
-    def counts(items: Iterable[ReportItem]) -> Dict[str, int]:
-        totals: Dict[str, int] = {}
+    def counts(items: Iterable[ReportItem]) -> dict[str, int]:
+        totals: dict[str, int] = {}
         for item in items:
             totals[item.action] = totals.get(item.action, 0) + 1
         return totals
 
     @staticmethod
-    def write_jsonl(items: Iterable[ReportItem], destination: Path, summary: Optional[Dict[str, Any]] = None) -> None:
+    def write_jsonl(items: Iterable[ReportItem], destination: Path, summary: dict[str, Any] | None = None) -> None:
         """Write one JSON object per item, then an optional summary line."""
         destination.parent.mkdir(parents=True, exist_ok=True)
         with open(destination, "w", encoding="utf-8") as handle:

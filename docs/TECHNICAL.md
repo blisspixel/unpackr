@@ -90,11 +90,11 @@ Why:
   - `python -m bandit -c pyproject.toml -r core utils doctor.py unpackr.py vhealth.py`
   - `python -m pytest -q --cov --cov-fail-under=80`
 - Tests are branch-focused on destructive-path safety and recovery behavior.
-- `core/config.py`, `core/file_handler.py`, and `core/safety_invariants.py` are held to a stricter Pyright tier than the rest of the codebase.
+- `mypy --strict` and Pyright strict cover `core`, `utils`, `doctor.py`, `unpackr.py` and `vhealth.py`, with no per-module relaxations.
 - Production modules use package imports directly rather than runtime `sys.path` mutation.
 - `unpackr.py` keeps orchestration responsibilities; prompt/presentation helper functions were extracted into `utils/cli_prompts.py`.
 - The full regression suite passes above the enforced `80%` coverage gate.
-- CI matrix: Windows/Linux/macOS x Python `3.11`–`3.14`, with installed entry-point smoke checks on every lane.
+- CI matrix: Windows/Linux/macOS x Python `3.12`–`3.15`, with installed entry-point smoke checks on every lane.
 
 ## Developer Commands
 

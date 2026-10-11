@@ -14,7 +14,7 @@ import re
 import string
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 LAYOUT_PRESETS = {
     "flat": "{name}{ext}",
@@ -45,11 +45,11 @@ GENERIC_STEMS = {"movie", "video", "file", "output", "unnamed", "untitled", "mai
 class ReleaseInfo:
     kind: str  # "episode", "movie" or "unknown"
     title: str = ""
-    year: Optional[int] = None
+    year: int | None = None
     show: str = ""
-    season: Optional[int] = None
-    episode: Optional[int] = None
-    episode_end: Optional[int] = None
+    season: int | None = None
+    episode: int | None = None
+    episode_end: int | None = None
 
 
 def _clean(text: str) -> str:
@@ -100,11 +100,11 @@ def is_obfuscated(stem: str) -> bool:
     return len(stem) >= 16 and alnum == len(stem) and digits >= 4
 
 
-def _words(text: str) -> set:
+def _words(text: str) -> set[str]:
     return {w for w in re.split(r"[\W_]+", text.lower()) if len(w) >= 3}
 
 
-def pick_base_name(video: Path, release_name: Optional[str], deobfuscate: bool = True) -> tuple[str, bool]:
+def pick_base_name(video: Path, release_name: str | None, deobfuscate: bool = True) -> tuple[str, bool]:
     """(stem to use, whether it came from the release name).
 
     The release folder name replaces the video name when the video name is obfuscated,
@@ -121,7 +121,7 @@ def pick_base_name(video: Path, release_name: Optional[str], deobfuscate: bool =
     return stem, False
 
 
-class _Fields(dict):
+class _Fields(dict[str, Any]):
     """format_map dict that raises KeyError for missing fields instead of inventing them."""
 
     def __missing__(self, key: str) -> Any:
@@ -136,7 +136,7 @@ def _safe_component(text: str) -> str:
     return text or "_"
 
 
-def render_layout(template: str, video: Path, release_name: Optional[str], deobfuscate: bool = True) -> Optional[Path]:
+def render_layout(template: str, video: Path, release_name: str | None, deobfuscate: bool = True) -> Path | None:
     """Relative destination path for a video, or None when the template cannot be filled.
 
     Fields: name, ext, release, title, year, show, season, episode, episode_suffix, kind_folder.
@@ -149,7 +149,7 @@ def render_layout(template: str, video: Path, release_name: Optional[str], deobf
     if info.kind == "unknown" and release_name:
         info = parse_release_name(video.stem)
 
-    fields: Dict[str, Any] = _Fields(name=base, ext=video.suffix.lower(), release=release_name or base)
+    fields: dict[str, Any] = _Fields(name=base, ext=video.suffix.lower(), release=release_name or base)
     if info.kind == "movie":
         fields.update(title=info.title, year=info.year)
     if info.kind == "episode":
@@ -175,7 +175,7 @@ def render_layout(template: str, video: Path, release_name: Optional[str], deobf
 SUBTITLE_EXTENSIONS = (".srt", ".ass", ".ssa", ".vtt", ".sub", ".idx", ".sup", ".smi")
 
 
-def subtitle_suffix(subtitle: Path, video: Path) -> Optional[str]:
+def subtitle_suffix(subtitle: Path, video: Path) -> str | None:
     """Part of a subtitle's name to keep after the video's new name (language tag), or None if unrelated.
 
     Matches "<video stem>.en.srt" next to the video, and RARBG-style

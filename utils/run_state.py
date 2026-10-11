@@ -17,9 +17,9 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, Set
+from typing import Any, cast
 
 _path_locks: dict[str, threading.RLock] = {}
 _path_locks_guard = threading.Lock()
@@ -49,7 +49,7 @@ def _read_payload(path: Path) -> dict[str, Any] | None:
         if not isinstance(payload, dict):
             logging.warning(f"Ignoring corrupt run state (not an object): {path}")
             return None
-        return payload
+        return cast(dict[str, Any], payload)
     except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
         logging.warning(f"Ignoring unreadable run state {path}: {exc}")
         return None
@@ -62,11 +62,11 @@ class RunState:
     path: Path
     source: str = ""
     destination: str = ""
-    completed: Set[str] = field(default_factory=set)
+    completed: set[str] = field(default_factory=set[str])
     updated_utc: str = ""
 
     @classmethod
-    def load(cls, path: Path) -> "RunState":
+    def load(cls, path: Path) -> RunState:
         """Load state from disk; return empty state if missing or corrupt."""
         state = cls(path=Path(path))
         state._apply_payload(_read_payload(state.path))
@@ -75,13 +75,14 @@ class RunState:
     def _apply_payload(self, payload: dict[str, Any] | None) -> None:
         if not payload:
             return
-        completed = payload.get("completed", [])
-        if not isinstance(completed, list):
+        raw_completed = payload.get("completed", [])
+        if not isinstance(raw_completed, list):
             logging.warning(f"Ignoring corrupt run state (completed not a list): {self.path}")
             return
+        completed = cast(list[object], raw_completed)
         self.source = str(payload.get("source", "") or "") or self.source
         self.destination = str(payload.get("destination", "") or "") or self.destination
-        self.completed = {str(item) for item in completed if isinstance(item, str) and item}
+        self.completed = {item for item in completed if isinstance(item, str) and item}
         self.updated_utc = str(payload.get("updated_utc", "") or "")
 
     def configure(self, source: Path, destination: Path) -> None:
@@ -107,21 +108,21 @@ class RunState:
                 if not self.destination:
                     self.destination = str(disk.get("destination", "") or "")
             self.completed.add(key)
-            self.updated_utc = datetime.now(timezone.utc).isoformat()
+            self.updated_utc = datetime.now(UTC).isoformat()
             self._save_unlocked()
 
     def clear(self) -> None:
         """Clear completed entries and remove the state file when possible."""
         with _lock_for(self.path):
             self.completed.clear()
-            self.updated_utc = datetime.now(timezone.utc).isoformat()
+            self.updated_utc = datetime.now(UTC).isoformat()
             try:
                 self.path.unlink(missing_ok=True)
             except OSError as exc:
                 logging.warning(f"Could not remove run state file {self.path}: {exc}")
                 self._save_unlocked()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "source": self.source,
             "destination": self.destination,

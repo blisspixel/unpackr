@@ -7,7 +7,6 @@ Collects planned operations and displays them in a structured, readable format.
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Tuple
 
 
 @dataclass
@@ -15,58 +14,62 @@ class DryRunPlan:
     """Tracks planned operations for dry-run summary."""
 
     # Archive operations
-    archives_to_extract: List[Tuple[Path, int]] = field(default_factory=list)  # (archive_path, size_bytes)
-    archives_to_skip: List[Tuple[Path, str]] = field(default_factory=list)  # (archive_path, reason)
+    archives_to_extract: list[tuple[Path, int]] = field(
+        default_factory=list[tuple[Path, int]]
+    )  # (archive_path, size_bytes)
+    archives_to_skip: list[tuple[Path, str]] = field(default_factory=list[tuple[Path, str]])  # (archive_path, reason)
 
     # Video operations
-    videos_to_move: List[Tuple[Path, int, str]] = field(default_factory=list)  # (video_path, size_bytes, resolution)
-    videos_to_skip: List[Tuple[Path, str]] = field(default_factory=list)  # (video_path, reason)
-    videos_to_delete: List[Tuple[Path, str]] = field(default_factory=list)  # (sample_path, reason)
-    video_destinations: Dict[str, str] = field(default_factory=dict)  # str(video) -> relative destination
+    videos_to_move: list[tuple[Path, int, str]] = field(
+        default_factory=list[tuple[Path, int, str]]
+    )  # (video_path, size_bytes, resolution)
+    videos_to_skip: list[tuple[Path, str]] = field(default_factory=list[tuple[Path, str]])  # (video_path, reason)
+    videos_to_delete: list[tuple[Path, str]] = field(default_factory=list[tuple[Path, str]])  # (sample_path, reason)
+    video_destinations: dict[str, str] = field(default_factory=dict[str, str])  # str(video) -> relative destination
 
     # Cleanup operations
-    junk_files: List[Path] = field(default_factory=list)
-    folders_to_delete: List[Path] = field(default_factory=list)
-    folders_to_keep: List[Tuple[Path, str]] = field(default_factory=list)  # (folder_path, reason)
+    junk_files: list[Path] = field(default_factory=list[Path])
+    folders_to_delete: list[Path] = field(default_factory=list[Path])
+    folders_to_keep: list[tuple[Path, str]] = field(default_factory=list[tuple[Path, str]])  # (folder_path, reason)
 
     # PAR2 operations
-    par2_to_process: List[Tuple[Path, int]] = field(default_factory=list)  # (folder_path, file_count)
+    par2_to_process: list[tuple[Path, int]] = field(default_factory=list[tuple[Path, int]])  # (folder_path, file_count)
 
-    def add_archive_extract(self, archive: Path, size_bytes: int):
+    def add_archive_extract(self, archive: Path, size_bytes: int) -> None:
         """Record archive extraction."""
         self.archives_to_extract.append((archive, size_bytes))
 
-    def add_archive_skip(self, archive: Path, reason: str):
+    def add_archive_skip(self, archive: Path, reason: str) -> None:
         """Record skipped archive."""
         self.archives_to_skip.append((archive, reason))
 
-    def add_video_move(self, video: Path, size_bytes: int, resolution: str = "unknown", destination: str = ""):
+    def add_video_move(self, video: Path, size_bytes: int, resolution: str = "unknown", destination: str = "") -> None:
         """Record video move (destination: final path relative to the destination folder)."""
         self.videos_to_move.append((video, size_bytes, resolution))
         if destination:
             self.video_destinations[str(video)] = destination
 
-    def add_video_skip(self, video: Path, reason: str):
+    def add_video_skip(self, video: Path, reason: str) -> None:
         """Record skipped video."""
         self.videos_to_skip.append((video, reason))
 
-    def add_video_delete(self, video: Path, reason: str):
+    def add_video_delete(self, video: Path, reason: str) -> None:
         """Record video deletion."""
         self.videos_to_delete.append((video, reason))
 
-    def add_junk_file(self, file: Path):
+    def add_junk_file(self, file: Path) -> None:
         """Record junk file."""
         self.junk_files.append(file)
 
-    def add_folder_delete(self, folder: Path):
+    def add_folder_delete(self, folder: Path) -> None:
         """Record folder deletion."""
         self.folders_to_delete.append(folder)
 
-    def add_folder_keep(self, folder: Path, reason: str):
+    def add_folder_keep(self, folder: Path, reason: str) -> None:
         """Record folder preservation."""
         self.folders_to_keep.append((folder, reason))
 
-    def add_par2_process(self, folder: Path, file_count: int):
+    def add_par2_process(self, folder: Path, file_count: int) -> None:
         """Record PAR2 processing."""
         self.par2_to_process.append((folder, file_count))
 
@@ -81,7 +84,7 @@ class DryRunPlan:
         else:
             return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
 
-    def print_summary(self):
+    def print_summary(self) -> None:
         """Print formatted dry-run summary."""
         print("\n" + "=" * 80)
         print("DRY RUN SUMMARY")
@@ -134,7 +137,7 @@ class DryRunPlan:
 
             if self.junk_files:
                 # Group by extension
-                by_extension: Dict[str, int] = {}
+                by_extension: dict[str, int] = {}
                 for file in self.junk_files:
                     ext = file.suffix.lower()
                     by_extension[ext] = by_extension.get(ext, 0) + 1

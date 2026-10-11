@@ -2,15 +2,40 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import sys
 import time
-from typing import Any, Literal, Optional
+from typing import TYPE_CHECKING, Literal, Protocol
+
+if TYPE_CHECKING:
+    from rich.text import Text
 
 AnimationMode = Literal["auto", "off", "light", "full"]
 
 
-def _is_truthy_env(value: Optional[str]) -> bool:
+class Renderer(Protocol):
+    """Interface shared by the plain and Rich progress renderers."""
+
+    def start(self, _total: int) -> None: ...
+
+    def update(
+        self,
+        *,
+        current: int,
+        total: int,
+        action: str,
+        verb: str,
+        target: str,
+        stats_line: str,
+        time_line: str,
+        comment_line: str,
+    ) -> None: ...
+
+    def stop(self) -> None: ...
+
+
+def _is_truthy_env(value: str | None) -> bool:
     if value is None:
         return False
     return value.strip().lower() in {"1", "true", "yes", "on"}
@@ -68,24 +93,13 @@ class RichRenderer:  # pragma: no cover - optional path when Rich is installed i
         self._last_render = 0.0
         self._frame = 0
         self.mode = mode
-        self._tte_highlighter = self._build_tte_highlighter() if mode == "full" else None
+        # Optional TTE integration point; only detected for now, never required.
+        self._tte_available = mode == "full" and importlib.util.find_spec("terminaltexteffects") is not None
 
-    def _build_tte_highlighter(self):
-        """
-        Optional TTE integration.
-        The implementation is intentionally defensive so missing/changed APIs fall back safely.
-        """
-        try:
-            # Optional dependency; may not exist in runtime environments.
-            import terminaltexteffects  # noqa: F401
-        except Exception:
-            return None
-        return None
-
-    def _shimmer_text(self, value: str):
+    def _shimmer_text(self, value: str) -> Text:
         """
         Create a subtle monochrome shimmer sweep for full animation mode.
-        Uses pure Rich styling by default; TTE can be integrated later via _tte_highlighter.
+        Uses pure Rich styling by default; TTE can be integrated later (see _tte_available).
         """
         text = self._Text()
         if not value:
@@ -158,7 +172,7 @@ class RichRenderer:  # pragma: no cover - optional path when Rich is installed i
         self._started = False
 
 
-def create_renderer(mode: AnimationMode = "auto", no_color: bool = False) -> Optional[Any]:
+def create_renderer(mode: AnimationMode = "auto", no_color: bool = False) -> Renderer | None:
     """
     Return a renderer instance suitable for this terminal.
 

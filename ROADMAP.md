@@ -1,11 +1,11 @@
 # Roadmap
 
-This roadmap is reliability-first: safety, correctness, cross-platform parity, observability, then performance.
+Unpackr turns a messy downloads folder into a clean one: it keeps the good content and deletes the rest. This roadmap is reliability-first: never lose the good file, then correctness, cross-platform parity, observability, then performance.
 
 ## Version Focus
 
-- Current line: `1.4.x` (latest: `1.4.0`, August 2026) — first-class **Windows, Linux, and macOS**
-- Primary objective: keep destructive operations auditable and deterministic on every supported OS
+- Current line: `1.5.x` (latest: `1.5.0`, October 2026) — first-class **Windows, Linux, and macOS**, Python `3.12` to `3.15`
+- Primary objective: delete the junk decisively, never the good file, and make every removal reversible and explained
 
 ## Quality Baseline
 
@@ -13,14 +13,16 @@ This roadmap is reliability-first: safety, correctness, cross-platform parity, o
 - The full regression suite must pass before merge.
 - Dependency/version policy is enforced by `unpackr-doctor` and runtime preflight.
 - Installed CLI entry points and documented path flags are covered by regression and CI smoke tests.
-- Python support floor is `3.11+` (CI matrix includes `3.11` through `3.14`).
+- Python support floor is `3.12+` (CI matrix includes `3.12` through `3.15`).
 - Active documentation stays under `docs/`; superseded content belongs in `docs/archive/`.
 - Platform policy lives in `utils/platform_support.py` rather than ad-hoc `sys.platform` checks.
 
 ## Guiding Principles
 
-- Fail closed on uncertainty.
-- Keep defaults conservative.
+- Deleting junk is the job. Safeguards protect the good content (videos, music, photos, documents, a release that could still be repaired), not the junk.
+- When the content might be good and Unpackr cannot tell, keep it and say why (fail closed on the good file).
+- A manual run means "clean now"; only unattended runs wait for downloads to finish.
+- Every removal is reversible by default (quarantine) and explained (reason codes, `--json`, the summary screen).
 - Ship measurable reliability gains each iteration.
 - Prefer explicit policy over implicit behavior.
 - Prefer PATH-resolved tools first; platform-specific absolute paths are fallbacks only.
@@ -92,6 +94,20 @@ Acceptance criteria:
 
 Status:
 - Complete for evidence infrastructure: harness schema v1 + `--compare`; published sample baseline (`benchmarks/published/`); safety stress matrix (`tests/test_safety_stress_matrix.py`); resume-state merge-safe multi-writer hardening. **Concurrency remains deferred** until a real multi-archive workload is measured with and without parallelism.
+
+### Done: Clean Downloads, Safely (`1.5.0`)
+
+Goal: make Unpackr the tool you point at a downloads folder and trust: decisive about junk, careful with the good file.
+
+Status:
+- Complete in `1.5.0`: reversible removals (quarantine, trash, `unpackr restore`); a decision for every file in `--json`/`--report`; previews, truncated videos and incomplete archive sets handled correctly; bait, junk, samples and unfinished downloads screened; output layouts and name deobfuscation; unattended mode with a systemd user service; PAR2 that repairs obfuscated posts and never removes unextracted volumes; dry-run/live parity; strict typing (`mypy --strict`, Pyright strict) on Python 3.12 to 3.15.
+
+### Next
+
+- Decide whether incomplete multi-volume archive sets on a manual run are junk (like other unfinished downloads) or stay held for retry, as they are today.
+- Real-tool CI on Windows (7-Zip, par2 and ffmpeg are installed on Linux and macOS runners only).
+- Unattended runs on macOS (launchd) and Windows (Task Scheduler) with the same `service install` experience as systemd.
+- Concurrency stays deferred until a real multi-archive workload is measured with and without it.
 
 ## Cross-Platform Implementation Plan
 

@@ -110,7 +110,7 @@ def test_main_app_init_and_scan_failure_branches(monkeypatch, tmp_path):
             self.dry_run_plan = None
             self.stats = types.SimpleNamespace(get_snapshot=lambda: {})
 
-        def _stop_spinner_thread(self):
+        def stop_spinner_thread(self):
             pass
 
         def scan_and_plan(self, _src):
@@ -142,7 +142,7 @@ def test_main_cleanup_warning_and_vhealth_exception(monkeypatch, tmp_path):
         def finish_issues(self):
             return [], []
 
-        def _stop_spinner_thread(self):
+        def stop_spinner_thread(self):
             pass
 
         def scan_and_plan(self, _src):
@@ -197,7 +197,7 @@ def test_main_processing_fatal_exception_branch(monkeypatch, tmp_path):
             self.dry_run_plan = None
             self.stats = types.SimpleNamespace(get_snapshot=lambda: {})
 
-        def _stop_spinner_thread(self):
+        def stop_spinner_thread(self):
             pass
 
         def scan_and_plan(self, _src):
@@ -213,3 +213,30 @@ def test_main_processing_fatal_exception_branch(monkeypatch, tmp_path):
     with pytest.raises(SystemExit) as exc:
         unpackr.main()
     assert exc.value.code == 1
+
+
+def test_main_ctrl_c_right_after_app_init_exits_cleanly(monkeypatch, tmp_path):
+    """Ctrl+C after UnpackrApp(...) but before the run starts must exit 0, not raise UnboundLocalError."""
+    source = tmp_path / "src"
+    dest = tmp_path / "dst"
+    source.mkdir()
+    dest.mkdir()
+    _base_monkeypatch(monkeypatch, tmp_path, source, dest)
+    stopped = []
+
+    class App:
+        def __init__(self, cfg):
+            self.stats = types.SimpleNamespace(get_snapshot=lambda: {})
+
+        def stop_spinner_thread(self):
+            stopped.append(True)
+
+    def renderer_interrupted(*_a, **_k):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(unpackr, "UnpackrApp", App)
+    monkeypatch.setattr(unpackr, "create_renderer", renderer_interrupted)
+    with pytest.raises(SystemExit) as exc:
+        unpackr.main()
+    assert exc.value.code == 0
+    assert stopped == [True]

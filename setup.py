@@ -12,7 +12,7 @@ from setuptools.command.build_py import build_py
 class BuildPyWithoutLocalState(build_py):
     """Remove ignored local customization files from staged package data."""
 
-    def run(self):
+    def run(self) -> None:
         super().run()
         (Path(self.build_lib) / "config_files" / "comments.json").unlink(missing_ok=True)
 
@@ -21,7 +21,7 @@ readme_file = Path(__file__).parent / "README.md"
 long_description = readme_file.read_text(encoding="utf-8") if readme_file.exists() else ""
 
 version_file = Path(__file__).parent / "version.py"
-version_globals: dict = {}
+version_globals: dict[str, object] = {}
 exec(version_file.read_text(encoding="utf-8"), version_globals)  # nosec B102 - local version.py only
 package_version = version_globals["__version__"]
 
@@ -37,7 +37,7 @@ setup(
     license="Apache 2.0 with Commons Clause",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    python_requires=">=3.11",
+    python_requires=">=3.12",
     packages=find_packages(exclude=["tests", "docs", "archive"]),
     py_modules=["doctor", "unpackr", "vhealth", "version"],
     include_package_data=True,
@@ -54,13 +54,16 @@ setup(
     extras_require={
         "dev": [
             "bandit>=1.7.8",
-            "mypy>=1.11",
+            "mypy>=2.4",
             "pre-commit>=4.0",
-            "pyright>=1.1.390",
+            "pyright>=1.1.414",
             "pytest>=8.3",
             "pytest-cov>=5.0",
-            "ruff>=0.8.0",
+            "ruff>=0.17",
             "setuptools>=68",
+            "types-colorama>=0.4.15",
+            "types-psutil>=7.2",
+            "types-tqdm>=4.70",
         ],
     },
     entry_points={
@@ -79,10 +82,11 @@ setup(
         "Operating System :: MacOS",
         "Topic :: Utilities",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3 :: Only",
         "Programming Language :: Python :: 3.12",
         "Programming Language :: Python :: 3.13",
         "Programming Language :: Python :: 3.14",
+        "Programming Language :: Python :: 3.15",
         "License :: Other/Proprietary License",
     ],
 )

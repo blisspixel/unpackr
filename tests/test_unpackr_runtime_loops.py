@@ -69,7 +69,7 @@ def test_run_dry_run_loose_and_junk_paths(tmp_path):
         file_handler=types.SimpleNamespace(
             is_folder_empty_or_removable=lambda *_a, **_k: True, safe_delete_folder=lambda *_a, **_k: True
         ),
-        _stop_spinner_thread=lambda: None,
+        stop_spinner_thread=lambda: None,
     )
 
     bind_app_helpers(app)

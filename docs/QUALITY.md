@@ -13,7 +13,7 @@ python -m bandit -c pyproject.toml -r core utils doctor.py unpackr.py vhealth.py
 python -m pytest -q --cov --cov-fail-under=80
 ```
 
-Run these commands with any supported Python `3.11+` interpreter. On Windows, `py -3.14 -m ...` is an explicit alternative when `python` points elsewhere.
+Run these commands with any supported Python `3.12+` interpreter. On Windows, `py -3.15 -m ...` is an explicit alternative when `python` points elsewhere.
 
 For non-Windows local smoke checks (presentation/runtime helpers only):
 
@@ -31,10 +31,10 @@ pre-commit run --all-files
 
 ## Policy
 
-- `ruff`: blocks syntax, correctness, import hygiene, modernization, simplification, and common bug patterns.
-- `mypy`: enforces typed behavior across `core`, `utils`, and top-level entry points configured in `pyproject.toml`.
+- `ruff`: blocks syntax, correctness, import hygiene, modernization (pyupgrade `UP` rules targeting Python 3.12), simplification, and common bug patterns.
+- `mypy`: runs with `strict = true` across `core`, `utils`, and the top-level entry points configured in `pyproject.toml`. Third-party packages are checked through their stubs (`types-psutil`, `types-colorama`, `types-tqdm` in the `dev` extra).
 - `pyright`: provides a second fast type-analysis pass aligned with editor feedback.
-- `pyright` strict tier: `core/config.py`, `core/file_handler.py`, and `core/safety_invariants.py` run under a stricter Pyright policy than the rest of the repo.
+- `pyright` strict: `typeCheckingMode = "strict"` for every checked module (`core`, `utils`, `doctor.py`, `unpackr.py` and `vhealth.py`). No module is relaxed: there are no mypy overrides or per-file ruff `UP` ignores.
 - `bandit`: scans the runtime code paths for common Python security issues.
 - `pytest`: full regression suite must pass.
 - Coverage: CI enforces minimum `80%` on application modules via `.coveragerc`.
@@ -59,10 +59,10 @@ Required state:
 - CLI prompt/presentation helpers now live in `utils/cli_prompts.py` instead of the `unpackr.py` entrypoint body.
 - If behavior changes, add or update tests in the same change.
 - For destructive-path changes (move/delete logic), regression tests are mandatory.
-- CI matrix runs on Python `3.11`, `3.12`, `3.13`, and `3.14` across Windows, Linux, and macOS.
+- CI matrix runs on Python `3.12`, `3.13`, `3.14`, and `3.15` across Windows, Linux, and macOS.
 - Every CI matrix lane launches all three installed console entry points with `--help`.
-- Linux `3.11` runs the full pre-commit quality gate.
+- Linux `3.12` (the oldest supported version) runs the full pre-commit quality gate.
 - Windows runs the full regression suite and coverage gate.
-- Linux runs the full regression suite (coverage gate on Python `3.11`) and installs `p7zip`/`par2`/`ffmpeg` for optional real-tool checks.
+- Linux runs the full regression suite (coverage gate on Python `3.12`) and installs `p7zip`/`par2`/`ffmpeg` for optional real-tool checks.
 - macOS runs an expanded platform/safety/doctor/archive suite plus optional real-tool checks when Homebrew tools install cleanly.
 - Optional tool tests live in `tests/test_external_tools_optional.py` and skip when tools are absent.

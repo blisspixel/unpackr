@@ -332,12 +332,12 @@ def test_remove_sample_videos_handles_dry_run_plan_fallback(tmp_path):
 def test_stop_spinner_thread_handles_renderer_and_thread_join():
     renderer = Mock()
     app = SimpleNamespace(renderer=renderer, spinner_running=True, spinner_thread=None)
-    unpackr.UnpackrApp._stop_spinner_thread(app)
+    unpackr.UnpackrApp.stop_spinner_thread(app)
     renderer.stop.assert_called_once()
 
     thread = Mock()
     app = SimpleNamespace(renderer=None, spinner_running=True, spinner_thread=thread)
-    unpackr.UnpackrApp._stop_spinner_thread(app)
+    unpackr.UnpackrApp.stop_spinner_thread(app)
     assert app.spinner_running is False
     thread.join.assert_called_once_with(timeout=1.0)
 

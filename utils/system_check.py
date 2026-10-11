@@ -3,29 +3,57 @@ System tools validation for Unpackr.
 Checks availability of required external tools.
 """
 
+from __future__ import annotations
+
 import contextlib
 import os
 import re
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, ClassVar, TypedDict, cast
 
 from colorama import Fore, Style
 
 from utils.platform_support import detect_running_helpers, kill_helper_processes, merge_tool_candidates
 
+if TYPE_CHECKING:
+    import psutil
+
+    # Type-only: importing core at runtime would cycle back through core/__init__.py.
+    from core.config import ConfigSource
+
+
+type Version = tuple[int, ...]
+
+
+class ToolInfo(TypedDict):
+    """Static description of an external tool Unpackr can use."""
+
+    name: str
+    command: list[str]
+    critical: bool
+    purpose: str
+
+
+def _configured_tool_paths(config: ConfigSource) -> dict[str, object]:
+    """The ``tool_paths`` mapping from config, or {} when it is missing or malformed."""
+    tool_paths = config.get("tool_paths", {})
+    if not isinstance(tool_paths, dict):
+        return {}
+    return cast(dict[str, object], tool_paths)
+
 
 class SystemCheck:
     """Validates system requirements and external tools."""
 
-    MIN_TOOL_VERSIONS = {
+    MIN_TOOL_VERSIONS: ClassVar[dict[str, Version]] = {
         "7z": (22, 0),
         "par2": (0, 8, 1),
         "ffmpeg": (4, 4),
     }
 
-    REQUIRED_TOOLS = {
+    REQUIRED_TOOLS: ClassVar[dict[str, ToolInfo]] = {
         "7z": {"name": "7-Zip", "command": ["7z"], "critical": True, "purpose": "RAR/7z extraction"},
         "par2": {
             "name": "par2cmdline",
@@ -41,12 +69,14 @@ class SystemCheck:
         },
     }
 
-    def __init__(self, config=None):
+    def __init__(self, config: ConfigSource | None = None) -> None:
         """Initialize SystemCheck with optional config containing tool paths."""
-        self.config = config or {}
-        self._version_status: Dict[str, Tuple[bool, str]] = {}
+        self.config: ConfigSource = config or {}
+        self._version_status: dict[str, tuple[bool, str]] = {}
+        # Tool key -> executable that answered during check_tool().
+        self._working_paths: dict[str, str] = {}
         # Set by the CLI so conflict handling only touches helpers working on this source.
-        self.source_dir: Optional[Path] = None
+        self.source_dir: Path | None = None
         self.dry_run = False
 
     def check_tool(self, tool_key: str) -> bool:
@@ -64,10 +94,7 @@ class SystemCheck:
             return False
 
         # Get tool path from config if available, then merge platform defaults.
-        tool_paths = self.config.get("tool_paths", {})
-        if not isinstance(tool_paths, dict):
-            tool_paths = {}
-        custom_paths = merge_tool_candidates(tool_paths.get(tool_key), tool_key)
+        custom_paths = merge_tool_candidates(_configured_tool_paths(self.config).get(tool_key), tool_key)
 
         # Try each path until one works
         for custom_path in custom_paths:
@@ -80,12 +107,12 @@ class SystemCheck:
                 if tool_key == "ffmpeg":
                     command.append("-version")
 
-                subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=2)
+                subprocess.run(command, capture_output=True, timeout=2)
                 # If we get here, it worked - store the working path
-                self._working_paths = getattr(self, "_working_paths", {})
                 self._working_paths[tool_key] = resolved_path
                 return True
-            except (FileNotFoundError, subprocess.TimeoutExpired):
+            except (OSError, subprocess.TimeoutExpired):
+                # OSError covers a missing file and one that exists but cannot be executed.
                 continue
 
         return False
@@ -110,7 +137,7 @@ class SystemCheck:
         return shutil.which(candidate) or ""
 
     @staticmethod
-    def _extract_version_tuple(text: str):
+    def _extract_version_tuple(text: str) -> Version | None:
         """Extract first semantic-like version tuple from command output."""
         match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", text)
         if not match:
@@ -121,7 +148,7 @@ class SystemCheck:
         return (major, minor, patch)
 
     @staticmethod
-    def _is_version_at_least(found: tuple, minimum: tuple) -> bool:
+    def _is_version_at_least(found: Version, minimum: Version) -> bool:
         """Compare versions with zero-padding semantics."""
         max_len = max(len(found), len(minimum))
         found_norm = found + (0,) * (max_len - len(found))
@@ -129,13 +156,13 @@ class SystemCheck:
         return found_norm >= min_norm
 
     @staticmethod
-    def _format_version(version: tuple) -> str:
+    def _format_version(version: Version) -> str:
         """Format version tuple for status output."""
         if len(version) >= 3 and version[2] == 0:
             return f"{version[0]}.{version[1]}"
         return ".".join(str(v) for v in version)
 
-    def _get_tool_version(self, tool_key: str):
+    def _get_tool_version(self, tool_key: str) -> Version | None:
         """Best-effort version detection for an available tool."""
         command = self.get_tool_command(tool_key)
         if not command:
@@ -153,10 +180,10 @@ class SystemCheck:
             )
             combined = f"{result.stdout}\n{result.stderr}"
             return self._extract_version_tuple(combined)
-        except (OSError, subprocess.TimeoutExpired, FileNotFoundError):
+        except (OSError, subprocess.TimeoutExpired):
             return None
 
-    def _evaluate_tool_version(self, tool_key: str) -> Tuple[bool, str]:
+    def _evaluate_tool_version(self, tool_key: str) -> tuple[bool, str]:
         """
         Evaluate tool version policy.
 
@@ -177,14 +204,14 @@ class SystemCheck:
             return True, f"{found_text}"
         return False, f"{found_text} (need {min_text}+)"
 
-    def check_all_tools(self) -> Dict[str, bool]:
+    def check_all_tools(self) -> dict[str, bool]:
         """
         Check all required tools.
 
         Returns:
             Dictionary mapping tool keys to availability status
         """
-        results = {}
+        results: dict[str, bool] = {}
         self._version_status = {}
         for tool_key in self.REQUIRED_TOOLS:
             is_available = self.check_tool(tool_key)
@@ -199,7 +226,7 @@ class SystemCheck:
                     results[tool_key] = False
         return results
 
-    def display_tool_status(self, tools_status: Dict[str, bool]) -> bool:
+    def display_tool_status(self, tools_status: dict[str, bool]) -> bool:
         """
         Display status of all tools and check if we can proceed.
 
@@ -210,7 +237,7 @@ class SystemCheck:
             True if we can proceed, False if critical tools missing
         """
         can_proceed = True
-        status_parts = []
+        status_parts: list[str] = []
 
         for tool_key, is_available in tools_status.items():
             tool_info = self.REQUIRED_TOOLS[tool_key]
@@ -247,7 +274,7 @@ class SystemCheck:
 
         return can_proceed
 
-    def get_tool_command(self, tool_key: str) -> list:
+    def get_tool_command(self, tool_key: str) -> list[str]:
         """
         Get the command to run for a specific tool.
 
@@ -262,15 +289,11 @@ class SystemCheck:
             return []
 
         # Use working path if we found one during check
-        working_paths = getattr(self, "_working_paths", {})
-        if tool_key in working_paths:
-            return [working_paths[tool_key]]
+        if tool_key in self._working_paths:
+            return [self._working_paths[tool_key]]
 
         # Get tool path from config if available, then merge platform defaults.
-        tool_paths = self.config.get("tool_paths", {})
-        if not isinstance(tool_paths, dict):
-            tool_paths = {}
-        custom_paths = merge_tool_candidates(tool_paths.get(tool_key), tool_key)
+        custom_paths = merge_tool_candidates(_configured_tool_paths(self.config).get(tool_key), tool_key)
 
         for custom_path in custom_paths:
             resolved_path = self._resolve_tool_path(custom_path)
@@ -279,7 +302,7 @@ class SystemCheck:
 
         return []
 
-    def check_running_processes(self) -> Tuple[bool, List[str]]:
+    def check_running_processes(self) -> tuple[bool, list[str]]:
         """
         Check if 7z or par2 processes are already running.
 
@@ -292,7 +315,7 @@ class SystemCheck:
             return False, []
         return len(running) > 0, running
 
-    def kill_processes(self, process_names: List[str]) -> bool:
+    def kill_processes(self, process_names: list[str]) -> bool:
         """
         Kill specific processes.
 
@@ -304,18 +327,28 @@ class SystemCheck:
         """
         return kill_helper_processes(process_names)
 
-    HELPER_NAMES = {"7z", "7zz", "7za", "7z.exe", "7zz.exe", "par2", "par2.exe", "ffmpeg", "ffmpeg.exe"}
+    HELPER_NAMES: ClassVar[set[str]] = {
+        "7z",
+        "7zz",
+        "7za",
+        "7z.exe",
+        "7zz.exe",
+        "par2",
+        "par2.exe",
+        "ffmpeg",
+        "ffmpeg.exe",
+    }
 
-    def find_source_processes(self, source_dir: Path) -> List[Any]:
+    def find_source_processes(self, source_dir: Path) -> list[psutil.Process]:
         """Helper processes (7-Zip, par2, ffmpeg) whose command line points into source_dir."""
-        import psutil
+        import psutil  # imported lazily so doctor can report a missing psutil
 
         source = str(Path(source_dir).absolute())
-        found = []
+        found: list[psutil.Process] = []
         for proc in psutil.process_iter(["pid", "name", "cmdline"]):
             try:
                 name = (proc.info.get("name") or "").lower()
-                cmdline = proc.info.get("cmdline") or []
+                cmdline: list[str] = proc.info.get("cmdline") or []
             except (psutil.Error, OSError):
                 continue
             if name in self.HELPER_NAMES and any(source in str(arg) for arg in cmdline):

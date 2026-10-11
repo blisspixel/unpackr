@@ -8,10 +8,12 @@ import subprocess
 import tempfile
 import threading
 import time
+from collections.abc import Callable
 from contextlib import suppress
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Optional, Protocol
+from types import TracebackType
+from typing import Any, Literal, Protocol, Self
 
 
 class TimeoutException(Exception):
@@ -110,7 +112,7 @@ class SafetyLimits:
 class TimeoutGuard:
     """Context manager for timeout protection."""
 
-    def __init__(self, timeout: int, operation: str = "Operation"):
+    def __init__(self, timeout: int, operation: str = "Operation") -> None:
         """
         Initialize timeout guard.
 
@@ -123,18 +125,23 @@ class TimeoutGuard:
         self.timer: threading.Timer | None = None
         self.timed_out = False
 
-    def _timeout_handler(self):
+    def _timeout_handler(self) -> None:
         """Handle timeout event."""
         self.timed_out = True
         logging.error(f"{self.operation} exceeded timeout of {self.timeout} seconds")
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         """Start timeout timer."""
         self.timer = threading.Timer(self.timeout, self._timeout_handler)
         self.timer.start()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> Literal[False]:
         """Cancel timeout timer."""
         if self.timer:
             self.timer.cancel()
@@ -199,11 +206,11 @@ class SubprocessSafety:
     def run_with_timeout(
         cmd: list[str],
         timeout: int,
-        cwd: Optional[Path] = None,
+        cwd: Path | None = None,
         operation: str = "Subprocess",
-        expected_codes: Optional[list[int]] = None,
+        expected_codes: list[int] | None = None,
         use_temp_files: bool = False,
-        process_tracker: Optional[ProcessTracker] = None,
+        process_tracker: ProcessTracker | None = None,
     ) -> tuple[bool, str, str, int]:
         """
         Run subprocess with guaranteed timeout and buffer overflow protection.
@@ -338,10 +345,10 @@ class SubprocessSafety:
         cmd: list[str],
         timeout: int,
         line_handler: Callable[[str], bool],
-        cwd: Optional[Path] = None,
+        cwd: Path | None = None,
         operation: str = "Subprocess",
-        expected_codes: Optional[list[int]] = None,
-        process_tracker: Optional[ProcessTracker] = None,
+        expected_codes: list[int] | None = None,
+        process_tracker: ProcessTracker | None = None,
     ) -> tuple[bool, str, int]:
         """
         Run subprocess and stream the full stdout line-by-line through ``line_handler``.
@@ -449,7 +456,7 @@ class SubprocessSafety:
 class LoopSafety:
     """Prevent infinite loops with iteration tracking."""
 
-    def __init__(self, max_iterations: int, loop_name: str = "Loop"):
+    def __init__(self, max_iterations: int, loop_name: str = "Loop") -> None:
         """
         Initialize loop safety tracker.
 
@@ -484,7 +491,7 @@ class LoopSafety:
 
         return True
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset iteration counter."""
         self.iteration_count = 0
         self.start_time = time.time()
@@ -493,7 +500,7 @@ class LoopSafety:
 class RecursionSafety:
     """Prevent stack overflow from deep recursion."""
 
-    def __init__(self, max_depth: int, operation: str = "Recursion"):
+    def __init__(self, max_depth: int, operation: str = "Recursion") -> None:
         """
         Initialize recursion depth tracker.
 
@@ -520,7 +527,7 @@ class RecursionSafety:
 
         return True
 
-    def exit(self):
+    def exit(self) -> None:
         """Exit recursion level."""
         self.current_depth = max(0, self.current_depth - 1)
 
@@ -528,7 +535,7 @@ class RecursionSafety:
 class OperationTimer:
     """Track total operation time with hard limit."""
 
-    def __init__(self, max_time: int, operation: str = "Operation"):
+    def __init__(self, max_time: int, operation: str = "Operation") -> None:
         """
         Initialize operation timer.
 
@@ -565,7 +572,7 @@ class OperationTimer:
 class StuckDetector:
     """Detect when process appears stuck with no progress."""
 
-    def __init__(self, timeout: int, check_interval: int = 10):
+    def __init__(self, timeout: int, check_interval: int = 10) -> None:
         """
         Initialize stuck detector.
 
@@ -578,7 +585,7 @@ class StuckDetector:
         self.last_progress = time.time()
         self.last_check = time.time()
 
-    def mark_progress(self):
+    def mark_progress(self) -> None:
         """Mark that progress has been made."""
         self.last_progress = time.time()
 

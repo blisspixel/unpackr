@@ -17,7 +17,7 @@ jobs:
       fail-fast: false
       matrix:
         os: ["windows-latest", "ubuntu-latest", "macos-latest"]
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.12", "3.13", "3.14", "3.15"]
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -57,7 +57,7 @@ jobs:
           python -c "import json,sys; d=json.load(open('doctor-report.json', encoding='utf-8')); required={'timestamp_utc','exit_code','status','counts','passed','warnings','issues','recommended_actions'}; missing=required-d.keys(); assert not missing, missing; assert d['exit_code'] in (0,1); assert d['status'] in ('ready','blocked'); assert d['counts']['issues']==len(d['issues']); assert (d['exit_code']==0)==(d['counts']['issues']==0); print('doctor-json-ok', d['status'], d['counts'])"
 
       - name: Benchmark harness smoke
-        if: runner.os == 'Linux' && matrix.python-version == '3.11'
+        if: runner.os == 'Linux' && matrix.python-version == '3.12'
         run: |
           python scripts/benchmark_harness.py -o benchmarks/ci-smoke.json
           python -c "import json; d=json.load(open('benchmarks/ci-smoke.json', encoding='utf-8')); assert d.get('schema_version')==1; assert 'hardware' in d and 'metrics' in d; assert d['metrics']['sequential_read_mbps']>=0; assert d['metrics']['cpu_score']>0; print('benchmark-smoke-ok', d['hardware'].get('platform'), d['metrics'].get('disk_type'))"
@@ -71,29 +71,29 @@ jobs:
           ./vhealth.sh --help
 
       - name: Wheel contents smoke test
-        if: runner.os == 'Linux' && matrix.python-version == '3.14'
+        if: runner.os == 'Linux' && matrix.python-version == '3.15'
         run: |
           python -m pip wheel --no-deps --wheel-dir dist .
           python -c "import glob, zipfile; wheel = glob.glob('dist/unpackr-*.whl')[0]; names = set(zipfile.ZipFile(wheel).namelist()); required = {'unpackr.py', 'doctor.py', 'vhealth.py', 'config_files/config.json', 'config_files/comments.sample.json'}; assert required <= names, required - names; assert 'config_files/comments.json' not in names"
 
       - name: Pre-commit quality gate
-        if: runner.os == 'Linux' && matrix.python-version == '3.11'
+        if: runner.os == 'Linux' && matrix.python-version == '3.12'
         run: python -m pre_commit run --all-files --show-diff-on-failure
 
       - name: Pytest (Windows Full Suite + Coverage Gate)
-        if: runner.os == 'Windows' && matrix.python-version == '3.11'
+        if: runner.os == 'Windows' && matrix.python-version == '3.12'
         run: python -m pytest -q --cov --cov-fail-under=80 --cov-report=term-missing
 
       - name: Pytest (Windows Full Suite)
-        if: runner.os == 'Windows' && matrix.python-version != '3.11'
+        if: runner.os == 'Windows' && matrix.python-version != '3.12'
         run: python -m pytest -q
 
       - name: Pytest (Linux Full Suite + Coverage Gate)
-        if: runner.os == 'Linux' && matrix.python-version == '3.11'
+        if: runner.os == 'Linux' && matrix.python-version == '3.12'
         run: python -m pytest -q --cov --cov-fail-under=80 --cov-report=term-missing
 
       - name: Pytest (Linux Full Suite)
-        if: runner.os == 'Linux' && matrix.python-version != '3.11'
+        if: runner.os == 'Linux' && matrix.python-version != '3.12'
         run: python -m pytest -q
 
       - name: Pytest (macOS Expanded Suite)

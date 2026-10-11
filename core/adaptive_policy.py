@@ -20,11 +20,12 @@ import json
 import logging
 import statistics
 import time
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from enum import Enum, auto
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -59,10 +60,10 @@ class OperationOutcome:
     duration_seconds: float
     decision: str  # 'accept', 'reject', 'timeout', etc.
     outcome: OutcomeType
-    metadata: Dict  # Additional context
-    user_feedback: Optional[str] = None
+    metadata: dict[str, Any]  # Additional context
+    user_feedback: str | None = None
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         data = asdict(self)
         data["timestamp"] = self.timestamp.isoformat()
@@ -70,12 +71,12 @@ class OperationOutcome:
         return data
 
     @classmethod
-    def from_dict(cls, data: dict) -> "OperationOutcome":
+    def from_dict(cls, data: Mapping[str, Any]) -> "OperationOutcome":
         """Create from dictionary."""
-        data = data.copy()
-        data["timestamp"] = datetime.fromisoformat(data["timestamp"])
-        data["outcome"] = OutcomeType[data["outcome"]]
-        return cls(**data)
+        values = dict(data)
+        values["timestamp"] = datetime.fromisoformat(values["timestamp"])
+        values["outcome"] = OutcomeType[values["outcome"]]
+        return cls(**values)
 
 
 @dataclass
@@ -90,18 +91,18 @@ class EnvironmentProfile:
     video_decode_fps: float  # Observed video decode speed
     last_updated: datetime
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["disk_type"] = self.disk_type.name
         data["last_updated"] = self.last_updated.isoformat()
         return data
 
     @classmethod
-    def from_dict(cls, data: dict) -> "EnvironmentProfile":
-        data = data.copy()
-        data["disk_type"] = DiskType[data["disk_type"]]
-        data["last_updated"] = datetime.fromisoformat(data["last_updated"])
-        return cls(**data)
+    def from_dict(cls, data: Mapping[str, Any]) -> "EnvironmentProfile":
+        values = dict(data)
+        values["disk_type"] = DiskType[values["disk_type"]]
+        values["last_updated"] = datetime.fromisoformat(values["last_updated"])
+        return cls(**values)
 
 
 class EnvironmentProfiler:
@@ -111,7 +112,7 @@ class EnvironmentProfiler:
     Detects HDD vs SSD, measures I/O performance, CPU speed, etc.
     """
 
-    def __init__(self, cache_file: Optional[Path] = None):
+    def __init__(self, cache_file: Path | None = None) -> None:
         """
         Initialize environment profiler.
 
@@ -119,7 +120,7 @@ class EnvironmentProfiler:
             cache_file: Path to cache profile results (to avoid repeated benchmarks)
         """
         self.cache_file = cache_file or Path.home() / ".unpackr" / "env_profile.json"
-        self.profile: Optional[EnvironmentProfile] = None
+        self.profile: EnvironmentProfile | None = None
 
     def get_profile(self, force_refresh: bool = False) -> EnvironmentProfile:
         """
@@ -134,16 +135,18 @@ class EnvironmentProfiler:
         # Try to load cached profile
         if not force_refresh and self.cache_file.exists():
             try:
-                with open(self.cache_file, "r") as f:
+                with open(self.cache_file) as f:
                     data = json.load(f)
-                    self.profile = EnvironmentProfile.from_dict(data)
+                    if not isinstance(data, dict):
+                        raise ValueError("profile cache is not a JSON object")
+                    self.profile = EnvironmentProfile.from_dict(cast(dict[str, Any], data))
 
                     # Use cache if less than 7 days old
                     age = datetime.now() - self.profile.last_updated
                     if age < timedelta(days=7):
                         logger.info(f"Using cached environment profile (age: {age.days} days)")
                         return self.profile
-            except (json.JSONDecodeError, KeyError, ValueError) as e:
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
                 logger.warning(f"Failed to load cached profile: {e}")
 
         # Profile the environment
@@ -361,7 +364,7 @@ class EnvironmentProfiler:
             logger.warning(f"CPU benchmark failed: {e}")
             return 1.0
 
-    def _save_profile(self):
+    def _save_profile(self) -> None:
         """Save profile to cache file."""
         if self.profile is None:
             return
@@ -376,8 +379,8 @@ class EnvironmentProfiler:
 
     def update_learned_metrics(
         self,
-        extraction_speed: Optional[float] = None,
-        video_decode_fps: Optional[float] = None,
+        extraction_speed: float | None = None,
+        video_decode_fps: float | None = None,
     ) -> None:
         """
         Update learned metrics from actual operations.
@@ -426,8 +429,8 @@ class AdaptivePolicy:
         base_threshold: float,
         min_threshold: float,
         max_threshold: float,
-        history_file: Optional[Path] = None,
-    ):
+        history_file: Path | None = None,
+    ) -> None:
         """
         Initialize adaptive policy.
 
@@ -445,11 +448,11 @@ class AdaptivePolicy:
         self.current_threshold = base_threshold
 
         self.history_file = history_file or (Path.home() / ".unpackr" / f"{policy_name}_history.json")
-        self.outcome_history: List[OperationOutcome] = []
+        self.outcome_history: list[OperationOutcome] = []
 
         self._load_history()
 
-    def decide_threshold(self, context: Optional[Dict] = None) -> float:
+    def decide_threshold(self, context: dict[str, Any] | None = None) -> float:
         """
         Decide threshold based on past outcomes.
 
@@ -493,7 +496,7 @@ class AdaptivePolicy:
 
         return self.current_threshold
 
-    def record_outcome(self, outcome: OperationOutcome):
+    def record_outcome(self, outcome: OperationOutcome) -> None:
         """
         Record an operation outcome for learning.
 
@@ -508,7 +511,7 @@ class AdaptivePolicy:
 
         self._save_history()
 
-    def get_statistics(self) -> Dict:
+    def get_statistics(self) -> dict[str, float]:
         """
         Get statistics about policy performance.
 
@@ -545,21 +548,22 @@ class AdaptivePolicy:
             "false_negatives": false_neg,
         }
 
-    def _load_history(self):
+    def _load_history(self) -> None:
         """Load outcome history from file."""
         if not self.history_file.exists():
             return
 
         try:
-            with open(self.history_file, "r") as f:
+            with open(self.history_file) as f:
                 data = json.load(f)
                 self.outcome_history = [OperationOutcome.from_dict(o) for o in data["outcomes"]]
-                self.current_threshold = data.get("current_threshold", self.base_threshold)
+                threshold = data.get("current_threshold", self.base_threshold)
+                self.current_threshold = float(threshold)
             logger.debug(f"Loaded {len(self.outcome_history)} outcomes for {self.policy_name}")
         except Exception as e:
             logger.warning(f"Failed to load history for {self.policy_name}: {e}")
 
-    def _save_history(self):
+    def _save_history(self) -> None:
         """Save outcome history to file."""
         try:
             self.history_file.parent.mkdir(parents=True, exist_ok=True)
@@ -585,7 +589,7 @@ class AdaptiveTimeoutCalculator:
     actual performance.
     """
 
-    def __init__(self, profiler: EnvironmentProfiler):
+    def __init__(self, profiler: EnvironmentProfiler) -> None:
         """
         Initialize timeout calculator.
 
@@ -600,8 +604,8 @@ class AdaptiveTimeoutCalculator:
         self.base_validation_timeout = 120  # 2 minutes
 
         # Observed operation times for learning
-        self.extraction_times: List[Tuple[int, float]] = []  # (file_size, duration)
-        self.validation_times: List[Tuple[float, float]] = []
+        self.extraction_times: list[tuple[int, float]] = []  # (file_size, duration)
+        self.validation_times: list[tuple[float, float]] = []
 
     def calculate_extraction_timeout(self, file_size_bytes: int) -> int:
         """
@@ -673,7 +677,7 @@ class AdaptiveTimeoutCalculator:
 
         return timeout
 
-    def record_extraction_time(self, file_size_bytes: int, duration_seconds: float):
+    def record_extraction_time(self, file_size_bytes: int, duration_seconds: float) -> None:
         """
         Record actual extraction time for learning.
 
@@ -697,7 +701,7 @@ class AdaptiveTimeoutCalculator:
                 self.profiler.update_learned_metrics(extraction_speed=avg_speed)
                 self.profile = self.profiler.get_profile()
 
-    def record_validation_time(self, duration_video_seconds: float, duration_actual_seconds: float):
+    def record_validation_time(self, duration_video_seconds: float, duration_actual_seconds: float) -> None:
         """
         Record actual validation time for learning.
 

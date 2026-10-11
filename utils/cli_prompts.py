@@ -4,7 +4,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 from colorama import Fore, Style
 
@@ -113,14 +113,14 @@ def resolve_cli_presentation(args: Any, config: Config) -> tuple[AnimationMode, 
     CLI args > environment variables > config > defaults.
     """
 
-    def _normalize_mode(value: Any) -> Optional[AnimationMode]:
+    def _normalize_mode(value: Any) -> AnimationMode | None:
         if isinstance(value, str):
             normalized = value.strip().lower()
             if normalized in {"auto", "off", "light", "full"}:
                 return cast(AnimationMode, normalized)
         return None
 
-    def _is_truthy_env(value: Optional[str]) -> bool:
+    def _is_truthy_env(value: str | None) -> bool:
         if value is None:
             return False
         return value.strip().lower() in {"1", "true", "yes", "on"}

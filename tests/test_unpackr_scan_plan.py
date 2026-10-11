@@ -81,7 +81,7 @@ def test_spinner_start_stop_and_comment_rarity_paths(monkeypatch):
     unpackr.UnpackrApp._start_spinner_thread(app)
     assert app.spinner_running is True
     assert isinstance(app.spinner_thread, threading.Thread)
-    unpackr.UnpackrApp._stop_spinner_thread(app)
+    unpackr.UnpackrApp.stop_spinner_thread(app)
     assert app.spinner_running is False
 
     monkeypatch.setattr(unpackr.random, "choice", lambda seq: seq[0])

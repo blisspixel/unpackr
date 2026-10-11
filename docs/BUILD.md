@@ -3,7 +3,7 @@
 ## Supported Runtime
 
 - Windows, Linux, macOS
-- Python `3.11+`
+- Python `3.12+`
 - External tools: `7z`/`7zz` (required), `par2` and `ffmpeg` (recommended)
 
 ## Recommended Install
@@ -29,7 +29,7 @@ pre-commit install
 pre-commit run --all-files
 ```
 
-Use the same Python `3.11+` interpreter for installation and command execution. On Windows, `py -3.14 -m pip install .` is an explicit alternative when `python` resolves to an older interpreter.
+Use the same Python `3.12+` interpreter for installation and command execution. On Windows, `py -3.15 -m pip install .` is an explicit alternative when `python` resolves to an older interpreter.
 
 ## OS Notes
 

@@ -18,10 +18,11 @@ import logging
 import os
 import shutil
 import time
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, List, Optional
+from typing import Any, cast
 
 from utils.trash import send_to_trash
 
@@ -37,7 +38,7 @@ def is_internal(path: Path) -> bool:
     return any(part.startswith(INTERNAL_PREFIX) for part in path.parts)
 
 
-def new_run_id(now: Optional[datetime] = None) -> str:
+def new_run_id(now: datetime | None = None) -> str:
     return (now or datetime.now()).strftime(RUN_ID_FORMAT)
 
 
@@ -64,7 +65,7 @@ class RunJournal:
         self.path = source_root / RUNS_DIR / f"{run_id}.jsonl"
         self.run_id = run_id
 
-    def write(self, entry: Dict[str, Any]) -> None:
+    def write(self, entry: dict[str, Any]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         entry = {"time": datetime.now().isoformat(timespec="seconds"), **entry}
         with open(self.path, "a", encoding="utf-8") as handle:
@@ -72,15 +73,20 @@ class RunJournal:
             handle.flush()
 
     @staticmethod
-    def read(path: Path) -> List[Dict[str, Any]]:
-        entries = []
+    def read(path: Path) -> list[dict[str, Any]]:
+        entries: list[dict[str, Any]] = []
         for line in path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
-            if line:
-                try:
-                    entries.append(json.loads(line))
-                except json.JSONDecodeError:
-                    logging.warning(f"Skipping unreadable journal line in {path}")
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                entry = None
+            if isinstance(entry, dict):
+                entries.append(cast(dict[str, Any], entry))
+            else:
+                logging.warning(f"Skipping unreadable journal line in {path}")
         return entries
 
 
@@ -89,9 +95,9 @@ class Remover:
     """Removes files and folders according to ``mode`` and journals every action."""
 
     mode: str = "permanent"
-    source_root: Optional[Path] = None
+    source_root: Path | None = None
     run_id: str = field(default_factory=new_run_id)
-    journal: Optional[RunJournal] = None
+    journal: RunJournal | None = None
     quarantined_files: int = 0
     quarantined_bytes: int = 0
     trashed_files: int = 0
@@ -105,7 +111,7 @@ class Remover:
             self.journal = RunJournal(self.source_root, self.run_id)
 
     @property
-    def quarantine_dir(self) -> Optional[Path]:
+    def quarantine_dir(self) -> Path | None:
         if self.source_root is None:
             return None
         return self.source_root / QUARANTINE_DIR / self.run_id
@@ -140,7 +146,7 @@ class Remover:
         self,
         path: Path,
         reason_code: str,
-        permanent: Optional[Callable[[Path], None]] = None,
+        permanent: Callable[[Path], None] | None = None,
     ) -> str:
         """Remove a file or folder. Returns the disposal used ("quarantine", "trash" or "permanent").
 
@@ -188,18 +194,18 @@ class Remover:
 class RunInfo:
     run_id: str
     journal: Path
-    counts: Dict[str, int]
+    counts: dict[str, int]
     quarantine_files: int
     quarantine_bytes: int
 
 
-def list_runs(source_root: Path) -> List[RunInfo]:
+def list_runs(source_root: Path) -> list[RunInfo]:
     runs_dir = source_root / RUNS_DIR
     if not runs_dir.is_dir():
         return []
-    infos = []
+    infos: list[RunInfo] = []
     for journal in sorted(runs_dir.glob("*.jsonl"), reverse=True):
-        counts: Dict[str, int] = {}
+        counts: dict[str, int] = {}
         for entry in RunJournal.read(journal):
             counts[entry.get("op", "?")] = counts.get(entry.get("op", "?"), 0) + 1
         qdir = source_root / QUARANTINE_DIR / journal.stem
@@ -210,13 +216,11 @@ def list_runs(source_root: Path) -> List[RunInfo]:
 
 @dataclass
 class RestoreResult:
-    restored: List[str] = field(default_factory=list)
-    skipped: List[str] = field(default_factory=list)
+    restored: list[str] = field(default_factory=list[str])
+    skipped: list[str] = field(default_factory=list[str])
 
 
-def restore_run(
-    source_root: Path, run_id: str, path_glob: Optional[str] = None, dry_run: bool = False
-) -> RestoreResult:
+def restore_run(source_root: Path, run_id: str, path_glob: str | None = None, dry_run: bool = False) -> RestoreResult:
     """Put quarantined files back and reverse moves for one run, newest action first."""
     journal = source_root / RUNS_DIR / f"{run_id}.jsonl"
     if not journal.is_file():
@@ -292,7 +296,7 @@ def _run_time(run_dir: Path) -> float:
             return time.time()
 
 
-def purge_quarantine(source_root: Path, retention_days: int, now: Optional[datetime] = None) -> tuple[int, int]:
+def purge_quarantine(source_root: Path, retention_days: int, now: datetime | None = None) -> tuple[int, int]:
     """Delete quarantined runs older than ``retention_days`` (0 keeps everything).
 
     Only direct children of ``<source>/.unpackr-quarantine`` are considered, and

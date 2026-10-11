@@ -281,7 +281,7 @@ def test_doctor_recommended_actions_and_output_edges(monkeypatch, capsys):
     doc.issues = ["Python version too old", "7-Zip not found", "No write permissions in current directory"]
     doc.warnings = ["par2cmdline not found - repair capability reduced", "ffmpeg version too old: 4.0 (need 4.4+)"]
     actions = doc._build_recommended_actions()
-    assert any("Install Python 3.11+" in action for action in actions)
+    assert any("Install Python 3.12+" in action for action in actions)
     assert any("7-Zip" in action for action in actions)
     assert any("permissions" in action for action in actions)
 

@@ -17,10 +17,12 @@ import sys
 import threading
 import time
 from collections import deque
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import suppress
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Callable, Deque, Dict, List, NoReturn, Optional, Tuple
+from types import FrameType
+from typing import Any, NoReturn, TypedDict, cast
 
 from colorama import Fore, Style, init
 
@@ -55,7 +57,7 @@ from utils.defensive import InputValidator, StateValidator, ValidationError
 from utils.dry_run_summary import DryRunPlan
 from utils.run_state import RunState, default_state_path
 from utils.run_summary import build_unpackr_run_summary, dumps_run_summary
-from utils.safety import LoopSafety, RecursionSafety, StuckDetector
+from utils.safety import LoopSafety, OperationTimer, RecursionSafety, StuckDetector
 from utils.system_check import SystemCheck
 from version import __version__
 
@@ -70,10 +72,10 @@ EXIT_COMPLETED_WITH_ERRORS = 3
 class ThreadSafeStats:
     """Thread-safe statistics tracking with atomic operations."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize statistics with thread safety."""
         self._lock = threading.Lock()
-        self._stats: Dict[str, int] = {
+        self._stats: dict[str, int] = {
             "folders_processed": 0,
             "folders_settling": 0,  # skipped because they changed within settle_minutes
             "folders_deleted": 0,
@@ -92,7 +94,7 @@ class ThreadSafeStats:
             "safety_stops": 0,
         }
 
-    def increment(self, key: str, value: int = 1):
+    def increment(self, key: str, value: int = 1) -> None:
         """Atomically increment a statistic."""
         with self._lock:
             if key in self._stats:
@@ -103,7 +105,7 @@ class ThreadSafeStats:
         with self._lock:
             return self._stats.get(key, 0)
 
-    def __setitem__(self, key: str, value: int):
+    def __setitem__(self, key: str, value: int) -> None:
         """
         Thread-safe set operation.
 
@@ -115,7 +117,7 @@ class ThreadSafeStats:
         with self._lock:
             self._stats[key] = value
 
-    def get_snapshot(self) -> Dict[str, int]:
+    def get_snapshot(self) -> dict[str, int]:
         """Get a thread-safe snapshot of all statistics."""
         with self._lock:
             return self._stats.copy()
@@ -139,41 +141,66 @@ _NUMBERED_VIDEO_SUFFIX = re.compile(
 )
 
 
+class VideoFolderEntry(TypedDict):
+    """A folder the run processes: videos, archive files and PAR2 files found in pre-scan."""
+
+    path: Path
+    videos: int
+    rars: int
+    par2s: int
+
+
+class ContentFolderEntry(TypedDict):
+    """A folder kept because it holds music, images or documents."""
+
+    path: Path
+    reason: str
+
+
+# comments.json: either a flat list of comments (old format) or a dict with
+# "rarities" and per-rarity "comments" (new format). Values come from JSON.
+type CommentsData = list[str] | dict[str, Any]
+# A comment ready to show: (text, rarity, colour, effect).
+type CommentDisplay = tuple[str, str | None, str, str]
+# What the progress display accepts: a CommentDisplay, or a plain string (old flat format).
+type ShownComment = CommentDisplay | str
+
+
 class WorkPlan:
     """Represents the work plan from pre-scan analysis."""
 
-    def __init__(self):
-        self.video_folders = []
-        self.content_folders = []
-        self.junk_folders = []  # Folders with only junk files - to be deleted
-        self.junk_kept: set = set()  # Junk-classified folders the run will keep (non-removable files inside)
-        self.loose_videos = []
+    def __init__(self) -> None:
+        self.video_folders: list[VideoFolderEntry] = []
+        self.content_folders: list[ContentFolderEntry] = []
+        self.junk_folders: list[Path] = []  # Folders with only junk files - to be deleted
+        self.junk_kept: set[Path] = set()  # Junk-classified folders the run will keep (non-removable files inside)
+        self.loose_videos: list[Path] = []
         self.total_videos = 0
         self.total_rars = 0
         self.total_par2s = 0
         self.estimated_time = 0
 
-    def add_video_folder(self, folder: Path, videos: int, rars: int, par2s: int):
+    def add_video_folder(self, folder: Path, videos: int, rars: int, par2s: int) -> None:
         """Add a video folder to the plan."""
         self.video_folders.append({"path": folder, "videos": videos, "rars": rars, "par2s": par2s})
         self.total_videos += videos
         self.total_rars += rars
         self.total_par2s += par2s
 
-    def add_content_folder(self, folder: Path, reason: str = ""):
+    def add_content_folder(self, folder: Path, reason: str = "") -> None:
         """Add a content folder to keep."""
         self.content_folders.append({"path": folder, "reason": reason})
 
-    def add_junk_folder(self, folder: Path):
+    def add_junk_folder(self, folder: Path) -> None:
         """Add a junk folder to delete."""
         self.junk_folders.append(folder)
 
-    def add_loose_video(self, video: Path):
+    def add_loose_video(self, video: Path) -> None:
         """Add a loose video file."""
         self.loose_videos.append(video)
         self.total_videos += 1
 
-    def as_plan_entries(self, source_dir: Path) -> List[Dict[str, Any]]:
+    def as_plan_entries(self, source_dir: Path) -> list[dict[str, Any]]:
         """Folder-level plan for --show-plan --json (per-file items come from --dry-run --json)."""
 
         def rel(path: Path) -> str:
@@ -182,7 +209,7 @@ class WorkPlan:
             except ValueError:
                 return str(path)
 
-        entries: List[Dict[str, Any]] = []
+        entries: list[dict[str, Any]] = []
         for item in self.video_folders:
             entries.append(
                 {
@@ -194,8 +221,8 @@ class WorkPlan:
                     "planned": True,
                 }
             )
-        for item in self.content_folders:
-            entries.append({"path": rel(item["path"]), "role": "keep", "reason": item["reason"], "planned": True})
+        for content in self.content_folders:
+            entries.append({"path": rel(content["path"]), "role": "keep", "reason": content["reason"], "planned": True})
         for folder in self.junk_folders:
             if folder in self.junk_kept:
                 entries.append({"path": rel(folder), "role": "keep", "reason": "non_removable_files", "planned": True})
@@ -205,7 +232,7 @@ class WorkPlan:
             entries.append({"path": rel(video), "role": "validate_video", "planned": True})
         return sorted(entries, key=lambda e: e["path"])
 
-    def calculate_time_estimate(self):
+    def calculate_time_estimate(self) -> int:
         """Calculate estimated processing time."""
         # More realistic estimates:
         # - 10 seconds per video check (FFmpeg can be slow)
@@ -222,7 +249,7 @@ class WorkPlan:
         self.estimated_time = time_estimate
         return time_estimate
 
-    def display(self):
+    def display(self) -> None:
         """Display the work plan."""
         # Compact single-line summary
         eta = timedelta(seconds=self.estimated_time)
@@ -237,7 +264,7 @@ class WorkPlan:
             f"{Fore.GREEN}{len(self.content_folders)}{Style.RESET_ALL} folders preserved"
         )
 
-    def display_detailed(self):
+    def display_detailed(self) -> None:
         """Display detailed pre-flight plan showing what will happen to each folder."""
         print(f"\n{Fore.CYAN}{'=' * 80}{Style.RESET_ALL}")
         print(f"{Fore.CYAN}PRE-FLIGHT CHECK - Detailed Plan{Style.RESET_ALL}")
@@ -256,7 +283,7 @@ class WorkPlan:
                 rars = item["rars"]
                 par2s = item["par2s"]
 
-                actions = []
+                actions: list[str] = []
                 if par2s > 0:
                     actions.append(f"{par2s} PAR2")
                 if rars > 0:
@@ -272,9 +299,9 @@ class WorkPlan:
         if self.content_folders:
             print(f"{Fore.GREEN}FOLDERS TO PRESERVE ({len(self.content_folders)} folders):{Style.RESET_ALL}")
             print(f"{Fore.WHITE}These will NOT be deleted (contain music/images/documents){Style.RESET_ALL}\n")
-            for item in self.content_folders:
-                folder = item["path"]
-                reason = item.get("reason", "content detected")
+            for content in self.content_folders:
+                folder = content["path"]
+                reason = content.get("reason", "content detected")
                 print(f"  {Fore.BLUE}*{Style.RESET_ALL} {folder.name[:60]:<60} | {reason}")
             print()
 
@@ -326,16 +353,58 @@ def _bump(stats: Any, key: str) -> None:
         stats[key] = stats.get(key, 0) + 1
 
 
-def _stat(stats: Any, key: str) -> int:
+def _stat(stats: ThreadSafeStats | dict[str, int], key: str) -> int:
     """Read a counter from ThreadSafeStats (missing keys read 0) or a plain dict."""
-    value: Any = stats.get(key, 0) if isinstance(stats, dict) else stats[key]
+    value = stats.get(key, 0) if isinstance(stats, dict) else stats[key]
     return int(value)
+
+
+def _config_get(config: object, key: str, default: object) -> Any:
+    """``config.get(key, default)`` for a Config or a dict; ``default`` when there is no ``get``.
+
+    Tests pass bare stand-ins without ``get``. Config values come from JSON, hence ``Any``.
+    """
+    getter = getattr(config, "get", None)
+    if getter is None:
+        return default
+    return getter(key, default)
+
+
+def _comment_text(comment: ShownComment) -> str:
+    """The text of a comment: the first field of a rarity tuple, or an old-format plain string."""
+    if isinstance(comment, tuple):
+        return str(comment[0])
+    return str(comment)
+
+
+def _comment_terminal_line(comment: ShownComment) -> str:
+    """The easter-egg comment line for the full-screen progress display (before sanitizing)."""
+    # Unpack rarity info
+    if isinstance(comment, tuple) and len(comment) >= 3:
+        text, color = comment[0], comment[2]
+        effect = comment[3] if len(comment) > 3 else ""
+
+        # Apply visual effects based on rarity
+        if effect == "legendary":
+            # Special legendary effect: markers + gold/yellow + bright (1% drop!)
+            return f"  {Style.DIM}│{Style.RESET_ALL} {Fore.YELLOW}{Style.BRIGHT}[!] {text[:71]} [!]{Style.RESET_ALL}\033[K\n"
+        # Normal rarity effects
+        style = ""
+        if effect == "dim":
+            style = Style.DIM
+        elif effect == "bright" or effect == "bright_bold":
+            style = Style.BRIGHT
+        elif effect == "normal":
+            style = Style.NORMAL
+        return f"  {Style.DIM}│{Style.RESET_ALL} {color}{style}{text[:75]}{Style.RESET_ALL}\033[K\n"
+    # Old format fallback
+    return f"  {Style.DIM}│{Style.RESET_ALL} {Fore.YELLOW}{comment[:75]}{Style.RESET_ALL}\033[K\n"
 
 
 class UnpackrApp:
     """Main application class for Unpackr."""
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config) -> None:
         """
         Initialize the application.
 
@@ -349,30 +418,28 @@ class UnpackrApp:
         self.archive_processor = ArchiveProcessor(config, process_tracker=self)
         self.video_processor = VideoProcessor(config, process_tracker=self)
         self.dry_run = False  # Set to True for dry-run mode
-        self.dry_run_plan: Optional[DryRunPlan] = None  # DryRunPlan for collecting operations in dry-run mode
-        self.start_time: Optional[float] = None
-        self.work_plan: Optional[WorkPlan] = None
-        self.destination_dir: Optional[Path] = None  # Store for display_summary tip
+        self.dry_run_plan: DryRunPlan | None = None  # DryRunPlan for collecting operations in dry-run mode
+        self.start_time: float | None = None
+        self.work_plan: WorkPlan | None = None
+        self.destination_dir: Path | None = None  # Store for display_summary tip
         # MEMORY FIX: Use bounded deque to prevent unbounded memory growth in 24+ hour runs
         # Keeps last 1000 failed deletions (oldest are dropped automatically)
-        self.failed_deletions: Deque[Tuple[Path, bool, bool]] = deque(
+        self.failed_deletions: deque[tuple[Path, bool, bool]] = deque(
             maxlen=1000
         )  # Track folders that couldn't be deleted
-        self.run_state: Optional[RunState] = None
+        self.run_state: RunState | None = None
         self.resume_enabled: bool = False
         self.recursion_guard = RecursionSafety(config.max_subfolder_depth, "Subfolder processing")
         self.stuck_detector = StuckDetector(timeout=config.stuck_timeout_hours * 3600, check_interval=60)
-        self.runtime_limit: Optional[Any] = None  # Will be initialized when processing starts
+        self.runtime_limit: OperationTimer | None = None  # Will be initialized when processing starts
         self.spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]  # Modern spinner
         self.spinner_index = 0
         self.first_progress_update = True  # Track if this is the first render
         self.current_action = ""  # Current action text
         self.progress_current = 0  # Current progress
         self.progress_total = 0  # Total progress
-        self.current_comment_display: Optional[Tuple[str, Optional[str], str, str]] = (
-            None  # Store current comment to persist across updates
-        )
-        self.spinner_thread: Optional[threading.Thread] = None  # Background spinner thread
+        self.current_comment_display: CommentDisplay | None = None  # Store current comment to persist across updates
+        self.spinner_thread: threading.Thread | None = None  # Background spinner thread
         self.spinner_running = False  # Control flag for spinner thread
         self.spinner_lock = threading.Lock()  # Thread safety for spinner updates
         self.renderer = create_renderer()
@@ -381,11 +448,11 @@ class UnpackrApp:
         self.cancellation_requested = False
         self.active_process = None  # Track current subprocess for termination
         # Problems a person should look at; errors make a live run exit non-zero.
-        self.run_errors: List[str] = []
-        self.run_warnings: List[str] = []
+        self.run_errors: list[str] = []
+        self.run_warnings: list[str] = []
         # Damaged downloads removed or left as junk this run: worth re-downloading.
-        self.damaged: List[str] = []
-        self.last_renamed_from: Optional[str] = None
+        self.damaged: list[str] = []
+        self.last_renamed_from: str | None = None
         self.settling: set[Path] = set()  # top-level entries still being written (skipped this run)
         self.unattended = False  # timer/service run: leave unfinished downloads alone
         self.settle_minutes = 0.0  # unattended only: skip downloads changed this recently
@@ -422,7 +489,7 @@ class UnpackrApp:
         plan = WorkPlan()
         # Process root folder FIRST (if it has videos), then subdirectories (oldest first)
         # This ensures videos in the source root are handled before diving into subfolders
-        folders = []
+        folders: list[Path] = []
 
         # Enumerate root entries once; unreadable paths should not crash planning.
         try:
@@ -446,7 +513,7 @@ class UnpackrApp:
 
         # Then add subdirectories, sorted by modification time (oldest first)
         # Oldest first = completed downloads processed before ongoing ones
-        subfolders = []
+        subfolders: list[Path] = []
         for entry in root_entries:
             try:
                 if entry.is_dir():
@@ -510,11 +577,11 @@ class UnpackrApp:
             rar_pattern = re.compile(r"\.r\d{2}$")
             zip_volume_pattern = re.compile(r"\.z\d{2}$")
 
-            videos = []
-            rars = []
-            sevenz = []
-            zips = []
-            par2s = []
+            videos: list[Path] = []
+            rars: list[Path] = []
+            sevenz: list[Path] = []
+            zips: list[Path] = []
+            par2s: list[Path] = []
             unknown_files = 0  # no known extension: possibly obfuscated archive volumes
             removable_exts = {str(e).lower() for e in getattr(self.config, "removable_extensions", []) or []}
             music_files = 0
@@ -524,7 +591,7 @@ class UnpackrApp:
 
             # PERFORMANCE: Use os.scandir recursively for cached stat() calls (2-3x faster)
             # os.scandir returns DirEntry objects with cached stat info, avoiding repeated stat() calls
-            def scan_recursive(path):
+            def scan_recursive(path: str | Path) -> Iterator[os.DirEntry[str]]:
                 """Recursively scan directory using os.scandir for performance."""
                 try:
                     with os.scandir(path) as entries:
@@ -542,10 +609,10 @@ class UnpackrApp:
                     # Skip folders we can't access
                     pass
 
-            for entry in scan_recursive(folder):
-                ext_lower = Path(entry.name).suffix.lower()
-                filename_lower = entry.name.lower()
-                file_path = Path(entry.path)
+            for scanned in scan_recursive(folder):
+                ext_lower = Path(scanned.name).suffix.lower()
+                filename_lower = scanned.name.lower()
+                file_path = Path(scanned.path)
 
                 if ext_lower in video_extensions:
                     videos.append(file_path)
@@ -563,7 +630,7 @@ class UnpackrApp:
                     image_files += 1
                     with suppress(OSError, FileNotFoundError):
                         # PERFORMANCE: Use cached stat from DirEntry (no extra syscall)
-                        image_total_bytes += entry.stat(follow_symlinks=False).st_size
+                        image_total_bytes += scanned.stat(follow_symlinks=False).st_size
                 elif ext_lower in document_extensions:
                     document_files += 1
                 elif ext_lower not in removable_exts:
@@ -587,7 +654,7 @@ class UnpackrApp:
                     or document_files >= self.config.min_documents
                 ):
                     # This is a content folder with significant music/images/docs - preserve it
-                    reasons = []
+                    reasons: list[str] = []
                     if music_files >= self.config.min_music_files:
                         reasons.append(f"{music_files} music files")
                     if has_significant_images:
@@ -627,14 +694,14 @@ class UnpackrApp:
         if not callable(probe):
             return False
         duration = probe(video)
-        cap = getattr(getattr(self, "config", None), "get", lambda *_a: 300)("max_sample_duration_seconds", 300)
+        cap = _config_get(getattr(self, "config", None), "max_sample_duration_seconds", 300)
         cap = cap if isinstance(cap, (int, float)) else 300
         if isinstance(duration, (int, float)) and duration > cap:
             logging.info(f"Keeping {video.name}: {duration:.0f}s is longer than a sample ({cap}s cap)")
             return True
         return False
 
-    def _remove_sample_videos(self, video_files: List[Path]) -> List[Path]:
+    def _remove_sample_videos(self, video_files: list[Path]) -> list[Path]:
         """
         Remove sample/preview videos if full version exists.
 
@@ -651,10 +718,10 @@ class UnpackrApp:
             return video_files
 
         sample_keywords = ["sample", "preview", "trailer", "promo"]
-        to_delete = []
+        to_delete: list[Path] = []
 
         # Group videos by folder for efficient comparison
-        by_folder: Dict[Path, List[Path]] = {}
+        by_folder: dict[Path, list[Path]] = {}
         for video in video_files:
             folder = video.parent
             if folder not in by_folder:
@@ -807,9 +874,9 @@ class UnpackrApp:
     def _process_archives(
         self,
         folder: Path,
-        progress_callback: Optional[Callable[[int, int, str], None]] = None,
-        archive_sets: Optional[List[ArchiveSet]] = None,
-    ) -> Tuple[bool, int]:
+        progress_callback: Callable[[int, int, str], None] | None = None,
+        archive_sets: list[ArchiveSet] | None = None,
+    ) -> tuple[bool, int]:
         """Extract the archive sets in one folder.
 
         Returns (archive_error, number_of_sets). Sets that are incomplete, unreadable,
@@ -824,7 +891,7 @@ class UnpackrApp:
         if self.dry_run:
             # Same read-only checks as the live run (missing volume, listing, password,
             # unsafe contents), so the plan keeps and blocks the same sets.
-            outcomes: List[ArchiveOutcome] = []
+            outcomes: list[ArchiveOutcome] = []
             for archive_set in archive_sets:
                 outcome = self.archive_processor.preflight_set(archive_set, folder)
                 if outcome is None:
@@ -854,7 +921,7 @@ class UnpackrApp:
         UnpackrApp._apply_archive_outcomes(self, folder, self.archive_processor.last_outcomes)
         return not success, len(archive_sets)
 
-    def _apply_archive_outcomes(self, folder: Path, outcomes: List[ArchiveOutcome]) -> None:
+    def _apply_archive_outcomes(self, folder: Path, outcomes: list[ArchiveOutcome]) -> None:
         """Record each set's outcome, hold what must stay and note what needs a look."""
         for outcome in outcomes:
             action = {"extracted": "extracted", "held": "kept", "blocked": "blocked"}.get(outcome.status, "skipped")
@@ -872,7 +939,7 @@ class UnpackrApp:
                 if hasattr(self, "damaged"):
                     self.damaged.append(f"{folder.name}/{outcome.name}: {outcome.detail}")
 
-    def _verify_par2(self, folder: Path) -> Optional[Par2Outcome]:
+    def _verify_par2(self, folder: Path) -> Par2Outcome | None:
         """Verify/repair a folder's PAR2 sets before extraction. Never blocks extraction."""
         try:
             count = sum(1 for f in folder.iterdir() if f.is_file() and f.suffix.lower() == ".par2")
@@ -896,7 +963,7 @@ class UnpackrApp:
             self.stats["par2s_repaired"] += 1
         return outcome
 
-    def _finish_par2(self, folder: Path, par2: Optional[Par2Outcome], archive_error: bool, had_sets: bool) -> bool:
+    def _finish_par2(self, folder: Path, par2: Par2Outcome | None, archive_error: bool, had_sets: bool) -> bool:
         """Settle a folder's .par2 files after extraction; return True when PAR2 did not clear the folder.
 
         - With archives, 7-Zip's CRC check decides: a set PAR2 could not verify but that
@@ -954,7 +1021,7 @@ class UnpackrApp:
             self.archive_processor.remove_par2_files(folder)
         return False
 
-    def _unrecognised_files(self, folder: Path) -> List[Path]:
+    def _unrecognised_files(self, folder: Path) -> list[Path]:
         """Files in ``folder`` with no known extension: candidates for renamed (obfuscated) volumes."""
         config = getattr(self, "config", None)
         known: set[str] = {".par2", ".rar", ".7z", ".zip"}
@@ -967,19 +1034,19 @@ class UnpackrApp:
         ):
             values = getattr(config, attr, None)
             if isinstance(values, (list, tuple, set)):
-                known.update(str(v).lower() for v in values)
+                known.update(str(v).lower() for v in cast("Iterable[object]", values))
         try:
             files = [f for f in folder.iterdir() if f.is_file()]
         except OSError:
             return []
         return [f for f in files if f.suffix.lower() not in known and not is_archive_related(f)]
 
-    def _release_files(self, folder: Path) -> List[Path]:
+    def _release_files(self, folder: Path) -> list[Path]:
         """Files that belong to one work item: direct files for the source root, the whole tree otherwise."""
         try:
             if folder == getattr(self, "source_root", None):
                 return [p for p in folder.iterdir() if p.is_file() and not is_internal(Path(p.name))]
-            files: List[Path] = []
+            files: list[Path] = []
             for current, dirs, names in os.walk(folder):
                 dirs[:] = [d for d in dirs if not d.startswith(".unpackr-")]
                 files.extend(Path(current) / n for n in names)
@@ -987,7 +1054,7 @@ class UnpackrApp:
         except (OSError, TypeError):
             return []
 
-    def _is_settling(self, path: Path, root: Optional[Path] = None) -> bool:
+    def _is_settling(self, path: Path, root: Path | None = None) -> bool:
         """True when the top-level entry holding ``path`` is still being written."""
         settling = getattr(self, "settling", None)
         root = root or getattr(self, "source_root", None)
@@ -1070,10 +1137,9 @@ class UnpackrApp:
         if failed:
             self._note("error", folder, "", "folder_failed_security", "bait found; nothing moved from this release")
             for path in files:
-                if path.exists() and getattr(self, "report", None) is not None:
-                    rel = self.report._rel(path)
-                    if rel not in self.report._items:
-                        self._record(path, "blocked", "folder_failed_security")
+                report = getattr(self, "report", None)
+                if path.exists() and report is not None and not report.is_recorded(path):
+                    self._record(path, "blocked", "folder_failed_security")
             if hasattr(self, "failed_releases"):
                 self.failed_releases.add(folder)
             # Keep the release folder: its decoy files stay for review and cleanup leaves it alone.
@@ -1092,23 +1158,23 @@ class UnpackrApp:
         videos = [f for f in self._release_files(folder) if f.suffix.lower() in video_exts]
         if len(videos) < 2:
             return
-        durations = {}
-        sizes = {}
+        durations: dict[Path, float | None] = {}
+        sizes: dict[Path, int] = {}
         for video in videos:
             try:
                 sizes[video] = video.stat().st_size
             except OSError:
                 sizes[video] = 0
-            probe = getattr(self.video_processor, "probe_duration", None)
+            probe: Callable[[Path], float | None] | None = getattr(self.video_processor, "probe_duration", None)
             durations[video] = probe(video) if callable(probe) else None
         samples = decide_release_samples(videos, durations, sizes, config)
         self.release_samples.update(samples)
-        dedupe = getattr(config, "get", lambda *_a: False)("dedupe_same_title", False)
+        dedupe = _config_get(config, "dedupe_same_title", False)
         if dedupe is True:
             remaining = [v for v in videos if v not in samples]
             self.release_samples.update(decide_duplicate_encodes(remaining, sizes))
 
-    def _release_name(self, video_file: Path) -> Optional[str]:
+    def _release_name(self, video_file: Path) -> str | None:
         """Name of the top-level release folder holding a video (None for loose videos)."""
         root = getattr(self, "source_root", None)
         if root is None:
@@ -1119,12 +1185,11 @@ class UnpackrApp:
             return None
         return parts[0] if len(parts) > 1 else None
 
-    def _plan_destination(self, video_file: Path, destination_dir: Path) -> Tuple[Path, str]:
+    def _plan_destination(self, video_file: Path, destination_dir: Path) -> tuple[Path, str]:
         """(target folder, file name) for a video according to output_layout and deobfuscation."""
         config = getattr(self, "config", None)
-        get = getattr(config, "get", lambda *_a: None)
-        layout = get("output_layout", DEFAULT_LAYOUT) or DEFAULT_LAYOUT
-        deobfuscate = get("deobfuscate_names", True) is not False
+        layout = _config_get(config, "output_layout", DEFAULT_LAYOUT) or DEFAULT_LAYOUT
+        deobfuscate = _config_get(config, "deobfuscate_names", True) is not False
         release = self._release_name(video_file)
         self.last_renamed_from = release if pick_base_name(video_file, release, deobfuscate)[1] else None
         rel = render_layout(layout, video_file, release, deobfuscate)
@@ -1142,7 +1207,7 @@ class UnpackrApp:
     def _move_subtitles(self, video_file: Path, final_path: Path) -> None:
         """Move subtitles that belong to a video next to its new location with a matching name."""
         config = getattr(self, "config", None)
-        if getattr(config, "get", lambda *_a: True)("keep_subtitles", True) is False:
+        if _config_get(config, "keep_subtitles", True) is False:
             return
         root = getattr(self, "source_root", None)
         release = self._release_name(video_file)
@@ -1321,7 +1386,7 @@ class UnpackrApp:
             self._update_progress(current, total, f"Extract {len(archive_sets)} archive set(s): {folder.name[:40]}")
         self.stuck_detector.mark_progress()
 
-        def extraction_progress(idx, total_archives, msg):
+        def extraction_progress(idx: int, total_archives: int, msg: str) -> None:
             folder_context = f"[{folder.name[:30]}]" if len(folder.name) > 30 else f"[{folder.name}]"
             self._update_progress(current, total, f"{folder_context} {msg}")
             self.stuck_detector.mark_progress()
@@ -1379,7 +1444,7 @@ class UnpackrApp:
         self.stats["folders_processed"] += 1
         return moved_count
 
-    def _start_spinner_thread(self):
+    def _start_spinner_thread(self) -> None:
         """Start background thread to animate spinner."""
         if getattr(self, "renderer", None) is not None or getattr(self, "plain_progress", False):
             return
@@ -1388,7 +1453,7 @@ class UnpackrApp:
             self.spinner_thread = threading.Thread(target=self._spinner_loop, daemon=True)
             self.spinner_thread.start()
 
-    def _stop_spinner_thread(self):
+    def stop_spinner_thread(self) -> None:
         """Stop background spinner thread."""
         renderer = getattr(self, "renderer", None)
         if renderer is not None:
@@ -1398,7 +1463,7 @@ class UnpackrApp:
         if self.spinner_thread:
             self.spinner_thread.join(timeout=1.0)
 
-    def _load_comments(self):
+    def _load_comments(self) -> CommentsData:
         """
         Load random comments from a custom file or the bundled sample.
 
@@ -1418,17 +1483,18 @@ class UnpackrApp:
 
             comments_file = next((path for path in candidates if path.is_file()), None)
             if comments_file is not None:
-                with open(comments_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
+                with open(comments_file, encoding="utf-8") as f:
+                    data: dict[str, Any] = json.load(f)
                 # Support both old format (list) and new format (dict with rarities)
                 if isinstance(data.get("comments"), dict):
                     return data  # New rarity-based format
-                return data.get("comments", [])  # Old flat list format
+                flat: list[str] = data.get("comments", [])
+                return flat  # Old flat list format
         except Exception as e:
             logging.debug(f"Could not load comments: {e}")
         return []
 
-    def _get_random_comment(self, current_folder: int) -> Optional[Tuple[str, Optional[str], str, str]]:
+    def _get_random_comment(self, current_folder: int) -> CommentDisplay | None:
         """
         Randomly return a snarky comment with rarity-based drop rates.
         Comments persist for the entire folder - only change when moving to new eligible folder.
@@ -1464,7 +1530,7 @@ class UnpackrApp:
 
         # Support old format (flat list)
         if isinstance(self.comments, list):
-            comment_result: Tuple[str, Optional[str], str, str] = (
+            comment_result: CommentDisplay = (
                 random.choice(self.comments),  # nosec B311 - cosmetic UI randomness only
                 None,
                 Fore.YELLOW,
@@ -1478,7 +1544,7 @@ class UnpackrApp:
         comments_by_rarity = self.comments.get("comments", {})
 
         # Build weighted pool of rarities
-        rarity_pool = []
+        rarity_pool: list[str] = []
         for rarity_name, rarity_config in rarities.items():
             weight = rarity_config.get("weight", 1)
             rarity_pool.extend([rarity_name] * weight)
@@ -1513,7 +1579,7 @@ class UnpackrApp:
         self.current_comment_display = comment_result
         return comment_result
 
-    def _spinner_loop(self):
+    def _spinner_loop(self) -> None:
         """Background thread - updates spinner every second."""
         while self.spinner_running:
             time.sleep(1.0)  # Update once per second
@@ -1536,7 +1602,7 @@ class UnpackrApp:
             return text.encode("utf-8", errors="replace").decode("utf-8", errors="replace")
 
     @staticmethod
-    def _derive_progress_context(action: str) -> Tuple[str, str]:
+    def _derive_progress_context(action: str) -> tuple[str, str]:
         """
         Convert a progress action string into a normalized verb + target.
 
@@ -1573,7 +1639,7 @@ class UnpackrApp:
 
         return verb, target
 
-    def _update_progress(self, current: int, total: int, action: str):
+    def _update_progress(self, current: int, total: int, action: str) -> None:
         """
         Update progress display - clear screen and show clean fixed display.
 
@@ -1680,10 +1746,7 @@ class UnpackrApp:
             comment_result = self._get_random_comment(current)
             comment_line = ""
             if comment_result:
-                if isinstance(comment_result, tuple):
-                    comment_line = str(comment_result[0])[:75]
-                else:
-                    comment_line = str(comment_result)[:75]
+                comment_line = _comment_text(comment_result)[:75]
 
             renderer.update(
                 current=current,
@@ -1748,41 +1811,7 @@ class UnpackrApp:
         # Easter egg comment (line 12) - optional snarky comment with rarity
         comment_result = self._get_random_comment(current)
         if comment_result:
-            # Unpack rarity info
-            if isinstance(comment_result, tuple) and len(comment_result) >= 3:
-                comment, color = comment_result[0], comment_result[2]
-                effect = comment_result[3] if len(comment_result) > 3 else ""
-
-                # Apply visual effects based on rarity
-                if effect == "legendary":
-                    # Special legendary effect: markers + gold/yellow + bright (1% drop!)
-                    sys.stdout.write(
-                        UnpackrApp._sanitize_console_text(
-                            f"  {Style.DIM}│{Style.RESET_ALL} {Fore.YELLOW}{Style.BRIGHT}[!] {comment[:71]} [!]{Style.RESET_ALL}\033[K\n"
-                        )
-                    )
-                else:
-                    # Normal rarity effects
-                    style = ""
-                    if effect == "dim":
-                        style = Style.DIM
-                    elif effect == "bright" or effect == "bright_bold":
-                        style = Style.BRIGHT
-                    elif effect == "normal":
-                        style = Style.NORMAL
-
-                    sys.stdout.write(
-                        UnpackrApp._sanitize_console_text(
-                            f"  {Style.DIM}│{Style.RESET_ALL} {color}{style}{comment[:75]}{Style.RESET_ALL}\033[K\n"
-                        )
-                    )
-            else:
-                # Old format fallback
-                sys.stdout.write(
-                    UnpackrApp._sanitize_console_text(
-                        f"  {Style.DIM}│{Style.RESET_ALL} {Fore.YELLOW}{comment_result[:75]}{Style.RESET_ALL}\033[K\n"
-                    )
-                )
+            sys.stdout.write(UnpackrApp._sanitize_console_text(_comment_terminal_line(comment_result)))
         else:
             sys.stdout.write("\033[K\n")  # Clear line if no comment
 
@@ -1795,7 +1824,7 @@ class UnpackrApp:
 
         sys.stdout.flush()
 
-    def _process_subfolder(self, subfolder: Path, destination_dir: Path):
+    def _process_subfolder(self, subfolder: Path, destination_dir: Path) -> None:
         """
         Recursively process subfolder, including archive extraction.
 
@@ -1845,7 +1874,7 @@ class UnpackrApp:
         finally:
             self.recursion_guard.exit()
 
-    def run(self, source_dir: Path, destination_dir: Path):
+    def run(self, source_dir: Path, destination_dir: Path) -> None:
         """
         Run the main processing loop.
 
@@ -1873,7 +1902,7 @@ class UnpackrApp:
         if archive_processor is not None and not getattr(self, "dry_run", False):
             archive_processor.enforcer = InvariantEnforcer(destination_dir, getattr(self, "config", None))
         self.source_root = source_dir
-        self.release_samples: Dict[Path, Tuple[str, str]] = {}
+        self.release_samples: dict[Path, tuple[str, str]] = {}
         self.failed_releases: set[Path] = set()
 
         run_state = getattr(self, "run_state", None)
@@ -1909,12 +1938,8 @@ class UnpackrApp:
         logging.info(f"Starting run: {total} folders to process")
 
         # Safety: Initialize runtime limit from config
-        from utils.safety import OperationTimer
-
         max_runtime_seconds = self.config.max_runtime_hours * 3600
         self.runtime_limit = OperationTimer(max_runtime_seconds, "Total Unpackr Runtime")
-        if self.runtime_limit is None:
-            raise RuntimeError("Failed to initialize runtime safety timer")
 
         # Safety: loop guard for folder processing
         loop_guard = LoopSafety(self.config.max_videos_per_folder * 2, "Folder processing loop")
@@ -2015,7 +2040,7 @@ class UnpackrApp:
 
         finally:
             # Stop spinner thread
-            self._stop_spinner_thread()
+            self.stop_spinner_thread()
             # Clear progress line
             if not getattr(self, "plain_progress", False):
                 sys.stdout.write("\r" + " " * 100 + "\r")
@@ -2025,7 +2050,7 @@ class UnpackrApp:
             if self.dry_run and self.dry_run_plan:
                 self.dry_run_plan.print_summary()
 
-    def retry_failed_deletions(self, max_passes: int = 3, wait_seconds: int = 30):
+    def retry_failed_deletions(self, max_passes: int = 3, wait_seconds: int = 30) -> None:
         """
         Retry deletion of folders that failed during main processing.
         Uses multi-pass approach with delays to allow file locks to release.
@@ -2054,7 +2079,7 @@ class UnpackrApp:
             print(f"Cleanup pass {pass_num}/{max_passes}: {len(self.failed_deletions)} folders remaining")
 
             # Try to delete each failed folder
-            remaining: Deque[Tuple[Path, bool, bool]] = deque(maxlen=1000)
+            remaining: deque[tuple[Path, bool, bool]] = deque(maxlen=1000)
             for folder, par2_error, archive_error in self.failed_deletions:
                 # Check if folder still exists and is still removable
                 if not folder.exists():
@@ -2079,7 +2104,7 @@ class UnpackrApp:
             for folder, _, _ in self.failed_deletions:
                 logging.warning(f"Permanent deletion failure: {folder}")
 
-    def cleanup_empty_folders(self, source_dir: Path, show_progress: bool = False):
+    def cleanup_empty_folders(self, source_dir: Path, show_progress: bool = False) -> None:
         """Final cleanup pass to delete remaining empty folders - recursive, multi-pass.
 
         Args:
@@ -2146,7 +2171,7 @@ class UnpackrApp:
             print(f"{Fore.GREEN}Cleaned up {total_deleted} empty folders{Style.RESET_ALL}")
             logging.info(f"Final cleanup: deleted {total_deleted} empty folders total")
 
-    def removal_summary(self) -> Optional[Dict[str, Any]]:
+    def removal_summary(self) -> dict[str, Any] | None:
         """How this run disposed of removed files, for the summary screen and --json."""
         remover = getattr(self, "remover", None)
         if remover is None:
@@ -2165,7 +2190,7 @@ class UnpackrApp:
             "restore_command": f'unpackr restore {remover.run_id} --source "{source}"',
         }
 
-    def finish_issues(self) -> Tuple[List[str], List[str]]:
+    def finish_issues(self) -> tuple[list[str], list[str]]:
         """Final error and warning lists, including whole-run observations."""
         warnings = list(self.run_warnings)
         removed = self.stats["videos_sample"] + self.stats["videos_corrupt"]
@@ -2176,7 +2201,7 @@ class UnpackrApp:
             )
         return list(self.run_errors), warnings
 
-    def display_summary(self):
+    def display_summary(self) -> None:
         """Display processing summary with detailed stats."""
         elapsed = time.time() - self.start_time if self.start_time else 0
         elapsed_str = str(timedelta(seconds=int(elapsed))).split(".")[0]
@@ -2220,7 +2245,7 @@ class UnpackrApp:
             )
 
         # Show warnings/tips on same line if possible
-        warnings = []
+        warnings: list[str] = []
         if self.stats["safety_stops"] > 0:
             warnings.append(f"{Fore.RED}SAFETY STOPS: {self.stats['safety_stops']}{Style.RESET_ALL}")
         if self.failed_deletions:
@@ -2274,28 +2299,28 @@ def _is_interactive() -> bool:
         return False
 
 
-def main():
+def main() -> None:
     """Main entry point with defensive error handling."""
     init()  # Initialize colorama with default settings; may be refined after args/config.
 
     json_mode = False
     json_out = sys.stdout
-    source_for_summary: Optional[str] = None
-    dest_for_summary: Optional[str] = None
-    app: Optional["UnpackrApp"] = None
+    source_for_summary: str | None = None
+    dest_for_summary: str | None = None
+    app: UnpackrApp | None = None
     dry_run = False
 
-    report_path: Optional[Path] = None
-    report_items: Optional[list[Dict[str, Any]]] = None
+    report_path: Path | None = None
+    report_items: list[dict[str, Any]] | None = None
 
     def emit_json_and_exit(
         exit_code: int,
         status: str,
         *,
         cancelled: bool = False,
-        errors: Optional[list[str]] = None,
-        warnings: Optional[list[str]] = None,
-        plan: Optional[list[Dict[str, Any]]] = None,
+        errors: list[str] | None = None,
+        warnings: list[str] | None = None,
+        plan: list[dict[str, Any]] | None = None,
     ) -> NoReturn:
         if json_mode or report_path is not None:
             stats = app.stats.get_snapshot() if app is not None else {}
@@ -2375,7 +2400,7 @@ def main():
             init(strip=True)
 
         if not unattended:
-            print((ASCII_ART if no_color else Fore.YELLOW + ASCII_ART + Style.RESET_ALL))
+            print(ASCII_ART if no_color else Fore.YELLOW + ASCII_ART + Style.RESET_ALL)
 
         # Set up logging
         try:
@@ -2503,8 +2528,6 @@ def main():
             emit_json_and_exit(1, "failed", errors=[f"app init failed: {e}"])
 
         runtime_app = app
-        if runtime_app is None:
-            emit_json_and_exit(1, "failed", errors=["application failed to initialize"])
 
         runtime_app.unattended = unattended
         runtime_app.plain_progress = unattended or (app.renderer is None and not _is_interactive())
@@ -2524,11 +2547,11 @@ def main():
             logging.info(f"Resume enabled; state file: {state_path}")
 
         # Set up graceful cancellation handler
-        def handle_cancel(signum, frame):
+        def handle_cancel(signum: int, frame: FrameType | None) -> None:
             if runtime_app.cancellation_requested:
                 # Second Ctrl+C = force exit
                 print(f"\n{Fore.RED}Force exit...{Style.RESET_ALL}")
-                runtime_app._stop_spinner_thread()
+                runtime_app.stop_spinner_thread()
                 sys.exit(1)
             runtime_app.cancellation_requested = True
             print(f"\n{Fore.YELLOW}Cancellation requested - finishing current operation...{Style.RESET_ALL}")
@@ -2654,10 +2677,9 @@ def main():
             collect_report_items()
             if runtime_app.cancellation_requested:
                 emit_json_and_exit(0, "cancelled", cancelled=True)
-            if runtime_app.run_state is not None:
-                runtime_app.run_state.clear()
+            runtime_app.run_state.clear()
             run_errors, run_warnings = runtime_app.finish_issues()
-            if getattr(args, "notify", False) or getattr(config, "get", lambda *_a: False)("notify", False) is True:
+            if getattr(args, "notify", False) or _config_get(config, "notify", False) is True:
                 text = notification_text(
                     runtime_app.stats.get_snapshot(),
                     run_errors,
@@ -2675,23 +2697,24 @@ def main():
         except Exception as e:
             print(Fore.RED + f"\nFatal error during processing: {e}" + Style.RESET_ALL)
             logging.error(f"Processing failed: {e}", exc_info=True)
-            runtime_app._stop_spinner_thread()  # Ensure spinner stops before exit
+            runtime_app.stop_spinner_thread()  # Ensure spinner stops before exit
             runtime_app.display_summary()  # Show what we accomplished
             emit_json_and_exit(1, "failed", errors=[f"processing failed: {e}"])
 
     except KeyboardInterrupt:
         print(Fore.YELLOW + "\n\nOperation interrupted by user" + Style.RESET_ALL)
         logging.info("User interrupted operation")
-        # Stop spinner if app was initialized
+        # Stop spinner if app was initialized. Use `app`, not `runtime_app`: Ctrl+C can land
+        # after UnpackrApp(...) returns but before runtime_app is assigned.
         if app is not None:
-            runtime_app._stop_spinner_thread()
+            app.stop_spinner_thread()
         emit_json_and_exit(0, "cancelled", cancelled=True)
     except Exception as e:
         print(Fore.RED + f"\nUnexpected error: {e}" + Style.RESET_ALL)
         logging.error(f"Unexpected error: {e}", exc_info=True)
-        # Stop spinner if app was initialized
+        # Stop spinner if app was initialized (runtime_app may not be assigned yet).
         if app is not None:
-            runtime_app._stop_spinner_thread()
+            app.stop_spinner_thread()
         emit_json_and_exit(1, "failed", errors=[f"unexpected error: {e}"])
 
 

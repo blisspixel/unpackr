@@ -15,7 +15,7 @@ import tempfile
 import unicodedata
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Literal
 
 NormalizationForm = Literal["NFC", "NFD", "NFKC", "NFKD"]
 
@@ -33,7 +33,7 @@ class FilesystemProbe:
     supports_non_ascii_names: bool
     platform: str
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -227,7 +227,7 @@ def probe_filesystem(path: Path | None = None) -> FilesystemProbe:
     )
 
 
-def containment_violation(member: str, target_folder: Path) -> Optional[str]:
+def containment_violation(member: str, target_folder: Path) -> str | None:
     """
     Return a reason string when extracting ``member`` would escape ``target_folder``.
 

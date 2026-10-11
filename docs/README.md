@@ -30,7 +30,7 @@ Use this index to find the right doc for operations, troubleshooting, and mainte
 Quality contract:
 - full suite required to pass
 - coverage required to remain at or above `80%`
-- stricter typed modules: `core/config.py`, `core/file_handler.py`, `core/safety_invariants.py`
+- strict type checking (`mypy --strict` and Pyright strict) on `core`, `utils`, `doctor.py`, `unpackr.py` and `vhealth.py`
 - supported OS targets: Windows, Linux, macOS (see `ROADMAP.md` for the cross-platform milestone)
 
 ## Archive

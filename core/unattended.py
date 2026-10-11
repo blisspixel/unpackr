@@ -11,8 +11,9 @@ import shutil
 import subprocess  # nosec B404 - fixed argument list, no shell
 import sys
 import time
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
+from typing import Any, TextIO
 
 from core.remover import is_internal
 
@@ -28,9 +29,9 @@ class RunLock:
     so it is released by the OS if the process dies; a stale file never blocks a run.
     """
 
-    def __init__(self, source: Path):
+    def __init__(self, source: Path) -> None:
         self.path = Path(source) / LOCK_NAME
-        self._handle: Optional[Any] = None
+        self._handle: TextIO | None = None
 
     def acquire(self) -> bool:
         handle = open(self.path, "a+")  # noqa: SIM115 - kept open while the lock is held
@@ -74,14 +75,14 @@ class RunLock:
         with contextlib.suppress(OSError):
             self.path.unlink()
 
-    def holder(self) -> Optional[str]:
+    def holder(self) -> str | None:
         """PID written by the current holder, for messages."""
         try:
             return self.path.read_text().strip() or None
         except OSError:
             return None
 
-    def __enter__(self) -> "RunLock":
+    def __enter__(self) -> RunLock:
         return self
 
     def __exit__(self, *_exc: object) -> None:
@@ -104,7 +105,7 @@ def _newest_mtime(entry: Path) -> float:
     return newest
 
 
-def settling_entries(source: Path, quiet_seconds: float, now: Optional[float] = None) -> Set[Path]:
+def settling_entries(source: Path, quiet_seconds: float, now: float | None = None) -> set[Path]:
     """Top-level entries of ``source`` with any file or folder changed in the last ``quiet_seconds``.
 
     A download that is still being written keeps updating modification times, so these
@@ -113,7 +114,7 @@ def settling_entries(source: Path, quiet_seconds: float, now: Optional[float] = 
     if quiet_seconds <= 0:
         return set()
     now = time.time() if now is None else now
-    settling: Set[Path] = set()
+    settling: set[Path] = set()
     try:
         entries = list(Path(source).iterdir())
     except OSError:
@@ -140,11 +141,11 @@ def settle_minutes_from(config: Any, default: float = 2.0) -> float:
 
 
 def notification_text(
-    stats: Dict[str, Any],
+    stats: dict[str, Any],
     errors: Iterable[str],
     dry_run: bool = False,
     damaged: Iterable[str] = (),
-) -> Optional[Tuple[str, str]]:
+) -> tuple[str, str] | None:
     """(title, body) for a run worth telling the user about, or None for a run that did nothing."""
     errors = list(errors)
     damaged = list(damaged)
@@ -154,7 +155,7 @@ def notification_text(
     waiting = int(stats.get("folders_settling", 0) or 0)
     if not (moved or extracted or cleaned or errors or damaged):
         return None
-    parts: List[str] = []
+    parts: list[str] = []
     if moved:
         parts.append(f"{moved} video{'s' if moved != 1 else ''} moved")
     if extracted:

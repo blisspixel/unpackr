@@ -2,7 +2,17 @@
 
 Release dates are included where recorded.
 
-## Unreleased
+## v1.5.0 (2026-10-11)
+
+Unpackr cleans a downloads folder decisively and never throws away the good file. Removals are reversible by default, every decision is reported, PAR2 repairs obfuscated posts, and the code base is strictly typed on Python 3.12 to 3.15.
+
+**Upgrade notes**
+- Python 3.12 or newer is required (3.11 is dropped). Reinstall with `python -m pip install .`.
+- 7-Zip 22.0+ is required: on macOS use `brew install sevenzip`, on Debian/Ubuntu/Fedora the `7zip` package (the old `p7zip` 16.02 is too old).
+- Removals now go to `<source>/.unpackr-quarantine/` for 14 days by default; set `delete_mode` to `trash` or `permanent` for the old behavior.
+- A manual run removes unfinished downloads as junk; unattended runs wait for them.
+- `--json` writes only JSON to stdout; human output moved to stderr.
+
 
 - PAR2 never removes archive volumes (#21). par2 is given every file in the folder (`par2 r <set>.par2 *`), so obfuscated posts with renamed volumes are matched, renamed back and extracted instead of being discarded as "damaged beyond repair". Every PAR2 set in a folder is checked, not just the first. Whatever PAR2 reports, extraction still runs and 7-Zip's CRC check decides; `.par2` files are removed only with a set that extracted. A release PAR2 says is damaged beyond repair (nothing extractable) is junk and listed for re-download; one par2 could not judge (tool error, par2 not installed) next to unrecognized files is kept and needs attention. Without par2 installed, archives still extract.
 - Archive removal is guarded in depth (#21): removals pass a truthful `extraction_verified`, invariant I3 recognises split volumes (`.r00`, `.7z.001`, `.z01`, `.001`) and is wired into CLI runs, and the archive step refuses to remove anything without a configured remover instead of falling back to a permanent unlink.
@@ -14,6 +24,12 @@ Release dates are included where recorded.
 - The bundled `config_files/config.json` lists `.ts` and `.m2ts` as videos, matching the documented defaults (#21).
 - Notifications count extracted archives again (they read a counter that did not exist).
 - `unpackr-doctor` explains what a missing par2 means: damaged or renamed volumes cannot be repaired, archives still extract.
+- Python 3.12 is now the minimum and 3.15 is supported; CI runs 3.12 through 3.15. **Migration:** Python 3.11 is no longer supported. Install a 3.12+ interpreter and reinstall (`python -m pip install .`); `unpackr-doctor` reports an older interpreter as a blocking issue.
+- Type checking is strict: `mypy --strict` and Pyright strict cover `core`, `utils`, `doctor.py`, `unpackr.py` and `vhealth.py` with no per-module relaxations, ruff applies the pyupgrade (`UP`) rules for 3.12, and the `dev` extra installs stubs for psutil, colorama and tqdm.
+- Pressing Ctrl+C just after the app is created (before the run starts) exits cleanly as cancelled instead of crashing with `UnboundLocalError`.
+- Malformed state files no longer crash or stop a run: a run journal line, service manifest, event log record or cached environment profile that is valid JSON but not an object is skipped (an event log record with unknown fields no longer stops the rest of the log from loading), and a configured tool path that exists but cannot be executed is skipped instead of raising.
+- POSIX force-delete uses `shutil.rmtree(onexc=...)` instead of the deprecated `onerror`.
+
 - Unattended runs (#9): `unpackr service install|status|uninstall` manages a systemd user timer (and a `.path` unit with `--on-change`), shows the units and asks before enabling them, and removes exactly what it wrote. `--unattended` turns off animation, the countdown and prompts, prints one line per folder, takes a per-source lock so overlapping runs exit cleanly, and skips downloads changed within `settle_minutes`. `--notify` (or `notify: true`) sends one desktop notification for runs that did something. Live runs on the same source can no longer overlap, and progress output has no cursor redraws when stdout is not a terminal. A six-folder unattended run takes about 0.7 s.
 - Output naming (#8): `output_layout` with `flat`, `release`, `movies`, `tv` and `auto` presets or a custom template, using a local release-name parser (episodes, multi-episode, `1x02`, years inside titles). Obfuscated video names take the release folder name (`deobfuscate_names`), subtitles move with their video under a matching name (`keep_subtitles`), and the dry run shows each video's final destination.
 - A timing-sensitive adaptive-policy test no longer compares disk benchmark classifications between runs.

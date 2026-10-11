@@ -16,7 +16,6 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 from urllib.parse import quote
 
 
@@ -129,7 +128,7 @@ def _windows_recycle(path: Path) -> Path:
     return Path("$Recycle.Bin") / path.name
 
 
-def send_to_trash(path: Path, platform: Optional[str] = None) -> Path:
+def send_to_trash(path: Path, platform: str | None = None) -> Path:
     """Move ``path`` to the desktop trash and return its new location."""
     platform = platform or sys.platform
     if not os.path.lexists(path):

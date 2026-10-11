@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum, auto
 from pathlib import Path
-from typing import Any, Optional, Set
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +65,8 @@ class FileOperation:
 
     type: OperationType
     path: Path
-    destination: Optional[Path] = None
-    timestamp: Optional[datetime] = None
+    destination: Path | None = None
+    timestamp: datetime | None = None
 
     def __post_init__(self) -> None:
         if self.timestamp is None:
@@ -94,7 +94,7 @@ class ValidationCache:
     _cache: dict[Path, ValidationResult] = {}
 
     @classmethod
-    def get(cls, path: Path) -> Optional[ValidationResult]:
+    def get(cls, path: Path) -> ValidationResult | None:
         """Get validation result for a video."""
         return cls._cache.get(path.resolve())
 
@@ -127,8 +127,8 @@ class SafetyInvariants:
         """
         self.destination_root = destination_root.resolve()
         self.config = config
-        self._protected_paths: Set[Path] = set()
-        self._validated_videos: Set[Path] = set()
+        self._protected_paths: set[Path] = set()
+        self._validated_videos: set[Path] = set()
 
     # ============================================================================
     # I1: Path Safety - Never write outside destination
@@ -239,9 +239,7 @@ class SafetyInvariants:
     # I4: Loop Bound - Never exceed maximum iteration counts
     # ============================================================================
 
-    def never_exceed_loop_bounds(
-        self, loop_name: str, iteration_count: int, max_iterations: Optional[int] = None
-    ) -> bool:
+    def never_exceed_loop_bounds(self, loop_name: str, iteration_count: int, max_iterations: int | None = None) -> bool:
         """
         I4: All loops have explicit upper bounds to prevent infinite loops.
 
@@ -425,7 +423,7 @@ class SafetyInvariants:
     # I8: Timeout Bounds - Never use unbounded timeouts
     # ============================================================================
 
-    def has_valid_timeout(self, operation_name: str, timeout_seconds: Optional[int]) -> bool:
+    def has_valid_timeout(self, operation_name: str, timeout_seconds: int | None) -> bool:
         """
         I8: All subprocess operations have explicit timeouts.
 
@@ -461,7 +459,7 @@ class SafetyInvariants:
     # I9: Resource Cleanup - Never leave temp files after operation
     # ============================================================================
 
-    def verify_cleanup_complete(self, temp_paths: Set[Path], operation_name: str) -> bool:
+    def verify_cleanup_complete(self, temp_paths: set[Path], operation_name: str) -> bool:
         """
         I9: Temporary files are cleaned up even on operation failure.
 
@@ -490,7 +488,7 @@ class SafetyInvariants:
     # I10: Provenance Integrity - Never lose operation history
     # ============================================================================
 
-    def has_valid_provenance(self, target_path: Path, expected_source: Optional[Path] = None) -> bool:
+    def has_valid_provenance(self, target_path: Path, expected_source: Path | None = None) -> bool:
         """
         I10: Every file in destination has traceable origin.
 

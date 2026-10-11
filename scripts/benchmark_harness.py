@@ -13,7 +13,7 @@ import json
 import platform
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -64,7 +64,7 @@ def run_benchmark(work_dir: Path | None = None) -> dict[str, Any]:
 
     report: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "duration_seconds": round(time.perf_counter() - started, 3),
         "hardware": _hardware_profile(),
         "filesystem": fs_probe.to_dict(),

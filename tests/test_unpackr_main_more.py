@@ -56,7 +56,7 @@ def test_main_show_plan_exits_zero(monkeypatch, tmp_path):
             self.dry_run = False
             self.dry_run_plan = None
 
-        def _stop_spinner_thread(self):
+        def stop_spinner_thread(self):
             pass
 
         def scan_and_plan(self, source_dir):

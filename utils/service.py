@@ -16,9 +16,10 @@ import re
 import shutil
 import subprocess  # nosec B404 - fixed argument lists, no shell
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, cast
 
 _TIMESPAN = re.compile(r"^\d+\s*(s|sec|m|min|h|hr|hour|hours|d|day|days)?$")
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -47,7 +48,7 @@ def valid_timespan(value: str) -> bool:
     return bool(_TIMESPAN.match(value.strip()))
 
 
-def launcher() -> List[str]:
+def launcher() -> list[str]:
     """Absolute command that starts Unpackr outside this shell (no venv activation in systemd)."""
     beside_python = Path(sys.executable).parent / ("unpackr.exe" if sys.platform == "win32" else "unpackr")
     if beside_python.is_file():
@@ -78,13 +79,13 @@ class ServicePlan:
     destination: Path
     every: str
     on_change: bool
-    command: List[str]
-    units: Dict[str, str] = field(default_factory=dict)
+    command: list[str]
+    units: dict[str, str] = field(default_factory=dict[str, str])
 
-    def unit_paths(self) -> Dict[str, Path]:
+    def unit_paths(self) -> dict[str, Path]:
         return {filename: unit_dir() / filename for filename in self.units}
 
-    def activations(self) -> List[str]:
+    def activations(self) -> list[str]:
         return [f for f in self.units if f.endswith((".timer", ".path"))]
 
 
@@ -93,7 +94,7 @@ def build_plan(
     destination: Path,
     every: str = "15m",
     on_change: bool = False,
-    config: Optional[Path] = None,
+    config: Path | None = None,
     notify: bool = True,
 ) -> ServicePlan:
     name = unit_name(source)
@@ -104,7 +105,7 @@ def build_plan(
         command.append("--notify")
     exec_start = " ".join(_quote(part) for part in command)
 
-    units: Dict[str, str] = {}
+    units: dict[str, str] = {}
     units[f"{name}.service"] = (
         "[Unit]\n"
         f"Description=Unpackr: clean up {source}\n"
@@ -144,12 +145,12 @@ def build_plan(
     return ServicePlan(name, source, destination, every, on_change, command, units)
 
 
-def _systemctl(runner: Optional[Runner], *args: str) -> Any:
+def _systemctl(runner: Runner | None, *args: str) -> Any:
     run = runner or subprocess.run
     return run(["systemctl", "--user", *args], capture_output=True, text=True, check=False)  # nosec B603 B607
 
 
-def systemd_available(runner: Optional[Runner] = None) -> Optional[str]:
+def systemd_available(runner: Runner | None = None) -> str | None:
     """None when a systemd user session is usable, otherwise the reason it is not."""
     if not sys.platform.startswith("linux"):
         return "service install supports Linux with a systemd user session; on other systems schedule `unpackr --unattended ...` with launchd or Task Scheduler"
@@ -165,15 +166,18 @@ def systemd_available(runner: Optional[Runner] = None) -> Optional[str]:
     return None
 
 
-def _manifests() -> List[Dict[str, Any]]:
-    found = []
+def _manifests() -> list[dict[str, Any]]:
+    found: list[dict[str, Any]] = []
     for path in sorted(manifest_dir().glob("*.json")):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        data["_manifest"] = str(path)
-        found.append(data)
+        if not isinstance(data, dict):
+            continue  # not a manifest this tool wrote
+        manifest = cast(dict[str, Any], data)
+        manifest["_manifest"] = str(path)
+        found.append(manifest)
     return found
 
 
@@ -182,8 +186,8 @@ def install(
     assume_yes: bool = False,
     write: Callable[[str], None] = print,
     ask: Callable[[str], str] = input,
-    interactive: Optional[bool] = None,
-    runner: Optional[Runner] = None,
+    interactive: bool | None = None,
+    runner: Runner | None = None,
 ) -> int:
     reason = systemd_available(runner)
     if reason:
@@ -236,7 +240,7 @@ def install(
         encoding="utf-8",
     )
 
-    failures = []
+    failures: list[str] = []
     for args in (("daemon-reload",), ("enable", "--now", *plan.activations())):
         result = _systemctl(runner, *args)
         if result.returncode != 0:
@@ -255,8 +259,8 @@ def install(
 
 
 def _select(
-    source: Optional[Path], name: Optional[str], all_: bool, write: Callable[[str], None]
-) -> Optional[List[Dict[str, Any]]]:
+    source: Path | None, name: str | None, all_: bool, write: Callable[[str], None]
+) -> list[dict[str, Any]] | None:
     manifests = _manifests()
     if all_:
         return manifests
@@ -275,19 +279,19 @@ def _select(
 
 
 def status(
-    source: Optional[Path] = None,
-    name: Optional[str] = None,
+    source: Path | None = None,
+    name: str | None = None,
     as_json: bool = False,
     write: Callable[[str], None] = print,
-    runner: Optional[Runner] = None,
+    runner: Runner | None = None,
 ) -> int:
     chosen = _select(source, name, all_=source is None and name is None, write=write)
     if chosen is None:
         return 1
-    rows = []
+    rows: list[dict[str, Any]] = []
     for m in chosen:
         unit = m.get("name", "")
-        row: Dict[str, Any] = {k: m.get(k) for k in ("name", "source", "destination", "every", "on_change", "files")}
+        row: dict[str, Any] = {k: m.get(k) for k in ("name", "source", "destination", "every", "on_change", "files")}
         for activation in [f"{unit}.timer"] + ([f"{unit}.path"] if m.get("on_change") else []):
             enabled = _systemctl(runner, "is-enabled", activation).stdout.strip() or "unknown"
             active = _systemctl(runner, "is-active", activation).stdout.strip() or "unknown"
@@ -332,11 +336,11 @@ def status(
 
 
 def uninstall(
-    source: Optional[Path] = None,
-    name: Optional[str] = None,
+    source: Path | None = None,
+    name: str | None = None,
     all_: bool = False,
     write: Callable[[str], None] = print,
-    runner: Optional[Runner] = None,
+    runner: Runner | None = None,
 ) -> int:
     chosen = _select(source, name, all_, write)
     if chosen is None:

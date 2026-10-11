@@ -6,11 +6,13 @@ Handles RAR extraction and PAR2 repair operations.
 import logging
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from core.config import ConfigSource
 from core.junk_rules import dangerous_extensions
+from core.remover import Remover
 from core.safety_invariants import InvariantEnforcer
 from utils.defensive import StateValidator
 from utils.error_messages import log_error
@@ -33,9 +35,9 @@ class ArchiveSet:
 
     name: str
     kind: str
-    volumes: List[Path] = field(default_factory=list)
-    first: Optional[Path] = None
-    missing: List[str] = field(default_factory=list)
+    volumes: list[Path] = field(default_factory=list[Path])
+    first: Path | None = None
+    missing: list[str] = field(default_factory=list[str])
 
 
 @dataclass
@@ -50,17 +52,17 @@ class ArchiveOutcome:
     status: str
     reason_code: str
     detail: str
-    volumes: List[Path] = field(default_factory=list)
+    volumes: list[Path] = field(default_factory=list[Path])
 
 
-def _volume_gaps(numbers: List[int], start: int) -> List[int]:
+def _volume_gaps(numbers: list[int], start: int) -> list[int]:
     if not numbers:
         return []
     present = set(numbers)
     return [n for n in range(start, max(numbers) + 1) if n not in present]
 
 
-def find_archive_sets(folder: Path) -> List[ArchiveSet]:
+def find_archive_sets(folder: Path) -> list[ArchiveSet]:
     """Group the archive files in a folder into sets and report missing volumes.
 
     Recognizes plain ``.7z`` and ``.rar`` files, split 7z sets (``.7z.001``),
@@ -73,13 +75,13 @@ def find_archive_sets(folder: Path) -> List[ArchiveSet]:
     except OSError:
         return []
 
-    split_7z: Dict[str, Dict[int, Path]] = {}
-    rar_parts: Dict[str, Dict[int, Tuple[Path, int]]] = {}
-    old_rar_volumes: Dict[str, Dict[int, Path]] = {}
-    plain_rar: Dict[str, Path] = {}
-    zip_volumes: Dict[str, Dict[int, Path]] = {}
-    zip_heads: Dict[str, Path] = {}
-    sets: List[ArchiveSet] = []
+    split_7z: dict[str, dict[int, Path]] = {}
+    rar_parts: dict[str, dict[int, tuple[Path, int]]] = {}
+    old_rar_volumes: dict[str, dict[int, Path]] = {}
+    plain_rar: dict[str, Path] = {}
+    zip_volumes: dict[str, dict[int, Path]] = {}
+    zip_heads: dict[str, Path] = {}
+    sets: list[ArchiveSet] = []
 
     for f in files:
         name = f.name
@@ -182,7 +184,7 @@ def find_archive_sets(folder: Path) -> List[ArchiveSet]:
     return sorted(sets, key=lambda s: s.name.lower())
 
 
-def classify_extract_failure(stdout: str, stderr: str, code: int, timeout: int) -> Tuple[str, str, str]:
+def classify_extract_failure(stdout: str, stderr: str, code: int, timeout: int) -> tuple[str, str, str]:
     """Map a failed 7z extraction to (status, reason_code, detail)."""
     text = f"{stdout}\n{stderr}".lower()
     if "timeout" in text:
@@ -235,12 +237,12 @@ def par2_set_name(filename: str) -> str:
     return name.lower()
 
 
-def par2_set_heads(par2_files: List[Path]) -> List[Path]:
+def par2_set_heads(par2_files: list[Path]) -> list[Path]:
     """One file per PAR2 set to hand to par2: the index file, else the smallest recovery volume."""
-    sets: Dict[str, List[Path]] = {}
+    sets: dict[str, list[Path]] = {}
     for f in par2_files:
         sets.setdefault(par2_set_name(f.name), []).append(f)
-    heads: List[Path] = []
+    heads: list[Path] = []
     for files in sets.values():
         index = [f for f in files if not _PAR2_VOLUME.search(f.name)]
         if index:
@@ -250,7 +252,7 @@ def par2_set_heads(par2_files: List[Path]) -> List[Path]:
     return sorted(heads)
 
 
-def classify_par2_result(stdout: str, stderr: str, code: int, success: bool) -> Tuple[str, str, str]:
+def classify_par2_result(stdout: str, stderr: str, code: int, success: bool) -> tuple[str, str, str]:
     """Map one ``par2 r`` run to (status, reason_code, detail)."""
     text = f"{stdout}\n{stderr}".lower()
     if "timeout" in text and not success:
@@ -278,7 +280,7 @@ class ArchiveProcessor:
 
     def __init__(
         self,
-        config: Any = None,
+        config: ConfigSource | None = None,
         destination_root: Path | None = None,
         process_tracker: ProcessTracker | None = None,
     ) -> None:
@@ -289,20 +291,25 @@ class ArchiveProcessor:
             destination_root: Root destination for safety invariants
             process_tracker: Object with 'active_process' attribute for cancellation support
         """
-        self.config = config or {}
+        self.config: ConfigSource = config or {}
         self.system_check = SystemCheck(config)
         self.process_tracker = process_tracker
         self.enforcer = None
         if destination_root:
             self.enforcer = InvariantEnforcer(destination_root, config)
-        self.last_outcomes: List[ArchiveOutcome] = []
+        self.last_outcomes: list[ArchiveOutcome] = []
         self.last_par2 = Par2Outcome("none", "", "")
-        self._last_path_check = "archive_unsafe_paths"
+        self._last_path_check: str = "archive_unsafe_paths"
         # Remover (quarantine, trash or permanent delete); nothing is removed without one.
-        self.remover: Any = None
+        self.remover: Remover | None = None
+
+    def _reset_path_check(self) -> None:
+        # A method (not an inline assignment) so the type checker does not pin
+        # the attribute to this literal across the _validate_archive_paths call.
+        self._last_path_check = "archive_unsafe_paths"
 
     @staticmethod
-    def describe_missing(missing: List[str], limit: int = 3) -> str:
+    def describe_missing(missing: list[str], limit: int = 3) -> str:
         shown = ", ".join(missing[:limit])
         more = len(missing) - limit
         return f"{shown} and {more} more" if more > 0 else shown
@@ -367,7 +374,7 @@ class ArchiveProcessor:
             )
             return False
 
-    def preflight_set(self, archive_set: ArchiveSet, folder: Path) -> Optional[ArchiveOutcome]:
+    def preflight_set(self, archive_set: ArchiveSet, folder: Path) -> ArchiveOutcome | None:
         """Read-only checks that decide whether a set can be extracted.
 
         Returns the outcome for a set that must not be extracted (missing volume,
@@ -398,7 +405,7 @@ class ArchiveProcessor:
             return outcome("held", "tool_missing", "7-Zip unavailable")
 
         # SECURITY: Check archive contents for path traversal before extraction
-        self._last_path_check = "archive_unsafe_paths"
+        self._reset_path_check()
         if self._validate_archive_paths(archive_file, folder, sevenzip_cmd):
             return None
         if self._last_path_check == "archive_password":
@@ -507,7 +514,7 @@ class ArchiveProcessor:
             )
             return outcome("held", "archive_extract_error", str(e)[:200])
 
-    def _delete_volumes(self, volumes: List[Path]) -> None:
+    def _delete_volumes(self, volumes: list[Path]) -> None:
         """Remove the volumes of one set that extracted cleanly."""
         for volume in volumes:
             self._delete_path(volume, extraction_verified=True)
@@ -557,7 +564,7 @@ class ArchiveProcessor:
         )
         return True
 
-    def _run_par2_set(self, main: Path, par2_cmd: List[str], folder: Path) -> Par2Outcome:
+    def _run_par2_set(self, main: Path, par2_cmd: list[str], folder: Path) -> Par2Outcome:
         """Run ``par2 r <main> *`` for one set and classify the result."""
         try:
             set_files = [f for f in folder.glob("*.par2") if par2_set_name(f.name) == par2_set_name(main.name)]
@@ -633,7 +640,7 @@ class ArchiveProcessor:
                 logging.error(f"Failed to remove file {file}: {e}")
                 return
 
-    def _validate_archive_paths(self, archive_file: Path, target_folder: Path, sevenzip_cmd: list) -> bool:
+    def _validate_archive_paths(self, archive_file: Path, target_folder: Path, sevenzip_cmd: list[str]) -> bool:
         """
         Validate all paths in archive to prevent path traversal attacks.
 

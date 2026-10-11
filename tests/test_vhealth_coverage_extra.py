@@ -11,7 +11,7 @@ def test_get_duration_parses_ffmpeg_output(monkeypatch, tmp_path):
     video.write_bytes(b"x")
 
     stderr = "Duration: 00:01:30.50, start: 0.000000, bitrate: 1200 kb/s"
-    monkeypatch.setattr(checker, "_resolve_ffmpeg_command", lambda: ["ffmpeg"])
+    monkeypatch.setattr(checker, "resolve_ffmpeg_command", lambda: ["ffmpeg"])
     monkeypatch.setattr(
         vhealth.SubprocessSafety,
         "run_with_timeout",
@@ -28,7 +28,7 @@ def test_get_resolution_parses_dimensions(monkeypatch, tmp_path):
     video.write_bytes(b"x")
 
     out = "Stream #0:0: Video: h264, yuv420p, 1920x1080"
-    monkeypatch.setattr(checker, "_resolve_ffmpeg_command", lambda: ["ffmpeg"])
+    monkeypatch.setattr(checker, "resolve_ffmpeg_command", lambda: ["ffmpeg"])
     monkeypatch.setattr(
         vhealth.SubprocessSafety,
         "run_with_timeout",
@@ -43,7 +43,7 @@ def test_get_duration_returns_none_without_ffmpeg(monkeypatch, tmp_path):
     checker = vhealth.VideoHealthChecker(vhealth.Config())
     video = tmp_path / "video.mkv"
     video.write_bytes(b"x")
-    monkeypatch.setattr(checker, "_resolve_ffmpeg_command", lambda: None)
+    monkeypatch.setattr(checker, "resolve_ffmpeg_command", lambda: None)
     assert checker._get_duration(video) is None
     assert checker._get_resolution(video) is None
 
