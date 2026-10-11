@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Iterable, List, Sequence
+from typing import Iterable, List, Optional, Sequence
 
 
 def is_windows() -> bool:
@@ -49,6 +49,48 @@ def platform_label() -> str:
     return sys.platform
 
 
+LINUX_INSTALL_COMMANDS = {
+    "arch": "Arch/Manjaro/Omarchy: sudo pacman -S 7zip par2cmdline ffmpeg",
+    "debian": "Debian/Ubuntu: sudo apt install p7zip-full par2 ffmpeg",
+    "fedora": "Fedora/RHEL: sudo dnf install p7zip par2cmdline ffmpeg",
+    "suse": "openSUSE: sudo zypper install 7zip par2cmdline ffmpeg",
+}
+NO_ROOT_7Z_HINT = "Without root: download the static 7zz from https://www.7-zip.org/ and set tool_paths.7z to its path."
+
+
+def linux_distro_family(os_release: Path = Path("/etc/os-release")) -> Optional[str]:
+    """Return "arch", "debian", "fedora" or "suse" from os-release ID/ID_LIKE, else None."""
+    try:
+        text = os_release.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    ids: List[str] = []
+    for line in text.splitlines():
+        key, _, value = line.partition("=")
+        if key in ("ID", "ID_LIKE"):
+            ids.extend(value.strip().strip('"').lower().split())
+    for family, members in (
+        ("arch", {"arch", "manjaro", "endeavouros", "omarchy", "garuda", "cachyos"}),
+        ("debian", {"debian", "ubuntu", "linuxmint", "pop", "raspbian"}),
+        ("fedora", {"fedora", "rhel", "centos", "rocky", "almalinux"}),
+        ("suse", {"suse", "opensuse", "opensuse-leap", "opensuse-tumbleweed", "sles"}),
+    ):
+        if members.intersection(ids):
+            return family
+    return None
+
+
+def user_state_dir(app: str = "unpackr") -> Path:
+    """Per-user directory for logs and state: XDG state dir, ~/Library/Logs, or %LOCALAPPDATA%."""
+    if is_windows():
+        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+        return Path(base) / app
+    if is_macos():
+        return Path.home() / "Library" / "Logs" / app
+    base = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
+    return Path(base) / app
+
+
 def package_manager_install_hint() -> str:
     """Return a short install recipe for required/recommended external tools."""
     if is_windows():
@@ -59,14 +101,14 @@ def package_manager_install_hint() -> str:
     if is_macos():
         return "brew install p7zip par2 ffmpeg"
     if is_linux():
-        return (
-            "Debian/Ubuntu: sudo apt install p7zip-full par2 ffmpeg | "
-            "Fedora/RHEL: sudo dnf install p7zip par2cmdline ffmpeg"
-        )
+        family = linux_distro_family()
+        if family in LINUX_INSTALL_COMMANDS:
+            return f"{LINUX_INSTALL_COMMANDS[family]}. {NO_ROOT_7Z_HINT}"
+        return " | ".join(LINUX_INSTALL_COMMANDS.values()) + f". {NO_ROOT_7Z_HINT}"
     return "Install 7z/7zz, par2, and ffmpeg via your platform package manager and ensure they are on PATH."
 
 
-def tool_missing_hint(tool_key: str) -> str:
+def tool_missing_hint(tool_key: str, include_recipe: bool = True) -> str:
     """Return a platform-specific remediation line for a missing tool."""
     key = (tool_key or "").strip().lower()
     names = {
@@ -75,6 +117,8 @@ def tool_missing_hint(tool_key: str) -> str:
         "ffmpeg": "ffmpeg",
     }
     label = names.get(key, key or "the required tool")
+    if not include_recipe:
+        return f"Install {label}."
     return f"Install {label}. {package_manager_install_hint()}"
 
 

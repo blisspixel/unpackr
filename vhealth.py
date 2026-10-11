@@ -8,7 +8,9 @@ on PATH for full health validation.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, cast
@@ -31,6 +33,13 @@ from version import __version__
 init(autoreset=True)
 
 
+def _stdin_is_tty() -> bool:
+    try:
+        return sys.stdin.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
 class VideoHealthChecker:
     """Check video health and quality."""
 
@@ -48,6 +57,23 @@ class VideoHealthChecker:
         self.duplicate_videos = []  # (video, duplicate_of, reason)
         self.potential_duplicates = []  # [(video1, video2, similarity_score)]
         self._active_root: Optional[Path] = None
+        # Answer for prompts: True (--yes), False (--no) or None (ask when a terminal is attached).
+        self.assume: Optional[bool] = None
+        self.skip_samples = False
+
+    def _confirm(self, question: str) -> bool:
+        """Ask a yes/no question; without a terminal (or at end of input) the answer is No."""
+        if self.assume is not None:
+            print(f"{question} {'yes' if self.assume else 'no'} {Style.DIM}(from --yes/--no){Style.RESET_ALL}")
+            return self.assume
+        if not _stdin_is_tty():
+            print(f"{question} no {Style.DIM}(no terminal; pass --yes to delete){Style.RESET_ALL}")
+            return False
+        try:
+            return input(f"{question} [y/N]: ").strip().lower() in ("y", "yes")
+        except EOFError:
+            print()
+            return False
 
     def check_path(
         self,
@@ -79,6 +105,7 @@ class VideoHealthChecker:
             print(f"{Fore.CYAN}{path}{Style.RESET_ALL}")
             print(f"{Style.DIM}Found {len(video_files)} videos{Style.RESET_ALL}")
 
+            self.skip_samples = skip_samples
             # Quick pre-scan for samples and low-res if not skipping
             # Default behavior: auto-delete bad files (can be overridden with delete_bad=False)
             delete_bad_now = delete_bad
@@ -149,14 +176,10 @@ class VideoHealthChecker:
                     if auto_clean:
                         delete_bad_now = True
                         print(f"{Style.DIM}Deleting and continuing health check...{Style.RESET_ALL}\n")
+                    elif self._confirm("Delete these and continue health check?"):
+                        delete_bad_now = True
                     else:
-                        print("Delete these and continue health check? [y/N]: ", end="")
-                        choice = input().strip().lower()
-
-                        if choice in ("y", "yes"):
-                            delete_bad_now = True
-                        else:
-                            print(f"{Style.DIM}Keeping all files, checking everything...{Style.RESET_ALL}\n")
+                        print(f"{Style.DIM}Keeping all files, checking everything...{Style.RESET_ALL}\n")
 
             # Delete bad files now if requested
             if delete_bad_now:
@@ -277,16 +300,21 @@ class VideoHealthChecker:
                             spinner_state[0] += 1
                             time.sleep(0.1)  # Update 10 times per second
 
-                    # Start spinner animation in background thread
+                    # Animate only on a terminal; piped output gets one line per file
+                    animate = sys.stdout.isatty()
                     spinner_thread = threading.Thread(target=animate_spinner, daemon=True)
-                    spinner_thread.start()
+                    if animate:
+                        spinner_thread.start()
 
                     # Check the video
                     result = self._check_video_silent(video)
 
                     # Stop spinner
                     stop_spinner.set()
-                    spinner_thread.join(timeout=0.2)
+                    if animate:
+                        spinner_thread.join(timeout=0.2)
+                    else:
+                        print(f"  [{i}/{len(videos_to_check)}] {video.name}: {result}")
 
                     # Update counts after check
                     if result == "healthy":
@@ -300,7 +328,9 @@ class VideoHealthChecker:
                 print(f"\r{' ' * 120}\r", end="", flush=True)
                 print(f"{Fore.GREEN}{healthy_count} healthy{Style.RESET_ALL}", end="")
                 if bad_count > 0:
-                    print(f"  |  {Fore.RED}{bad_count} corrupt{Style.RESET_ALL}\n")
+                    print(
+                        f"  |  {Fore.RED}{bad_count} with problems{Style.RESET_ALL} {Style.DIM}(details below){Style.RESET_ALL}\n"
+                    )
                 else:
                     print("\n")
 
@@ -620,9 +650,10 @@ class VideoHealthChecker:
         Returns:
             'healthy', 'sample', 'corrupt', 'low_quality:<reason>' status string
         """
-        # Check if it's a sample file
-        if self.video_processor.is_sample_file(video_file):
-            self.sample_videos.append(video_file)
+        # Check if it's a sample file (the pre-scan may already have listed it)
+        if not self.skip_samples and self.video_processor.is_sample_file(video_file):
+            if video_file not in self.sample_videos:
+                self.sample_videos.append(video_file)
             size_mb = video_file.stat().st_size / (1024 * 1024)
             return f"{Fore.YELLOW}SAMPLE{Style.RESET_ALL} ({size_mb:.1f}MB)"
 
@@ -634,6 +665,11 @@ class VideoHealthChecker:
         is_healthy, is_low_quality, quality_reason, resolution = result
 
         if not is_healthy:
+            verdict = getattr(self.video_processor, "last_verdict", None)
+            if verdict is not None and verdict.category == "preview":
+                if video_file not in self.sample_videos:
+                    self.sample_videos.append(video_file)
+                return f"{Fore.YELLOW}SAMPLE{Style.RESET_ALL} (preview, {verdict.detail.split(' ')[0]})"
             self.corrupt_videos.append(video_file)
             return f"{Fore.RED}CORRUPT{Style.RESET_ALL}"
 
@@ -668,8 +704,9 @@ class VideoHealthChecker:
             skip_health: Skip health check (only check samples/resolution)
         """
         # Check if it's a sample file
-        if self.video_processor.is_sample_file(video_file):
-            self.sample_videos.append(video_file)
+        if not self.skip_samples and self.video_processor.is_sample_file(video_file):
+            if video_file not in self.sample_videos:
+                self.sample_videos.append(video_file)
             size_mb = video_file.stat().st_size / (1024 * 1024)
             print(f"  {Fore.YELLOW}SAMPLE{Style.RESET_ALL} ({size_mb:.1f}MB)")
             return
@@ -684,6 +721,12 @@ class VideoHealthChecker:
             is_healthy, is_low_quality, quality_reason, resolution = result
 
             if not is_healthy:
+                verdict = getattr(self.video_processor, "last_verdict", None)
+                if verdict is not None and verdict.category == "preview":
+                    if video_file not in self.sample_videos:
+                        self.sample_videos.append(video_file)
+                    print(f"  {Fore.YELLOW}SAMPLE{Style.RESET_ALL} (preview, {verdict.detail.split(' ')[0]})")
+                    return
                 self.corrupt_videos.append(video_file)
                 print(f"  {Fore.RED}CORRUPT{Style.RESET_ALL}")
                 return
@@ -875,10 +918,7 @@ class VideoHealthChecker:
         """Prompt user to delete bad videos."""
         total_size_mb = sum(v.stat().st_size for v in videos) / (1024 * 1024)
 
-        print(f"Delete {len(videos)} videos? {Style.DIM}({total_size_mb:.1f}MB){Style.RESET_ALL}")
-        response = input("[y/N]: ").strip().lower()
-
-        if response in ("y", "yes"):
+        if self._confirm(f"Delete {len(videos)} videos? {Style.DIM}({total_size_mb:.1f}MB){Style.RESET_ALL}"):
             self._delete_videos(videos)
         else:
             print(f"{Style.DIM}Skipped{Style.RESET_ALL}")
@@ -969,6 +1009,11 @@ def build_vhealth_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--skip-samples", action="store_true", help="Skip sample detection, go straight to health check"
     )
+    answers = parser.add_mutually_exclusive_group()
+    answers.add_argument("--yes", "-y", action="store_true", help="Answer yes to delete prompts (no terminal needed)")
+    answers.add_argument("--no", "-n", action="store_true", help="Answer no to delete prompts (read-only)")
+    parser.add_argument("--json", action="store_true", help="Print a JSON summary instead of the report")
+    parser.add_argument("--no-color", action="store_true", help="Disable ANSI colors (also respects NO_COLOR)")
     parser.add_argument("--config", type=existing_file_path, help="Path to an existing custom config file")
     parser.add_argument("-v", "--verbose", action="store_true", help="Show verbose output (ffmpeg messages, etc.)")
     parser.add_argument("--version", action="version", version=f"vhealth {__version__}")
@@ -982,6 +1027,48 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     if not args.path:
         parser.error("path is required")
+
+    if getattr(args, "no_color", False) or os.environ.get("NO_COLOR"):
+        init(autoreset=True, strip=True)
+    if getattr(args, "json", False):
+        import io
+        from contextlib import redirect_stdout
+
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            try:
+                checker = _run(args)
+                code = 0
+            except SystemExit as e:
+                checker, code = None, int(e.code or 0)
+        print(json.dumps(_json_summary(checker, args, code), indent=2))
+        sys.exit(code)
+    _run(args)
+
+
+def _json_summary(checker: Optional["VideoHealthChecker"], args: argparse.Namespace, code: int) -> dict:
+    def names(items) -> List[str]:
+        return [str(i[0] if isinstance(i, tuple) else i) for i in items]
+
+    summary: dict = {"tool": "vhealth", "version": __version__, "path": args.path, "exit_code": code}
+    if checker is not None:
+        summary["counts"] = {
+            "healthy": len(checker.healthy_videos),
+            "corrupt": len(checker.corrupt_videos),
+            "samples": len(checker.sample_videos),
+            "low_quality": len(checker.low_res_videos),
+            "duplicates": len(checker.duplicate_videos),
+            "potential_duplicates": len(checker.potential_duplicates),
+        }
+        summary["corrupt"] = names(checker.corrupt_videos)
+        summary["samples"] = names(checker.sample_videos)
+        summary["low_quality"] = names(checker.low_res_videos)
+        summary["duplicates"] = names(checker.duplicate_videos)
+    return summary
+
+
+def _run(args: argparse.Namespace) -> "VideoHealthChecker":
+    """Run vhealth with parsed arguments and return the checker."""
 
     # Setup logging
     if args.verbose:
@@ -1013,6 +1100,10 @@ def main(argv: Optional[List[str]] = None) -> None:
         sys.exit(1)
 
     checker = VideoHealthChecker(config)
+    if getattr(args, "yes", False):
+        checker.assume = True
+    elif getattr(args, "no", False) or getattr(args, "json", False):
+        checker.assume = False
     auto_delete = args.clean or args.delete_bad
     # Warn when ffmpeg is missing for any mode that relies on decode/metadata checks.
     if checker._resolve_ffmpeg_command() is None:
@@ -1035,8 +1126,8 @@ def main(argv: Optional[List[str]] = None) -> None:
     print(f"\n{Style.DIM}Scanning: {path}{Style.RESET_ALL}")
     print(f"{Style.DIM}Press Ctrl+C to cancel{Style.RESET_ALL}\n")
 
-    # Countdown
-    if auto_delete:
+    # Countdown (only when someone at a terminal could still cancel)
+    if auto_delete and _stdin_is_tty() and not getattr(args, "yes", False):
         import time
 
         for i in range(5, 0, -1):
@@ -1065,6 +1156,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         sys.exit(1)
 
     print()
+    return checker
 
 
 if __name__ == "__main__":

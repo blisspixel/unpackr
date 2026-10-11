@@ -110,14 +110,31 @@ def test_package_manager_hints_are_platform_specific(monkeypatch):
 
     monkeypatch.setattr(platform_support, "is_macos", lambda: False)
     monkeypatch.setattr(platform_support, "is_linux", lambda: True)
+    monkeypatch.setattr(platform_support, "linux_distro_family", lambda: None)
     hint = platform_support.package_manager_install_hint()
-    assert "apt" in hint and "dnf" in hint
+    assert "apt" in hint and "dnf" in hint and "pacman" in hint and "7zz" in hint
+
+    monkeypatch.setattr(platform_support, "linux_distro_family", lambda: "arch")
+    hint = platform_support.package_manager_install_hint()
+    assert "sudo pacman -S 7zip par2cmdline ffmpeg" in hint and "apt" not in hint
+
+
+def test_linux_distro_family_reads_os_release(tmp_path):
+    release = tmp_path / "os-release"
+    release.write_text('NAME="Omarchy"\nID=arch\n')
+    assert platform_support.linux_distro_family(release) == "arch"
+    release.write_text('ID=pop\nID_LIKE="ubuntu debian"\n')
+    assert platform_support.linux_distro_family(release) == "debian"
+    release.write_text("ID=nixos\n")
+    assert platform_support.linux_distro_family(release) is None
+    assert platform_support.linux_distro_family(tmp_path / "missing") is None
 
 
 def test_tool_missing_hint_mentions_tool_and_recipe(monkeypatch):
     monkeypatch.setattr(platform_support, "is_windows", lambda: False)
     monkeypatch.setattr(platform_support, "is_macos", lambda: False)
     monkeypatch.setattr(platform_support, "is_linux", lambda: True)
+    monkeypatch.setattr(platform_support, "linux_distro_family", lambda: None)
     hint = platform_support.tool_missing_hint("7z")
     assert "7z" in hint.lower() or "p7zip" in hint.lower()
     assert "apt" in hint

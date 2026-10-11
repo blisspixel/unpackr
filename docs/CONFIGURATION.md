@@ -102,6 +102,10 @@ Days to keep a quarantined run before the next live run purges it. Default: `14`
 
 `unpackr-doctor --source <dir>` warns when the quarantine holds more than this many MB. Default: `20480` (20 GB).
 
+### `log_folder`
+
+Where log files go. Default: `"logs"`. A relative value is placed under the per-user state folder (`~/.local/state/unpackr/` on Linux, `~/Library/Logs/unpackr/` on macOS, `%LOCALAPPDATA%\unpackr\` on Windows), so runs never leave a `logs` folder in whatever directory they started from. An absolute or `~` path is used as given.
+
 ### `max_log_files`
 
 Number of log files to retain. Oldest logs are removed first. Default: `3`.
