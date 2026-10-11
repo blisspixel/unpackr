@@ -198,6 +198,81 @@ def classify_extract_failure(stdout: str, stderr: str, code: int, timeout: int) 
     return "held", "archive_extract_failed", f"7z returned error code {code}"
 
 
+_PAR2_VOLUME = re.compile(r"\.vol\d+[+-]\d+\.par2$", re.IGNORECASE)
+# par2cmdline exit codes that say something about the data (1 repair possible,
+# 2 repair not possible, 4 insufficient critical data, 5 repair failed); the
+# others (3 bad arguments, 6 file I/O, 7 logic, 8 memory, ...) are tool errors.
+_PAR2_DAMAGE_CODES = {1, 2, 4, 5}
+_PAR2_FAILURE_TEXT = (
+    "repair failed",
+    "repair is not possible",
+    "repair is impossible",
+    "cannot repair",
+    "could not repair",
+    "damaged beyond repair",
+    "insufficient",
+)
+
+
+@dataclass
+class Par2Outcome:
+    """What PAR2 said about a folder: verified, repaired, damaged, error, unavailable or none."""
+
+    status: str
+    reason_code: str
+    detail: str
+
+    @property
+    def ok(self) -> bool:
+        return self.status in ("verified", "repaired", "none")
+
+
+def par2_set_name(filename: str) -> str:
+    """The set a ``.par2`` file belongs to: ``Movie.vol03+04.par2`` -> ``movie``."""
+    name = _PAR2_VOLUME.sub("", filename)
+    if name.lower().endswith(".par2"):
+        name = name[:-5]
+    return name.lower()
+
+
+def par2_set_heads(par2_files: List[Path]) -> List[Path]:
+    """One file per PAR2 set to hand to par2: the index file, else the smallest recovery volume."""
+    sets: Dict[str, List[Path]] = {}
+    for f in par2_files:
+        sets.setdefault(par2_set_name(f.name), []).append(f)
+    heads: List[Path] = []
+    for files in sets.values():
+        index = [f for f in files if not _PAR2_VOLUME.search(f.name)]
+        if index:
+            heads.append(sorted(index)[0])
+        else:
+            heads.append(min(files, key=lambda f: (f.stat().st_size if f.exists() else 0, f.name)))
+    return sorted(heads)
+
+
+def classify_par2_result(stdout: str, stderr: str, code: int, success: bool) -> Tuple[str, str, str]:
+    """Map one ``par2 r`` run to (status, reason_code, detail)."""
+    text = f"{stdout}\n{stderr}".lower()
+    if "timeout" in text and not success:
+        return "error", "par2_tool_error", "par2 timed out"
+    if code in _PAR2_DAMAGE_CODES or any(k in text for k in _PAR2_FAILURE_TEXT):
+        return "damaged", "par2_damaged", f"damaged and PAR2 cannot repair it (par2 exit {code})"
+    if not success or code != 0:
+        return "error", "par2_tool_error", f"par2 failed (exit {code}); the data was not judged"
+    if "repair complete" in text or "repaired successfully" in text:
+        return "repaired", "par2_repaired", "repaired"
+    return "verified", "par2_verified", "all files correct"
+
+
+def is_archive_related(path: Path) -> bool:
+    """True for archive volumes and PAR2 files, the only things the archive step may remove."""
+    name = path.name
+    lower = name.lower()
+    return lower.endswith((".rar", ".7z", ".zip", ".par2")) or bool(
+        _SPLIT_7Z.match(name) or _RAR_OLD_VOLUME.match(name) or _ZIP_VOLUME.match(name)
+    )
+
+
 class ArchiveProcessor:
     """Handles archive extraction and repair operations."""
 
@@ -221,8 +296,9 @@ class ArchiveProcessor:
         if destination_root:
             self.enforcer = InvariantEnforcer(destination_root, config)
         self.last_outcomes: List[ArchiveOutcome] = []
+        self.last_par2 = Par2Outcome("none", "", "")
         self._last_path_check = "archive_unsafe_paths"
-        # Optional Remover (quarantine, trash or permanent delete); permanent without one.
+        # Remover (quarantine, trash or permanent delete); nothing is removed without one.
         self.remover: Any = None
 
     @staticmethod
@@ -291,8 +367,14 @@ class ArchiveProcessor:
             )
             return False
 
-    def _process_archive_set(self, archive_set: ArchiveSet, folder: Path) -> ArchiveOutcome:
-        """Extract one archive set and report what happened to it."""
+    def preflight_set(self, archive_set: ArchiveSet, folder: Path) -> Optional[ArchiveOutcome]:
+        """Read-only checks that decide whether a set can be extracted.
+
+        Returns the outcome for a set that must not be extracted (missing volume,
+        no 7-Zip, password, unreadable, unsafe or dangerous contents), or None
+        when extraction can go ahead. Dry runs call this too, so the plan holds
+        and blocks the same sets the live run will.
+        """
 
         def outcome(status: str, code: str, detail: str) -> ArchiveOutcome:
             return ArchiveOutcome(archive_set.name, status, code, detail, list(archive_set.volumes))
@@ -310,11 +392,59 @@ class ArchiveProcessor:
             return outcome("held", "archive_volume_missing", f"missing {missing}")
 
         archive_file = archive_set.first
+        sevenzip_cmd = self.system_check.get_tool_command("7z")
+        if not sevenzip_cmd:
+            logging.error("7-Zip executable unavailable or configured with an unsafe relative path")
+            return outcome("held", "tool_missing", "7-Zip unavailable")
+
+        # SECURITY: Check archive contents for path traversal before extraction
+        self._last_path_check = "archive_unsafe_paths"
+        if self._validate_archive_paths(archive_file, folder, sevenzip_cmd):
+            return None
+        if self._last_path_check == "archive_password":
+            log_error(
+                what_failed=f"Could not open {archive_file.name}",
+                reason="Archive is password-protected (encrypted headers)",
+                action="Extract it yourself with the password; the volumes were kept",
+                location=archive_file.parent,
+            )
+            return outcome("held", "archive_password", "Archive is password-protected")
+        if self._last_path_check == "archive_unlistable":
+            log_error(
+                what_failed=f"Could not read {archive_file.name}",
+                reason="7-Zip could not list the archive (a volume is missing, it is damaged, or it is password-protected)",
+                action="Check the download is complete; the volumes were kept",
+                location=archive_file.parent,
+            )
+            return outcome("held", "archive_unlistable", "7-Zip could not list the archive")
+        if self._last_path_check == "archive_dangerous_member":
+            log_error(
+                what_failed=f"SECURITY: Blocked {archive_file.name}",
+                reason="Archive contains an executable, script or shortcut",
+                action="Treat the release as fake; do not extract or run anything from it",
+                location=archive_file.parent,
+            )
+            return outcome("blocked", "archive_dangerous_member", "contains an executable, script or shortcut")
+        log_error(
+            what_failed=f"SECURITY: Blocked {archive_file.name}",
+            reason="Archive contains unsafe paths (path traversal attempt)",
+            action="Do not extract this archive - it may be malicious",
+            location=archive_file.parent,
+        )
+        return outcome("blocked", "archive_unsafe_paths", "entries would extract outside the folder")
+
+    def _process_archive_set(self, archive_set: ArchiveSet, folder: Path) -> ArchiveOutcome:
+        """Extract one archive set and report what happened to it."""
+
+        def outcome(status: str, code: str, detail: str) -> ArchiveOutcome:
+            return ArchiveOutcome(archive_set.name, status, code, detail, list(archive_set.volumes))
+
+        archive_file = archive_set.first or folder / archive_set.name
         try:
-            sevenzip_cmd = self.system_check.get_tool_command("7z")
-            if not sevenzip_cmd:
-                logging.error("7-Zip executable unavailable or configured with an unsafe relative path")
-                return outcome("held", "tool_missing", "7-Zip unavailable")
+            held = self.preflight_set(archive_set, folder)
+            if held is not None:
+                return held
+            sevenzip_cmd = self.system_check.get_tool_command("7z") or []
 
             start_time = time.time()
             try:
@@ -337,39 +467,12 @@ class ArchiveProcessor:
                 )
                 return outcome("held", "disk_space_low", f"need {required_space_mb}MB")
 
-            # SECURITY: Check archive contents for path traversal before extraction
-            self._last_path_check = "archive_unsafe_paths"
-            if not self._validate_archive_paths(archive_file, folder, sevenzip_cmd):
-                if self._last_path_check == "archive_unlistable":
-                    log_error(
-                        what_failed=f"Could not read {archive_file.name}",
-                        reason="7-Zip could not list the archive (a volume is missing, it is damaged, or it is password-protected)",
-                        action="Check the download is complete; the volumes were kept",
-                        location=archive_file.parent,
-                    )
-                    return outcome("held", "archive_unlistable", "7-Zip could not list the archive")
-                if self._last_path_check == "archive_dangerous_member":
-                    log_error(
-                        what_failed=f"SECURITY: Blocked {archive_file.name}",
-                        reason="Archive contains an executable, script or shortcut",
-                        action="Treat the release as fake; do not extract or run anything from it",
-                        location=archive_file.parent,
-                    )
-                    return outcome("blocked", "archive_dangerous_member", "contains an executable, script or shortcut")
-                log_error(
-                    what_failed=f"SECURITY: Blocked {archive_file.name}",
-                    reason="Archive contains unsafe paths (path traversal attempt)",
-                    action="Do not extract this archive - it may be malicious",
-                    location=archive_file.parent,
-                )
-                return outcome("blocked", "archive_unsafe_paths", "entries would extract outside the folder")
-
             extraction_timeout = SafetyLimits.calculate_rar_timeout(file_size_bytes)
             if extraction_timeout > SafetyLimits.RAR_EXTRACTION_TIMEOUT:
                 logging.info(f"Using extended timeout {extraction_timeout}s for large archive ({file_size_mb:.1f}MB)")
 
             success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
-                sevenzip_cmd + ["x", str(archive_file), f"-o{folder}", "-aoa"],
+                sevenzip_cmd + ["x", str(archive_file), f"-o{folder}", "-aoa", "-p-", "-y"],
                 timeout=extraction_timeout,
                 cwd=folder,
                 operation=f"Archive extraction: {archive_file.name}",
@@ -405,199 +508,130 @@ class ArchiveProcessor:
             return outcome("held", "archive_extract_error", str(e)[:200])
 
     def _delete_volumes(self, volumes: List[Path]) -> None:
-        """Delete the volumes of one successfully extracted set."""
+        """Remove the volumes of one set that extracted cleanly."""
         for volume in volumes:
-            self._delete_path(volume)
+            self._delete_path(volume, extraction_verified=True)
 
     def process_par2_files(self, folder: Path) -> bool:
+        """Verify, and repair if needed, every PAR2 set in ``folder``.
+
+        PAR2 never removes anything: a set it cannot verify (damaged, obfuscated
+        beyond matching, tool error, par2 not installed) still goes on to
+        extraction, where 7-Zip checks every file's CRC. The ``.par2`` files are
+        removed later by :meth:`remove_par2_files`, once the content is out.
+
+        Every file in the folder is offered to par2 (``*``, expanded by par2
+        itself on every OS), so volumes renamed by an obfuscated post are matched
+        and renamed back before extraction.
+
+        Returns True when every set verified or was repaired (or there are none);
+        :attr:`last_par2` says what happened.
         """
-        Verify and repair files using PAR2 in the given folder.
-        Uses par2 'r' (repair) command which automatically verifies first,
-        then only repairs if needed. Faster than separate verify + repair.
-
-        Strategy:
-        1. Run repair (auto-verifies, only repairs if needed)
-        2. If successful (verified OK or repaired OK), delete PAR2 files
-        3. If repair fails, delete both PAR2 and archive files (corrupted beyond repair)
-
-        Args:
-            folder: Path to folder containing PAR2 files
-
-        Returns:
-            True if files are OK (no repair needed or repair succeeded)
-            False if repair failed (archives corrupted beyond repair)
-        """
+        self.last_par2 = Par2Outcome("none", "", "")
         try:
-            par2_files = list(folder.glob("*.par2"))
+            par2_files = sorted(f for f in folder.iterdir() if f.is_file() and f.suffix.lower() == ".par2")
+        except OSError as e:
+            self.last_par2 = Par2Outcome("error", "par2_tool_error", f"could not list folder: {e}")
+            return False
+        if not par2_files:
+            return True
 
-            if not par2_files:
-                return True  # No PAR2 files to process
-
-            # Use the first PAR2 file found (usually the main one)
-            par2_file = par2_files[0]
-
-            # Get par2 command from config
-            par2_cmd = self.system_check.get_tool_command("par2")
-            if not par2_cmd:
-                logging.warning("PAR2 executable unavailable or configured with an unsafe relative path")
-                return False
-
-            # Count PAR2 files and calculate total size for timeout calculation
-            par2_count = len(par2_files)
-            total_par2_size_bytes = sum(p.stat().st_size for p in par2_files)
-            total_par2_size_mb = total_par2_size_bytes / (1024 * 1024)
-
-            # PERFORMANCE: Calculate dynamic timeout based on PAR2 file sizes (handles large repairs)
-            par2_timeout = SafetyLimits.calculate_par2_timeout(total_par2_size_bytes)
-            if par2_timeout > SafetyLimits.PAR2_REPAIR_TIMEOUT:
-                logging.info(f"Using extended timeout {par2_timeout}s for large PAR2 set ({total_par2_size_mb:.1f}MB)")
-
-            # Run repair (will verify first, only repair if needed - faster!)
-            logging.info(f"PAR2 verify/repair: {par2_file.name} ({par2_count} files, {total_par2_size_mb:.1f}MB)")
-
-            start_time = time.time()
-            success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
-                par2_cmd + ["r", str(par2_file)],
-                timeout=par2_timeout,
-                cwd=folder,
-                operation=f"PAR2 repair: {par2_file.name}",
-                use_temp_files=True,  # PAR2 can output large amounts of data, use temp files
-                process_tracker=self.process_tracker,
-            )
-            elapsed = time.time() - start_time
-
-            # Check for failure indicators FIRST (par2 can return 0 even on failure sometimes)
-            combined_output = (stdout + stderr).lower()
-            failure_keywords = [
-                "repair failed",
-                "repair is impossible",
-                "cannot repair",
-                "repair is not possible",
-                "insufficient",
-                "damaged beyond repair",
-                "fatal error",
-                "could not repair",
-            ]
-
-            # Check if repair explicitly failed
-            repair_failed = any(keyword in combined_output for keyword in failure_keywords)
-
-            if repair_failed or (not success and code != 0):
-                # Repair failed - archives are corrupted beyond repair
-                log_error(
-                    what_failed="PAR2 repair failed",
-                    reason=f"Archives are corrupted beyond repair (completed in {elapsed:.1f}s)",
-                    action="Download missing PAR2 files or re-download archives",
-                    location=folder,
-                    details=f"Exit code: {code}\nStdout: {stdout[:300]}\nStderr: {stderr[:300]}",
-                )
-
-                # Delete PAR2 files
-                self._delete_files_by_extension(folder, ".par2")
-
-                # Delete archive files (they're corrupted)
-                self._delete_archive_files(folder)
-
-                return False
-
-            # Check for success indicators
-            if success:
-                # Check if repair was actually done by looking for "repaired" in output
-                if "repaired successfully" in combined_output or "repair complete" in combined_output:
-                    logging.info(f"PAR2 repair completed successfully in {elapsed:.1f}s for {folder}")
-                elif "all files are correct" in combined_output or "no repair" in combined_output:
-                    logging.info(f"PAR2 verification passed (no repair needed) in {elapsed:.1f}s for {folder}")
-                else:
-                    # Success exit code but unclear output - assume OK
-                    logging.info(f"PAR2 verification/repair finished in {elapsed:.1f}s for {folder}")
-
-                self._delete_files_by_extension(folder, ".par2")
-                return True
-
-            # Timeout or unknown error
-            log_error(
-                what_failed="PAR2 operation failed",
-                reason="Operation timed out or returned unexpected error",
-                action="Check if PAR2 files are valid and archives are accessible",
-                location=folder,
-            )
+        par2_cmd = self.system_check.get_tool_command("par2")
+        if not par2_cmd:
+            logging.warning("par2 is not installed; 7-Zip's CRC check will be the only integrity check")
+            self.last_par2 = Par2Outcome("unavailable", "par2_unavailable", "par2 not installed; not verified")
             return False
 
-        except Exception as e:
-            log_error(
-                what_failed="PAR2 processing failed",
-                reason=str(e),
-                action="Check folder permissions and PAR2 file validity",
-                location=folder,
-            )
+        results = [self._run_par2_set(main, par2_cmd, folder) for main in par2_set_heads(par2_files)]
+        repaired = any(r.status == "repaired" for r in results)
+        bad = [r for r in results if r.status not in ("verified", "repaired")]
+        if bad:
+            # Damage outranks a tool error: it is the one the user can act on (re-download).
+            worst = next((r for r in bad if r.status == "damaged"), bad[0])
+            self.last_par2 = worst
             return False
+        self.last_par2 = Par2Outcome(
+            "repaired" if repaired else "verified",
+            "par2_repaired" if repaired else "par2_verified",
+            f"{len(results)} PAR2 set(s)",
+        )
+        return True
 
-    def _delete_archive_files(self, folder: Path) -> None:
-        """Delete RAR, 7z and related archive files."""
-        # Delete .rar files
-        self._delete_files_by_extension(folder, ".rar")
+    def _run_par2_set(self, main: Path, par2_cmd: List[str], folder: Path) -> Par2Outcome:
+        """Run ``par2 r <main> *`` for one set and classify the result."""
+        try:
+            set_files = [f for f in folder.glob("*.par2") if par2_set_name(f.name) == par2_set_name(main.name)]
+            set_bytes = sum(f.stat().st_size for f in set_files)
+        except OSError:
+            set_files, set_bytes = [main], 0
+        par2_timeout = SafetyLimits.calculate_par2_timeout(set_bytes)
+        logging.info(f"PAR2 verify/repair: {main.name} ({len(set_files)} files, {set_bytes / 1048576:.1f}MB)")
 
-        # Delete split RAR files (.r00, .r01, etc.)
-        for i in range(100):
-            ext = f".r{str(i).zfill(2)}"
-            self._delete_files_by_extension(folder, ext)
+        start_time = time.time()
+        success, stdout, stderr, code = SubprocessSafety.run_with_timeout(
+            par2_cmd + ["r", main.name, "*"],
+            timeout=par2_timeout,
+            cwd=folder,
+            operation=f"PAR2 repair: {main.name}",
+            use_temp_files=True,  # PAR2 can output large amounts of data
+            process_tracker=self.process_tracker,
+        )
+        elapsed = time.time() - start_time
+        status, reason_code, detail = classify_par2_result(stdout or "", stderr or "", code, success)
+        if status in ("verified", "repaired"):
+            logging.info(f"PAR2 {status} {main.name} in {elapsed:.1f}s")
+        else:
+            log_error(
+                what_failed=f"PAR2 could not verify {main.name}",
+                reason=detail,
+                action="Nothing was removed; extraction will still run and 7-Zip checks every file's CRC",
+                location=folder,
+                details=f"Exit code: {code}\nStdout: {(stdout or '')[-300:]}\nStderr: {(stderr or '')[:300]}",
+            )
+        return Par2Outcome(status, reason_code, f"{main.name}: {detail}")
 
-        # Delete .7z files
-        self._delete_files_by_extension(folder, ".7z")
+    def remove_par2_files(self, folder: Path) -> None:
+        """Remove a folder's ``.par2`` files once its content has been verified and extracted."""
+        for file in sorted(folder.glob("*.par2")) + sorted(folder.glob("*.PAR2")):
+            if file.is_file():
+                self._delete_path(file, extraction_verified=True)
 
-        # Delete split 7z files (.7z.001, .7z.002, etc.)
-        for i in range(1, 100):
-            ext = f".7z.{str(i).zfill(3)}"
-            self._delete_files_by_extension(folder, ext)
+    def _delete_path(self, file: Path, extraction_verified: bool) -> None:
+        """Remove one archive-related file through the run's Remover, with lock retries.
 
-    def _delete_files_by_extension(self, folder: Path, extension: str) -> None:
+        ``extraction_verified`` must be True only when the set's content has been
+        extracted (or, for ``.par2`` files, the content was verified and is out).
+        Without a Remover nothing is removed: a library caller that forgot to set
+        one must not fall back to a silent permanent unlink.
         """
-        Delete all files with the given extension in the folder with retry logic.
-
-        Args:
-            folder: Path to folder
-            extension: File extension to delete (e.g., '.rar')
-        """
-        for file in folder.glob("*" + extension):
-            self._delete_path(file)
-
-    def _delete_path(self, file: Path) -> None:
-        """Delete one archive-related file with invariant checks and lock retries."""
-        # Safety check: enforce invariants before deletion if enforcer is configured
+        if not extraction_verified or not is_archive_related(file):
+            logging.error(f"Refusing to remove {file}: its content has not been extracted and verified")
+            return
         if self.enforcer:
             try:
-                # Callers only delete volumes of a set that extracted, or of a set PAR2 could not repair.
-                self.enforcer.enforce_delete(file, extraction_verified=True)
+                if not self.enforcer.enforce_delete(file, extraction_verified=extraction_verified):
+                    return
             except Exception as e:
                 logging.error(f"Safety check prevented deletion of {file}: {e}")
                 return
+        if self.remover is None:
+            logging.error(f"Refusing to remove {file}: no remover configured for this run")
+            return
 
-        # Try deleting with retries for locked files
         for attempt in range(3):
             try:
-                if self.remover is not None:
-                    self.remover.remove(file, "archive_cleanup")
-                else:
-                    file.unlink()
+                self.remover.remove(file, "archive_cleanup")
                 logging.info(f"Removed file: {file}")
-                break  # Success
+                return
             except PermissionError:
                 if attempt < 2:
-                    # File is locked, wait and retry
                     logging.warning(f"File locked (attempt {attempt + 1}/3): {file}")
                     time.sleep(1)
-                elif self.remover is not None and self.remover.mode != "permanent":
-                    logging.error(f"Could not {self.remover.mode} locked file {file} after 3 attempts")
                 else:
-                    # Final attempt failed - try forcing via unlink with missing_ok
-                    try:
-                        file.unlink(missing_ok=True)
-                        logging.info(f"Force deleted file: {file}")
-                    except Exception as e2:
-                        logging.error(f"Failed to delete locked file {file} after 3 attempts: {e2}")
+                    logging.error(f"Could not {self.remover.mode} locked file {file} after 3 attempts")
             except Exception as e:
-                logging.error(f"Failed to delete file {file}: {e}")
-                break
+                logging.error(f"Failed to remove file {file}: {e}")
+                return
 
     def _validate_archive_paths(self, archive_file: Path, target_folder: Path, sevenzip_cmd: list) -> bool:
         """
@@ -625,11 +659,15 @@ class ArchiveProcessor:
             # truncated middle (see _read_bounded_text in utils/safety.py).
             target_folder_resolved = target_folder.resolve()
             unsafe: dict[str, str] = {}
+            unsafe_password: dict[str, str] = {}
             dangerous = set(dangerous_extensions(self.config))
 
             def check_line(line: str) -> bool:
                 # Skip blank/header/footer lines.
                 stripped = line.strip()
+                if "wrong password" in stripped.lower() or "encrypted archive" in stripped.lower():
+                    unsafe_password["seen"] = "1"
+                    return True
                 if not stripped or "---" in line or "Date" in line or "Path" in line:
                     return True
 
@@ -652,8 +690,8 @@ class ArchiveProcessor:
                     return False
                 return True
 
-            success, _, code = SubprocessSafety.run_with_line_handler(
-                sevenzip_cmd + ["l", str(archive_file)],
+            success, stderr_sample, code = SubprocessSafety.run_with_line_handler(
+                sevenzip_cmd + ["l", "-p-", str(archive_file)],
                 timeout=30,  # Listing should be fast
                 line_handler=check_line,
                 operation=f"Archive path validation: {archive_file.name}",
@@ -663,6 +701,13 @@ class ArchiveProcessor:
                 logging.error(f"SECURITY: Archive contains {unsafe['reason']}")
                 if unsafe.get("dangerous"):
                     self._last_path_check = "archive_dangerous_member"
+                return False
+
+            if any(k in (stderr_sample or "").lower() for k in ("wrong password", "encrypted archive")):
+                unsafe_password["seen"] = "1"
+            if unsafe_password:
+                logging.warning(f"{archive_file.name} is password-protected (encrypted headers) - not extracting")
+                self._last_path_check = "archive_password"
                 return False
 
             if not success or code != 0:

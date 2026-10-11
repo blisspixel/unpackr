@@ -298,8 +298,13 @@ class UnpackrDoctor:
             self.passed.append("par2cmdline")
             self._check_tool_min_version("par2", "par2cmdline", path, critical=False)
         else:
-            print(f"{Fore.YELLOW}⚠ Not found (recommended - repair capability reduced){Style.RESET_ALL}")
-            self.warnings.append("par2cmdline not found - repair capability reduced")
+            print(
+                f"{Fore.YELLOW}⚠ Not found (recommended - damaged or renamed volumes cannot be repaired; "
+                f"archives still extract and 7-Zip checks every file's CRC){Style.RESET_ALL}"
+            )
+            self.warnings.append(
+                "par2cmdline not found - damaged or renamed volumes cannot be repaired (archives still extract)"
+            )
             print(f"    {Style.DIM}{tool_missing_hint('par2')}{Style.RESET_ALL}")
 
         # Check ffmpeg

@@ -20,6 +20,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.archive_processor import ArchiveProcessor
+from core.remover import Remover
 from core.config import Config
 
 
@@ -147,7 +148,7 @@ class TestExtractionProcess:
         mock_subprocess.return_value = (True, "extracted", "", 0)
 
         with patch.object(processor, "_validate_archive_paths", return_value=True):
-            with patch.object(processor, "_delete_archive_files"):
+            with patch.object(processor, "_delete_volumes"):
                 result = processor.process_rar_files(temp_dir)
 
         assert result is True
@@ -163,7 +164,7 @@ class TestExtractionProcess:
         mock_subprocess.return_value = (True, "extracted", "", 0)
 
         with patch.object(processor, "_validate_archive_paths", return_value=True):
-            with patch.object(processor, "_delete_archive_files"):
+            with patch.object(processor, "_delete_volumes"):
                 result = processor.process_rar_files(temp_dir)
 
         assert result is True
@@ -179,7 +180,7 @@ class TestExtractionProcess:
         mock_subprocess.return_value = (False, "", "extraction failed", 1)
 
         with patch.object(processor, "_validate_archive_paths", return_value=True):
-            with patch.object(processor, "_delete_archive_files"):
+            with patch.object(processor, "_delete_volumes"):
                 result = processor.process_rar_files(temp_dir)
 
         # Should return False when all extractions fail
@@ -192,7 +193,9 @@ class TestExtractionProcess:
 
         mock_disk_space.return_value = False  # Not enough space
 
-        with patch("core.archive_processor.logging.error") as mock_error:
+        with patch("core.archive_processor.logging.error") as mock_error, patch.object(
+            processor, "_validate_archive_paths", return_value=True
+        ):
             processor.process_rar_files(temp_dir)
             # Should log error about disk space (new multi-line format)
             assert mock_error.called
@@ -211,7 +214,7 @@ class TestExtractionProcess:
         callback = Mock()
 
         with patch.object(processor, "_validate_archive_paths", return_value=True):
-            with patch.object(processor, "_delete_archive_files"):
+            with patch.object(processor, "_delete_volumes"):
                 processor.process_rar_files(temp_dir, progress_callback=callback)
 
         # Callback should be called for each archive
@@ -292,7 +295,7 @@ class TestPAR2Processing:
         # Simulate successful verification (code 0, success message in output)
         mock_subprocess.return_value = (True, "All files are correct", "", 0)
 
-        with patch.object(processor, "_delete_files_by_extension"):
+        with patch.object(processor, "remove_par2_files"):
             result = processor.process_par2_files(temp_dir)
 
         assert result is True
@@ -307,7 +310,7 @@ class TestPAR2Processing:
         # Simulate successful repair (repair complete message)
         mock_subprocess.return_value = (True, "Repair complete", "", 0)
 
-        with patch.object(processor, "_delete_files_by_extension"):
+        with patch.object(processor, "remove_par2_files"):
             result = processor.process_par2_files(temp_dir)
 
         assert result is True
@@ -319,13 +322,14 @@ class TestPAR2Processing:
 
         # Simulate repair failure (failure keyword in output)
         mock_subprocess.return_value = (False, "", "Repair failed", 1)
+        processor.system_check.get_tool_command = Mock(return_value=["par2"])
 
-        with patch.object(processor, "_delete_files_by_extension"):
-            with patch.object(processor, "_delete_archive_files"):
-                result = processor.process_par2_files(temp_dir)
+        result = processor.process_par2_files(temp_dir)
 
-        # Should return False when repair fails
+        # Reported as damaged; nothing removed (extraction's CRC check decides next)
         assert result is False
+        assert processor.last_par2.status == "damaged"
+        assert (temp_dir / "corrupt.par2").exists()
 
 
 class TestTimeoutHandling:
@@ -361,7 +365,7 @@ class TestTimeoutHandling:
         mock_subprocess.return_value = (True, "", "", 0)
 
         with patch.object(processor, "_validate_archive_paths", return_value=True):
-            with patch.object(processor, "_delete_archive_files"):
+            with patch.object(processor, "_delete_volumes"):
                 processor.process_rar_files(temp_dir)
 
         # Should log about extended timeout
@@ -398,7 +402,7 @@ class TestSafetyLimits:
 
         with patch.object(processor, "_validate_archive_paths", return_value=True):
             with patch("core.archive_processor.logging.error") as mock_error:
-                with patch.object(processor, "_delete_archive_files"):
+                with patch.object(processor, "_delete_volumes"):
                     processor.process_rar_files(temp_dir)
 
                 # Should log loop safety error
@@ -410,9 +414,11 @@ class TestCleanupOperations:
 
     @pytest.fixture
     def processor(self):
-        """Create ArchiveProcessor instance."""
+        """Create ArchiveProcessor instance that removes permanently, like delete_mode: permanent."""
         config = Config()
-        return ArchiveProcessor(config)
+        processor = ArchiveProcessor(config)
+        processor.remover = Remover(mode="permanent")
+        return processor
 
     @pytest.fixture
     def temp_dir(self):
@@ -438,40 +444,57 @@ class TestCleanupOperations:
         assert not archive.exists()
         assert [o.status for o in processor.last_outcomes] == ["extracted"]
 
-    def test_delete_files_by_extension_retries_permission_error_then_force_deletes(self, processor, temp_dir):
-        """Locked files should fall back to a final missing_ok unlink attempt."""
+    def test_locked_volume_is_retried_then_left_in_place(self, processor, temp_dir):
+        """A volume that stays locked is retried three times and then left alone (no force unlink)."""
         archive = temp_dir / "locked.rar"
         archive.write_text("test")
 
-        unlink_mock = Mock(
-            side_effect=[
-                PermissionError("locked"),
-                PermissionError("still locked"),
-                PermissionError("final lock"),
-                None,
-            ]
-        )
-        with patch.object(Path, "unlink", unlink_mock):
-            with patch("core.archive_processor.time.sleep") as mock_sleep:
-                processor._delete_files_by_extension(temp_dir, ".rar")
+        processor.remover = Mock(mode="permanent")
+        processor.remover.remove.side_effect = PermissionError("locked")
+        with patch("core.archive_processor.time.sleep") as mock_sleep:
+            processor._delete_path(archive, extraction_verified=True)
 
-        assert unlink_mock.call_count == 4
-        assert unlink_mock.call_args_list[-1].kwargs == {"missing_ok": True}
+        assert processor.remover.remove.call_count == 3
         assert mock_sleep.call_count == 2
+        assert archive.exists()
 
-    def test_delete_files_by_extension_skips_when_safety_enforcer_blocks(self, temp_dir):
-        """Deletion should be skipped when invariant enforcement rejects the file."""
-        config = Config()
-        processor = ArchiveProcessor(config, destination_root=temp_dir)
+    def test_removal_skipped_when_safety_enforcer_blocks(self, processor, temp_dir):
+        """Removal is skipped when invariant enforcement rejects the file."""
         archive = temp_dir / "safe.rar"
         archive.write_text("test")
         processor.enforcer = Mock()
         processor.enforcer.enforce_delete.side_effect = RuntimeError("blocked")
 
-        with patch.object(Path, "unlink") as mock_unlink:
-            processor._delete_files_by_extension(temp_dir, ".rar")
+        processor._delete_path(archive, extraction_verified=True)
 
-        assert not mock_unlink.called
+        assert archive.exists()
+
+    def test_unverified_removal_is_refused(self, processor, temp_dir):
+        """Nothing is removed unless the set's content was extracted and verified."""
+        volume = temp_dir / "movie.7z.001"
+        volume.write_text("test")
+
+        processor._delete_path(volume, extraction_verified=False)
+
+        assert volume.exists()
+
+    def test_removal_without_a_remover_is_refused(self, temp_dir):
+        """A processor with no Remover never falls back to a permanent unlink."""
+        processor = ArchiveProcessor(Config())
+        volume = temp_dir / "movie.r00"
+        volume.write_text("test")
+
+        processor._delete_path(volume, extraction_verified=True)
+
+        assert volume.exists()
+
+    def test_only_archive_files_can_be_removed(self, processor, temp_dir):
+        video = temp_dir / "movie.mkv"
+        video.write_text("test")
+
+        processor._delete_path(video, extraction_verified=True)
+
+        assert video.exists()
 
 
 class TestArchivePathValidation:
@@ -623,35 +646,60 @@ class TestPar2ErrorHandling:
         (temp_dir / "file.par2").write_text("test")
 
         with patch("core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, "done", "", 0)):
-            with patch.object(processor, "_delete_files_by_extension") as mock_delete:
-                assert processor.process_par2_files(temp_dir) is True
+            assert processor.process_par2_files(temp_dir) is True
 
-        mock_delete.assert_called_once_with(temp_dir, ".par2")
+        assert processor.last_par2.status == "verified"
+        # PAR2 files stay until the content is out; remove_par2_files() does that later.
+        assert (temp_dir / "file.par2").exists()
 
-    def test_par2_timeout_or_unknown_error_returns_false_without_cleanup(self, processor, temp_dir):
-        (temp_dir / "file.par2").write_text("test")
-
-        with patch("core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(False, "", "", 0)):
-            with patch.object(processor, "_delete_files_by_extension") as mock_delete:
-                with patch.object(processor, "_delete_archive_files") as mock_delete_archives:
-                    assert processor.process_par2_files(temp_dir) is False
-
-        assert not mock_delete.called
-        assert not mock_delete_archives.called
-
-    def test_par2_failure_deletes_par2_and_archives(self, processor, temp_dir):
+    def test_par2_is_given_every_file_so_renamed_volumes_match(self, processor, temp_dir):
         (temp_dir / "file.par2").write_text("test")
 
         with patch(
-            "core.archive_processor.SubprocessSafety.run_with_timeout",
-            return_value=(False, "", "repair is impossible", 2),
-        ):
-            with patch.object(processor, "_delete_files_by_extension") as mock_delete:
-                with patch.object(processor, "_delete_archive_files") as mock_delete_archives:
-                    assert processor.process_par2_files(temp_dir) is False
+            "core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, "", "", 0)
+        ) as mock_run:
+            processor.process_par2_files(temp_dir)
 
-        mock_delete.assert_called_once_with(temp_dir, ".par2")
-        mock_delete_archives.assert_called_once_with(temp_dir)
+        assert mock_run.call_args.args[0][-3:] == ["r", "file.par2", "*"]
+        assert mock_run.call_args.kwargs["cwd"] == temp_dir
+
+    @pytest.mark.parametrize("code", [1, 2, 3, 4, 5, 6, 7, 8, 9])
+    def test_no_par2_exit_code_removes_anything(self, processor, temp_dir, code):
+        files = [temp_dir / n for n in ("set.par2", "set.vol00+01.par2", "set.7z.001", "set.7z.002", "set.r00")]
+        for f in files:
+            f.write_text("test")
+        processor.remover = Mock(mode="permanent")
+
+        with patch(
+            "core.archive_processor.SubprocessSafety.run_with_timeout",
+            return_value=(False, "", "Repair is not possible." if code == 2 else "", code),
+        ):
+            assert processor.process_par2_files(temp_dir) is False
+
+        assert all(f.exists() for f in files)
+        assert not processor.remover.remove.called
+        expected = "damaged" if code in (1, 2, 4, 5) else "error"
+        assert processor.last_par2.status == expected
+
+    def test_each_par2_set_is_checked(self, processor, temp_dir):
+        for name in ("a.par2", "a.vol00+01.par2", "b.par2", "b.vol00+01.par2", "c.vol03+04.par2"):
+            (temp_dir / name).write_text("test")
+
+        with patch(
+            "core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, "", "", 0)
+        ) as mock_run:
+            assert processor.process_par2_files(temp_dir) is True
+
+        heads = sorted(call.args[0][-2] for call in mock_run.call_args_list)
+        assert heads == ["a.par2", "b.par2", "c.vol03+04.par2"]
+
+    def test_par2_unavailable_is_reported_not_fatal(self, processor, temp_dir):
+        (temp_dir / "file.par2").write_text("test")
+        processor.system_check.get_tool_command = Mock(return_value=[])
+
+        assert processor.process_par2_files(temp_dir) is False
+        assert processor.last_par2.status == "unavailable"
+        assert (temp_dir / "file.par2").exists()
 
 
 class TestEdgeCases:
@@ -688,7 +736,7 @@ class TestEdgeCases:
         # Mock stat to raise exception
         with patch.object(Path, "stat", side_effect=OSError("Stat failed")):
             with patch.object(processor, "_validate_archive_paths", return_value=True):
-                with patch.object(processor, "_delete_archive_files"):
+                with patch.object(processor, "_delete_volumes"):
                     # Should handle gracefully, not crash
                     result = processor.process_rar_files(temp_dir)
                     assert result is not None

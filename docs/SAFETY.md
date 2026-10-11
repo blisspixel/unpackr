@@ -1,6 +1,6 @@
 # Safety Contract
 
-Unpackr removes files during cleanup. This document defines what can be removed, what is protected, and which safeguards are enforced.
+Unpackr exists to delete things: it turns a messy downloads folder into a clean one and keeps only what is worth keeping. This document defines what is removed, what is protected, and the safeguards that stop it from removing the good file. Run it on a downloads folder, not on folders you curate by hand.
 
 ## Removal Is Reversible By Default
 
@@ -16,19 +16,14 @@ With the default `delete_mode: "quarantine"`, nothing a live run removes is dest
 
 ## Operating Guidance
 
-Before live runs:
-- Back up important data before running
-- Test on non-critical folders first
-- Use `--dry-run` to preview changes
-- Review logs after processing
-
-No automated deletion workflow can eliminate all risk.
+- Point Unpackr at a downloads folder. A manual run means "clean now".
+- `--dry-run` shows every decision without changing anything; `unpackr restore latest` undoes the last run.
 
 ## Junk, Bait And Unfinished Downloads
 
 Usenet and torrent releases are mostly not the video you wanted. Each top-level release folder is screened before anything else happens:
 
-- **Still downloading.** A release containing `.!qB`, `.!ut`, `.part`, `.crdownload`, `.partial`, `.download` or `.aria2` files is skipped for this run (`download_in_progress`); nothing in it is moved or removed. Configure with `incomplete_download_markers`.
+- **Unfinished downloads.** Files ending in `.!qB`, `.!ut`, `.part`, `.crdownload`, `.partial`, `.download` or `.aria2` (`incomplete_download_markers`) are junk on a manual run: they are removed (`download_incomplete`) and the finished files in the same release are processed as usual. A video still being written fails validation and is removed as damaged. Unattended runs (`--unattended`, the service) cannot know you are done waiting, so they skip such releases (`download_in_progress`) and anything changed in the last `settle_minutes` (`folder_still_growing`) and pick them up later.
 - **Disc structures.** A release with `VIDEO_TS` or `BDMV` is kept whole (`disc_structure_kept`).
 - **Bait.** Executables, scripts, shortcuts and installers (`.exe`, `.lnk`, `.scr`, `.bat`, `.cmd`, `.js`, `.vbs`, `.hta`, `.ps1`, `.msi`, `.jar` and more, see `dangerous_extensions`), names that disguise their type (`Movie.mkv.exe`, Unicode direction controls) and subtitles that are oversized or binary are removed (to quarantine by default) and the **whole release fails**: no video from it is moved, the decoy stays for review, and the run exits `3` with `folder_failed_security`. Archives whose listing contains such files are never extracted (`archive_dangerous_member`). Two exceptions are removed and flagged without failing the release: `rename.bat`/`rename.sh` next to a real video, and RARBG's `RARBG_DO_NOT_MIRROR.exe` placeholder. Unpackr never runs or opens any of these files.
 - **Junk by name.** Tracker spam (`RARBG.txt`, `WWW.*.COM*`), OS cruft (`Thumbs.db`, `.DS_Store`, `desktop.ini`, `._*`, `@eaDir`), torrent padding files (verified all zeros) and empty files are removable whatever their extension (`junk_name_patterns`).
@@ -41,9 +36,11 @@ Usenet and torrent releases are mostly not the video you wanted. Each top-level 
 | Junk files (NFO, SFV, URL, DIZ, TXT, M3U) | Yes: `removable_extensions` |
 | Sample videos (< 50MB) | Yes: `min_sample_size_mb` |
 | Previews and samples shorter than 10 seconds | Yes: `min_video_duration_seconds` |
-| Corrupt/truncated videos | No: always deleted |
-| Archive sets after a successful extraction | No: always deleted |
-| Archive sets PAR2 cannot repair, or that fail with CRC/data errors | No: always deleted |
+| Corrupt/truncated videos | No: always deleted, listed under DAMAGED, RE-DOWNLOAD |
+| Unfinished downloads (manual runs) | Yes: `incomplete_download_markers` |
+| Archive sets and their `.par2` files after a successful extraction | No: always deleted |
+| Archive sets that fail with CRC/data errors | No: always deleted, listed for re-download |
+| Releases PAR2 says are damaged beyond repair (no set could be extracted) | No: always deleted, listed for re-download |
 | Empty folders | No: always deleted |
 | Processed folders after extraction | No: always deleted |
 
@@ -55,8 +52,9 @@ Usenet and torrent releases are mostly not the video you wanted. Each top-level 
 | Music folders (10+ files) | Yes: `min_music_files` |
 | Image folders (10+ files, 10MB+) | Yes: `min_image_files` |
 | Document folders (10+ files) | Yes: `min_documents` |
-| Folders with unrecognized files | Always preserved |
+| Folders with files of an unrecognized extension | Always preserved |
 | Incomplete, unreadable, password-protected or interrupted archive sets | Kept for retry; the run exits `3` |
+| A PAR2 release par2 could not judge (not installed, tool error) next to unrecognized files, which may be renamed volumes | Kept; the run exits `3` |
 | Anything in destination directory | Never touched |
 
 Details and resume semantics: [PRESERVATION.md](PRESERVATION.md).
@@ -133,3 +131,10 @@ All subprocess calls use array form, not shell strings.
 
 ### Buffer Overflow Protection
 Large operations use temp files instead of pipes.
+
+## PAR2 And Archives
+
+- PAR2 runs first, once per set, and is offered every file in the folder (`par2 r <set>.par2 *`), so volumes renamed by an obfuscated post are matched and renamed back. par2 expands the `*` itself on every OS.
+- PAR2 never removes anything. Whatever it reports, extraction still runs and 7-Zip checks every file's CRC; that check decides whether a set is good. Without par2 installed, archives still extract.
+- Archive volumes and `.par2` files are removed only after their set extracted cleanly (`extraction_verified`, enforced by invariant I3, which also recognises split volumes such as `.r00`, `.7z.001`, `.z01`). The archive step refuses to remove anything when no remover is configured, rather than falling back to a permanent delete.
+- 7-Zip runs with `-p-`, so a password-protected archive fails at once (`archive_password`) instead of waiting at a prompt.

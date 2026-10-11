@@ -200,20 +200,21 @@ def test_hostile_download_folder(tmp_path):
          "--json", "--no-color"],
         capture_output=True, text=True, timeout=300, cwd=REPO, stdin=subprocess.DEVNULL,
     )  # fmt: skip
-    summary = json.loads(result.stdout[result.stdout.index("{") :])
+    summary = json.loads(result.stdout)
     items = {i["path"]: i for i in summary["items"]}
 
     assert result.returncode == 3, result.stdout[-3000:]
-    assert sorted(p.name for p in dst.iterdir()) == ["Rarbg.Style.mkv", "With.Sample.mkv"]
+    assert sorted(p.name for p in dst.iterdir()) == ["Done.Part.mkv", "Rarbg.Style.mkv", "With.Sample.mkv"]
 
     # Bait: decoy kept in place, payload quarantined, release failed.
     assert (src / "Bait.Release" / "Bait.Release.2026.mkv").exists()
     assert items["Bait.Release/CD.lnk"]["reason_code"] == "security_dangerous_ext"
     assert any("folder_failed_security" in e for e in summary["errors"])
 
-    # Still downloading: untouched.
-    assert (src / "In.Progress" / "Done.Part.mkv").exists() and (src / "In.Progress" / "Second.Part.mkv.part").exists()
-    assert items["In.Progress/Done.Part.mkv"]["reason_code"] == "download_in_progress"
+    # A manual run means "clean now": the unfinished file is junk, the finished one is kept.
+    assert not (src / "In.Progress" / "Second.Part.mkv.part").exists()
+    assert items["In.Progress/Second.Part.mkv.part"]["reason_code"] == "download_incomplete"
+    assert items["In.Progress/Done.Part.mkv"]["action"] == "moved"
 
     # Sample folder video removed, not moved.
     assert items["With.Sample/Sample/with.sample-sample.mkv"]["reason_code"] == "sample_folder"

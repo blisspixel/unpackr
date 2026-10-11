@@ -25,7 +25,14 @@ from typing import Any, Callable, Deque, Dict, List, NoReturn, Optional, Tuple
 from colorama import Fore, Style, init
 
 from core import Config, setup_logging
-from core.archive_processor import ArchiveProcessor, ArchiveSet, find_archive_sets
+from core.archive_processor import (
+    ArchiveOutcome,
+    ArchiveProcessor,
+    ArchiveSet,
+    Par2Outcome,
+    find_archive_sets,
+    is_archive_related,
+)
 from core.file_handler import FileHandler
 from core.junk_rules import (
     classify_security,
@@ -37,7 +44,8 @@ from core.junk_rules import (
 from core.naming import DEFAULT_LAYOUT, SUBTITLE_EXTENSIONS, pick_base_name, render_layout, subtitle_suffix
 from core.remover import Remover, is_internal, new_run_id, purge_quarantine
 from core.run_report import ReportItem, RunReport
-from core.unattended import RunLock, notification_text, send_notification, settling_entries
+from core.safety_invariants import InvariantEnforcer
+from core.unattended import RunLock, notification_text, send_notification, settle_minutes_from, settling_entries
 from core.video_processor import VideoProcessor
 from utils.cli_prompts import clean_path, countdown_prompt, get_user_input, quick_preflight, resolve_cli_presentation
 from utils.cli_render import create_renderer
@@ -67,6 +75,7 @@ class ThreadSafeStats:
         self._lock = threading.Lock()
         self._stats: Dict[str, int] = {
             "folders_processed": 0,
+            "folders_settling": 0,  # skipped because they changed within settle_minutes
             "folders_deleted": 0,
             "folders_preserved": 0,
             "empty_folders_deleted": 0,
@@ -307,6 +316,22 @@ class WorkPlan:
         print(f"{Fore.CYAN}{'=' * 80}{Style.RESET_ALL}\n")
 
 
+def _bump(stats: Any, key: str) -> None:
+    """Increment a counter on ThreadSafeStats or a plain dict (tests use both)."""
+    if stats is None:
+        return
+    if hasattr(stats, "increment"):
+        stats.increment(key)
+    else:
+        stats[key] = stats.get(key, 0) + 1
+
+
+def _stat(stats: Any, key: str) -> int:
+    """Read a counter from ThreadSafeStats (missing keys read 0) or a plain dict."""
+    value: Any = stats.get(key, 0) if isinstance(stats, dict) else stats[key]
+    return int(value)
+
+
 class UnpackrApp:
     """Main application class for Unpackr."""
 
@@ -358,8 +383,12 @@ class UnpackrApp:
         # Problems a person should look at; errors make a live run exit non-zero.
         self.run_errors: List[str] = []
         self.run_warnings: List[str] = []
+        # Damaged downloads removed or left as junk this run: worth re-downloading.
+        self.damaged: List[str] = []
         self.last_renamed_from: Optional[str] = None
-        self.settling: set[Path] = set()  # top-level entries still being written (unattended runs)
+        self.settling: set[Path] = set()  # top-level entries still being written (skipped this run)
+        self.unattended = False  # timer/service run: leave unfinished downloads alone
+        self.settle_minutes = 0.0  # unattended only: skip downloads changed this recently
         self.plain_progress = False  # one plain line per folder instead of redrawing (no terminal)
         self._last_plain_progress = 0
         # Per-file decisions for --json items and --report.
@@ -486,6 +515,8 @@ class UnpackrApp:
             sevenz = []
             zips = []
             par2s = []
+            unknown_files = 0  # no known extension: possibly obfuscated archive volumes
+            removable_exts = {str(e).lower() for e in getattr(self.config, "removable_extensions", []) or []}
             music_files = 0
             image_files = 0
             image_total_bytes = 0
@@ -535,10 +566,13 @@ class UnpackrApp:
                         image_total_bytes += entry.stat(follow_symlinks=False).st_size
                 elif ext_lower in document_extensions:
                     document_files += 1
+                elif ext_lower not in removable_exts:
+                    unknown_files += 1
 
             # Determine if this is a video folder or content folder to preserve
-            if videos or rars or sevenz or zips:
-                # This is a video folder (has videos or archives that might contain videos)
+            if videos or rars or sevenz or zips or (par2s and unknown_files):
+                # A video folder: videos, archives that might contain them, or a PAR2 set next to
+                # unrecognised files (an obfuscated post: .par2 files and randomly named volumes)
                 plan.add_video_folder(folder, len(videos), len(rars) + len(sevenz) + len(zips), len(par2s))
             else:
                 # Check if this is a content folder worth preserving
@@ -788,27 +822,28 @@ class UnpackrApp:
             return False, 0
 
         if self.dry_run:
+            # Same read-only checks as the live run (missing volume, listing, password,
+            # unsafe contents), so the plan keeps and blocks the same sets.
+            outcomes: List[ArchiveOutcome] = []
             for archive_set in archive_sets:
-                if archive_set.missing or archive_set.first is None:
-                    missing = self.archive_processor.describe_missing(archive_set.missing)
-                    if self.dry_run_plan:
-                        self.dry_run_plan.add_archive_skip(
-                            folder / archive_set.name, f"incomplete set, missing {missing}"
-                        )
-                    self._note("warning", folder, archive_set.name, "archive_volume_missing", f"missing {missing}")
-                    for volume in archive_set.volumes:
-                        self._record(volume, "kept", "archive_volume_missing", f"missing {missing}")
-                    continue
-                for volume in archive_set.volumes:
-                    self._record(volume, "extracted", "archive_extracted", f"set {archive_set.name}")
-                if self.dry_run_plan:
-                    try:
-                        size = sum(v.stat().st_size for v in archive_set.volumes)
-                    except OSError:
-                        size = 0
-                    self.dry_run_plan.add_archive_extract(archive_set.first, size)
+                outcome = self.archive_processor.preflight_set(archive_set, folder)
+                if outcome is None:
+                    outcome = ArchiveOutcome(
+                        archive_set.name, "extracted", "archive_extracted", "", list(archive_set.volumes)
+                    )
+                    if self.dry_run_plan and archive_set.first is not None:
+                        try:
+                            size = sum(v.stat().st_size for v in archive_set.volumes)
+                        except OSError:
+                            size = 0
+                        self.dry_run_plan.add_archive_extract(archive_set.first, size)
+                elif self.dry_run_plan:
+                    self.dry_run_plan.add_archive_skip(folder / archive_set.name, outcome.detail)
+                outcomes.append(outcome)
+            UnpackrApp._apply_archive_outcomes(self, folder, outcomes)
             logging.info(f"[DRY-RUN] Would extract {len(archive_sets)} archive set(s) in {folder}")
-            return False, len(archive_sets)
+            extracted = sum(1 for o in outcomes if o.status == "extracted")
+            return extracted == 0, len(archive_sets)
 
         if progress_callback is not None:
             success = self.archive_processor.process_rar_files(folder, progress_callback=progress_callback)
@@ -816,18 +851,128 @@ class UnpackrApp:
             success = self.archive_processor.process_rar_files(folder)
         if success:
             self.stats["rars_extracted"] += 1
-        for outcome in self.archive_processor.last_outcomes:
+        UnpackrApp._apply_archive_outcomes(self, folder, self.archive_processor.last_outcomes)
+        return not success, len(archive_sets)
+
+    def _apply_archive_outcomes(self, folder: Path, outcomes: List[ArchiveOutcome]) -> None:
+        """Record each set's outcome, hold what must stay and note what needs a look."""
+        for outcome in outcomes:
             action = {"extracted": "extracted", "held": "kept", "blocked": "blocked"}.get(outcome.status, "skipped")
             for volume in outcome.volumes:
                 self._record(volume, action, outcome.reason_code, outcome.detail)
             if outcome.status == "held":
-                self.file_handler.hold_paths(outcome.volumes, outcome.reason_code)
+                hold = getattr(getattr(self, "file_handler", None), "hold_paths", None)
+                if callable(hold):
+                    hold(outcome.volumes, outcome.reason_code)
                 self._note("error", folder, outcome.name, outcome.reason_code, f"{outcome.detail} (kept for retry)")
             elif outcome.status == "blocked":
                 self._note("error", folder, outcome.name, outcome.reason_code, outcome.detail)
             elif outcome.status == "failed":
-                self._note("warning", folder, outcome.name, outcome.reason_code, outcome.detail)
-        return not success, len(archive_sets)
+                self._note("warning", folder, outcome.name, outcome.reason_code, f"{outcome.detail}; re-download it")
+                if hasattr(self, "damaged"):
+                    self.damaged.append(f"{folder.name}/{outcome.name}: {outcome.detail}")
+
+    def _verify_par2(self, folder: Path) -> Optional[Par2Outcome]:
+        """Verify/repair a folder's PAR2 sets before extraction. Never blocks extraction."""
+        try:
+            count = sum(1 for f in folder.iterdir() if f.is_file() and f.suffix.lower() == ".par2")
+        except OSError:
+            return None
+        if not count:
+            return None
+        if self.dry_run:
+            if self.dry_run_plan:
+                self.dry_run_plan.add_par2_process(folder, count)
+            logging.info(f"[DRY-RUN] Would verify/repair {count} PAR2 files in {folder}")
+            return Par2Outcome("verified", "par2_verified", "dry run")
+        stuck = getattr(self, "stuck_detector", None)
+        if stuck is not None:
+            stuck.mark_progress()
+        self.archive_processor.process_par2_files(folder)
+        if stuck is not None:
+            stuck.mark_progress()
+        outcome = self.archive_processor.last_par2
+        if outcome.status == "repaired":
+            self.stats["par2s_repaired"] += 1
+        return outcome
+
+    def _finish_par2(self, folder: Path, par2: Optional[Par2Outcome], archive_error: bool, had_sets: bool) -> bool:
+        """Settle a folder's .par2 files after extraction; return True when PAR2 did not clear the folder.
+
+        - With archives, 7-Zip's CRC check decides: a set PAR2 could not verify but that
+          extracted cleanly is good, and its .par2 files are removed with the volumes.
+        - PAR2 said the data is damaged beyond repair (it scanned every file): the download
+          is broken, so it is junk like any damaged video, listed under "re-download".
+        - PAR2 could not judge (tool error, not installed) and the folder holds files Unpackr
+          does not recognise (possibly obfuscated volumes): everything is kept for a look.
+        """
+        if par2 is None:
+            return False
+        if had_sets:
+            content_ok = not archive_error
+        elif par2.ok:
+            content_ok = True
+        elif par2.status == "damaged":
+            message = f"{folder.name}: {par2.detail}"
+            if hasattr(self, "damaged"):
+                self.damaged.append(message)
+            self._note("warning", folder, "", par2.reason_code, f"{par2.detail}; re-download it")
+            return True
+        else:
+            suspects = UnpackrApp._unrecognised_files(self, folder)
+            if suspects:
+                try:
+                    par2_files = [f for f in folder.iterdir() if f.is_file() and f.suffix.lower() == ".par2"]
+                except OSError:
+                    par2_files = []
+                hold = getattr(getattr(self, "file_handler", None), "hold_paths", None)
+                if callable(hold):
+                    hold(par2_files + suspects, par2.reason_code)
+                for path in par2_files + suspects:
+                    self._record(path, "kept", par2.reason_code, par2.detail)
+                fix = "install par2 and run again" if par2.status == "unavailable" else "check the log"
+                self._note(
+                    "error",
+                    folder,
+                    "",
+                    par2.reason_code,
+                    f"{par2.detail}; {len(suspects)} unrecognised file(s) kept, {fix}",
+                )
+                return True
+            content_ok = True
+        if not content_ok:
+            return True
+        if not par2.ok and par2.status != "unavailable":
+            self._note("warning", folder, "", par2.reason_code, f"{par2.detail}; 7-Zip's CRC check passed")
+        try:
+            par2_files = [f for f in folder.iterdir() if f.is_file() and f.suffix.lower() == ".par2"]
+        except OSError:
+            return True
+        for path in par2_files:
+            self._record(path, "deleted", "par2_cleanup", "content verified and extracted")
+        if not self.dry_run:
+            self.archive_processor.remove_par2_files(folder)
+        return False
+
+    def _unrecognised_files(self, folder: Path) -> List[Path]:
+        """Files in ``folder`` with no known extension: candidates for renamed (obfuscated) volumes."""
+        config = getattr(self, "config", None)
+        known: set[str] = {".par2", ".rar", ".7z", ".zip"}
+        for attr in (
+            "video_extensions",
+            "music_extensions",
+            "image_extensions",
+            "document_extensions",
+            "removable_extensions",
+        ):
+            values = getattr(config, attr, None)
+            if isinstance(values, (list, tuple, set)):
+                known.update(str(v).lower() for v in values)
+        try:
+            files = [f for f in folder.iterdir() if f.is_file()]
+        except OSError:
+            return []
+        return [f for f in files if f.suffix.lower() not in known and not is_archive_related(f)]
 
     def _release_files(self, folder: Path) -> List[Path]:
         """Files that belong to one work item: direct files for the source root, the whole tree otherwise."""
@@ -868,19 +1013,33 @@ class UnpackrApp:
         config = getattr(self, "config", None)
 
         if folder != getattr(self, "source_root", None) and UnpackrApp._is_settling(self, folder):
+            _bump(getattr(self, "stats", None), "folders_settling")
             self._note("warning", folder, folder.name, "folder_still_growing", "changed recently; skipped this run")
             for path in files:
                 self._record(path, "skipped", "folder_still_growing")
             return False
 
         partial = [f for f in files if is_incomplete_marker(f, config)]
-        if partial:
+        if partial and getattr(self, "unattended", False):
+            # A timer cannot know the user is done waiting; leave the download running.
             self._note(
                 "warning", folder, partial[0].name, "download_in_progress", "still downloading; skipped this run"
             )
             for path in files:
                 self._record(path, "skipped", "download_in_progress")
             return False
+        if partial:
+            # A manual run means "clean now": unfinished downloads are junk. Complete files
+            # in the same release are still processed and kept.
+            for path in partial:
+                if self.dry_run or self.file_handler.remove_file(path, "download_incomplete"):
+                    self._record(path, "deleted", "download_incomplete", "unfinished download")
+                else:
+                    self._record(path, "blocked", "download_incomplete", "unfinished download; could not be removed")
+            self._note(
+                "warning", folder, partial[0].name, "download_incomplete", f"{len(partial)} unfinished file(s) removed"
+            )
+            files = [f for f in files if f not in partial]
 
         if folder != getattr(self, "source_root", None):
             disc = has_disc_structure(folder)
@@ -1113,6 +1272,8 @@ class UnpackrApp:
             category = verdict.category if verdict else "corrupt"
             detail = f" ({verdict.detail})" if verdict and verdict.detail else ""
             logging.info(f"Removing {category} video: {video_file.name}{detail}")
+            if hasattr(self, "damaged"):
+                self.damaged.append(f"{video_file.parent.name}/{video_file.name}: {category}{detail}")
         reason_code = verdict.reason_code if verdict else "video_corrupt"
         detail = verdict.detail if verdict else ""
         if self.file_handler.wait_for_file_release(str(video_file)) and self.file_handler.delete_video_file_with_retry(
@@ -1146,50 +1307,30 @@ class UnpackrApp:
 
         # Unfinished downloads, disc structures and bait releases are left alone (bait is quarantined).
         if not self._screen_release(folder):
-            self.stats["folders_processed"] += 1
+            if not UnpackrApp._is_settling(self, folder):
+                self.stats["folders_processed"] += 1
             return 0
 
-        # Process PAR2 files FIRST - verify/repair archives before extraction
-        # This is more efficient: if no repair needed, PAR2 files are deleted early (saves disk I/O)
-        # If repair fails, corrupted archives are deleted, skipping extraction entirely
-        par2_files = [f for f in folder.iterdir() if f.is_file() and f.suffix.lower() == ".par2"]
-        if par2_files:
-            self._update_progress(current, total, f"PAR2 verify/repair: {folder.name[:50]}")
-            self.stuck_detector.mark_progress()  # Mark progress before long PAR2 operation
-            if self.dry_run:
-                if self.dry_run_plan:
-                    self.dry_run_plan.add_par2_process(folder, len(par2_files))
-                logging.info(f"[DRY-RUN] Would verify/repair {len(par2_files)} PAR2 files in {folder}")
-                success = True
-                par2_error = False
-            else:
-                success = self.archive_processor.process_par2_files(folder)
-                if success:
-                    self.stats["par2s_repaired"] += 1
-                self.stuck_detector.mark_progress()  # Mark progress after PAR2 completes
-                # If PAR2 repair failed, corrupted archives are already deleted
-                par2_error = not success
-        else:
-            par2_error = False
+        # PAR2 first: repair damaged or renamed volumes before extraction. It never removes
+        # anything and never stops extraction; 7-Zip checks every file's CRC either way.
+        self._update_progress(current, total, f"PAR2 verify/repair: {folder.name[:50]}")
+        par2 = UnpackrApp._verify_par2(self, folder)
 
-        # Process archive sets AFTER PAR2 (skipped when PAR2 repair failed and removed them)
-        if not par2_error:
-            archive_sets = find_archive_sets(folder)
-            if archive_sets:
-                self._update_progress(current, total, f"Extract {len(archive_sets)} archive set(s): {folder.name[:40]}")
+        archive_sets = find_archive_sets(folder)
+        if archive_sets:
+            self._update_progress(current, total, f"Extract {len(archive_sets)} archive set(s): {folder.name[:40]}")
+        self.stuck_detector.mark_progress()
+
+        def extraction_progress(idx, total_archives, msg):
+            folder_context = f"[{folder.name[:30]}]" if len(folder.name) > 30 else f"[{folder.name}]"
+            self._update_progress(current, total, f"{folder_context} {msg}")
             self.stuck_detector.mark_progress()
 
-            def extraction_progress(idx, total_archives, msg):
-                folder_context = f"[{folder.name[:30]}]" if len(folder.name) > 30 else f"[{folder.name}]"
-                self._update_progress(current, total, f"{folder_context} {msg}")
-                self.stuck_detector.mark_progress()
-
-            archive_error, _ = self._process_archives(
-                folder, progress_callback=extraction_progress, archive_sets=archive_sets
-            )
-            self.stuck_detector.mark_progress()
-        else:
-            archive_error = True
+        archive_error, _ = self._process_archives(
+            folder, progress_callback=extraction_progress, archive_sets=archive_sets
+        )
+        self.stuck_detector.mark_progress()
+        par2_error = UnpackrApp._finish_par2(self, folder, par2, archive_error, bool(archive_sets))
 
         # Decide samples across the whole release (Sample/ and Proof/ folders included).
         self._decide_release_samples(folder)
@@ -1669,28 +1810,12 @@ class UnpackrApp:
             return
 
         try:
-            # Process PAR2 files FIRST in this subfolder
-            par2_files = [f for f in subfolder.iterdir() if f.is_file() and f.suffix.lower() == ".par2"]
-            par2_error = False
-            if par2_files:
-                logging.info(f"Verifying/repairing PAR2 in subfolder {subfolder.name}")
-                if self.dry_run:
-                    logging.info(f"[DRY-RUN] Would verify/repair {len(par2_files)} PAR2 files in {subfolder}")
-                    success = True
-                    par2_error = False
-                else:
-                    success = self.archive_processor.process_par2_files(subfolder)
-                    if success:
-                        self.stats["par2s_repaired"] += 1
-                    par2_error = not success
-
-            # Process archive sets AFTER PAR2 in this subfolder
-            if not par2_error:
-                archive_error, sets_here = self._process_archives(subfolder)
-                if sets_here:
-                    logging.info(f"Processed {sets_here} archive set(s) in subfolder {subfolder.name}")
-            else:
-                archive_error = True
+            # PAR2 first (never blocks extraction), then the archive sets in this subfolder
+            par2 = UnpackrApp._verify_par2(self, subfolder)
+            archive_error, sets_here = self._process_archives(subfolder)
+            if sets_here:
+                logging.info(f"Processed {sets_here} archive set(s) in subfolder {subfolder.name}")
+            par2_error = UnpackrApp._finish_par2(self, subfolder, par2, archive_error, bool(sets_here))
 
             # Find and process videos in this subfolder
             video_files = self.file_handler.find_video_files(subfolder)
@@ -1743,6 +1868,10 @@ class UnpackrApp:
             report.planned = bool(getattr(self, "dry_run", False))
             report.begin(source_dir)
         self._prepare_removal(source_dir)
+        # Archive removals go through the safety invariants (I3: never before extraction).
+        archive_processor = getattr(self, "archive_processor", None)
+        if archive_processor is not None and not getattr(self, "dry_run", False):
+            archive_processor.enforcer = InvariantEnforcer(destination_dir, getattr(self, "config", None))
         self.source_root = source_dir
         self.release_samples: Dict[Path, Tuple[str, str]] = {}
         self.failed_releases: set[Path] = set()
@@ -1853,6 +1982,17 @@ class UnpackrApp:
                 for junk_folder in self.work_plan.junk_folders:
                     if self.cancellation_requested:
                         break
+                    if UnpackrApp._is_settling(self, junk_folder):
+                        # A download that has only written its .nfo so far looks like junk.
+                        _bump(self.stats, "folders_settling")
+                        self._note(
+                            "warning",
+                            junk_folder,
+                            junk_folder.name,
+                            "folder_still_growing",
+                            "changed recently; skipped this run",
+                        )
+                        continue
                     try:
                         if self.dry_run:
                             self._record_folder_removed(junk_folder, "junk_folder")
@@ -2065,6 +2205,15 @@ class UnpackrApp:
   {Style.DIM}VIDEOS{Style.RESET_ALL}   found: {Fore.WHITE}{self.stats["videos_found"]:>4}{Style.RESET_ALL}  |  processed: {Fore.GREEN}{self.stats["videos_moved"]:>4}{Style.RESET_ALL}  |  samples: {Fore.YELLOW}{self.stats["videos_sample"]:>4}{Style.RESET_ALL}  |  corrupt: {Fore.RED}{self.stats["videos_corrupt"]:>4}{Style.RESET_ALL}  |  failed: {Fore.RED}{self.stats["videos_failed"]:>4}{Style.RESET_ALL}
   {Style.DIM}ARCHIVES{Style.RESET_ALL} extracted: {Fore.CYAN}{self.stats["rars_extracted"]:>4}{Style.RESET_ALL}  |  repaired: {Fore.MAGENTA}{self.stats["par2s_repaired"]:>4}{Style.RESET_ALL}""")
 
+        settling_count = _stat(self.stats, "folders_settling")
+        if settling_count > 0:
+            minutes = getattr(self, "settle_minutes", 2)
+            print(
+                f"  {Style.DIM}WAITING{Style.RESET_ALL}  still being written: {Fore.YELLOW}{settling_count:>4}"
+                f"{Style.RESET_ALL}  {Style.DIM}(changed in the last {minutes:g} min; the next run picks them up)"
+                f"{Style.RESET_ALL}"
+            )
+
         if self.stats["files_sanitized"] > 0:
             print(
                 f"  {Style.DIM}FILES{Style.RESET_ALL}    sanitized: {Fore.CYAN}{self.stats['files_sanitized']:>4}{Style.RESET_ALL}"
@@ -2094,6 +2243,14 @@ class UnpackrApp:
                     f"\n  {Style.DIM}TRASH{Style.RESET_ALL} {removal['trashed_files']} files sent to the system trash"
                 )
 
+        damaged = getattr(self, "damaged", [])
+        if damaged:
+            print(f"\n  {Fore.YELLOW}DAMAGED, RE-DOWNLOAD ({len(damaged)}){Style.RESET_ALL}")
+            for message in damaged[:5]:
+                print(f"    {message}")
+            if len(damaged) > 5:
+                print(f"    ... and {len(damaged) - 5} more (see the log or --json)")
+
         if self.run_errors:
             label = "WOULD NEED ATTENTION" if self.dry_run else "NEEDS ATTENTION"
             print(f"\n  {Fore.RED}{label} ({len(self.run_errors)}){Style.RESET_ALL}")
@@ -2122,6 +2279,7 @@ def main():
     init()  # Initialize colorama with default settings; may be refined after args/config.
 
     json_mode = False
+    json_out = sys.stdout
     source_for_summary: Optional[str] = None
     dest_for_summary: Optional[str] = None
     app: Optional["UnpackrApp"] = None
@@ -2155,6 +2313,7 @@ def main():
                 items=report_items,
                 plan=plan,
                 removal=app.removal_summary() if app is not None and hasattr(app, "removal_summary") else None,
+                damaged=list(getattr(app, "damaged", []) or []) if app is not None else None,
             )
             if report_path is not None and report_items is not None:
                 try:
@@ -2163,7 +2322,8 @@ def main():
                 except OSError as e:
                     logging.error(f"Could not write report {report_path}: {e}")
             if json_mode:
-                print(dumps_run_summary(summary))
+                print(dumps_run_summary(summary), file=json_out, flush=True)
+        sys.stdout = json_out
         raise SystemExit(exit_code)
 
     def collect_report_items() -> None:
@@ -2182,6 +2342,10 @@ def main():
         parser = build_unpackr_arg_parser()
         args = parser.parse_args()
         json_mode = bool(getattr(args, "json", False))
+        if json_mode:
+            # stdout carries only the JSON summary (so `unpackr --json | jq` works); the
+            # banner, progress and summary screen go to stderr.
+            sys.stdout = sys.stderr
         unattended = bool(getattr(args, "unattended", False))
         if unattended:
             args.animations = "off"
@@ -2342,13 +2506,16 @@ def main():
         if runtime_app is None:
             emit_json_and_exit(1, "failed", errors=["application failed to initialize"])
 
+        runtime_app.unattended = unattended
         runtime_app.plain_progress = unattended or (app.renderer is None and not _is_interactive())
-        if unattended:
-            settle_seconds = float(getattr(config, "get", lambda *_a: 2)("settle_minutes", 2) or 0) * 60
-            runtime_app.settling = settling_entries(source_dir, settle_seconds)
-            if runtime_app.settling:
-                names = ", ".join(sorted(p.name for p in runtime_app.settling))
-                logging.info(f"Still being written (skipped this run): {names}")
+        # A manual run means "clean now": anything unfinished is junk. Timers and the service
+        # cannot know that, so they leave downloads changed in the last settle_minutes alone.
+        settle_minutes = settle_minutes_from(config) if unattended else 0.0
+        runtime_app.settle_minutes = settle_minutes
+        runtime_app.settling = settling_entries(source_dir, settle_minutes * 60)
+        if runtime_app.settling:
+            names = ", ".join(sorted(p.name for p in runtime_app.settling))
+            logging.info(f"Still being written (skipped this run): {names}")
         runtime_app.resume_enabled = bool(getattr(args, "resume", False))
         state_path = default_state_path(source_dir)
         runtime_app.run_state = RunState.load(state_path) if runtime_app.resume_enabled else RunState(path=state_path)
@@ -2491,7 +2658,12 @@ def main():
                 runtime_app.run_state.clear()
             run_errors, run_warnings = runtime_app.finish_issues()
             if getattr(args, "notify", False) or getattr(config, "get", lambda *_a: False)("notify", False) is True:
-                text = notification_text(runtime_app.stats.get_snapshot(), run_errors, dry_run=bool(args.dry_run))
+                text = notification_text(
+                    runtime_app.stats.get_snapshot(),
+                    run_errors,
+                    dry_run=bool(args.dry_run),
+                    damaged=runtime_app.damaged,
+                )
                 if text is not None:
                     send_notification(*text, urgency="critical" if run_errors else "normal")
             if run_errors and not runtime_app.dry_run:

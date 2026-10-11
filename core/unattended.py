@@ -126,13 +126,33 @@ def settling_entries(source: Path, quiet_seconds: float, now: Optional[float] = 
     return settling
 
 
-def notification_text(stats: Dict[str, Any], errors: Iterable[str], dry_run: bool = False) -> Optional[Tuple[str, str]]:
+def settle_minutes_from(config: Any, default: float = 2.0) -> float:
+    """The configured ``settle_minutes`` as a non-negative number (``0`` turns the check off)."""
+    getter = getattr(config, "get", None)
+    value: Any = getter("settle_minutes", default) if callable(getter) else getattr(config, "settle_minutes", default)
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return default
+    try:
+        minutes = float(value)
+    except ValueError:
+        return default
+    return max(minutes, 0.0)
+
+
+def notification_text(
+    stats: Dict[str, Any],
+    errors: Iterable[str],
+    dry_run: bool = False,
+    damaged: Iterable[str] = (),
+) -> Optional[Tuple[str, str]]:
     """(title, body) for a run worth telling the user about, or None for a run that did nothing."""
     errors = list(errors)
+    damaged = list(damaged)
     moved = int(stats.get("videos_moved", 0) or 0)
-    extracted = int(stats.get("archives_extracted", 0) or 0)
+    extracted = int(stats.get("rars_extracted", 0) or 0)
     cleaned = int(stats.get("folders_deleted", 0) or 0)
-    if not (moved or extracted or cleaned or errors):
+    waiting = int(stats.get("folders_settling", 0) or 0)
+    if not (moved or extracted or cleaned or errors or damaged):
         return None
     parts: List[str] = []
     if moved:
@@ -141,6 +161,10 @@ def notification_text(stats: Dict[str, Any], errors: Iterable[str], dry_run: boo
         parts.append(f"{extracted} archive{'s' if extracted != 1 else ''} extracted")
     if cleaned and not moved:
         parts.append(f"{cleaned} folder{'s' if cleaned != 1 else ''} cleaned")
+    if damaged:
+        parts.append(f"{len(damaged)} damaged (re-download)")
+    if waiting:
+        parts.append(f"{waiting} still downloading")
     if errors:
         parts.append(
             f"{len(errors)} item{'s' if len(errors) != 1 else ''} need{'s' if len(errors) == 1 else ''} attention"
@@ -149,6 +173,8 @@ def notification_text(stats: Dict[str, Any], errors: Iterable[str], dry_run: boo
     body = ", ".join(parts)
     if errors:
         body += "\n" + errors[0]
+    elif damaged:
+        body += "\n" + damaged[0]
     return title, body
 
 

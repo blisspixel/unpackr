@@ -124,6 +124,7 @@ jobs:
           tests/test_paths.py
           tests/test_defensive.py
           tests/test_archive_processor.py
+          tests/test_par2_settle_and_parity.py
           tests/test_video_processor.py
           tests/test_preservation_thresholds.py
           tests/test_decision_matrix.py

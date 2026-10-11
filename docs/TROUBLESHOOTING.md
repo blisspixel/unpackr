@@ -32,7 +32,7 @@ Linux/macOS usually only need PATH names:
 
 Optional but recommended. Install via your OS package manager (`par2` / `par2cmdline`) or set an absolute path in config.
 
-Without par2, corrupted archives cannot be repaired.
+Without par2, damaged archives cannot be repaired and obfuscated (renamed) volumes cannot be matched; archives still extract, and 7-Zip checks every file's CRC. A release that is only `.par2` files and unrecognized names is kept for you to look at (exit `3`).
 
 ### `ffmpeg` Not Found
 

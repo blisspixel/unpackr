@@ -8,17 +8,20 @@ Commercial/enterprise products require separate license from Nick Seal.
 
 **Version 1.4.0** · August 2026
 
-Unpackr is a local automation tool for processing Usenet-style download folders with safety-first, predictable behavior. It runs on **Windows, Linux, and macOS**.
+Unpackr turns a messy downloads folder (Usenet, torrents, whatever landed there) into a clean one. It repairs and unpacks archives, checks every video, moves the good ones to your library, keeps the music, photos and documents it finds, and **deletes everything else**. Deleting the junk is the point. It runs on **Windows, Linux, and macOS**.
+
+Point it at a downloads folder, not at folders you curate by hand. Run it when you are ready to clean: a manual run treats anything unfinished (`.part`, `.!qB`, half-written files, damaged downloads) as junk. The unattended service is the exception and waits for downloads to finish.
 
 ![Unpackr live dashboard mock](docs/assets/unpackr-dashboard.png)
 
 *Example dashboard mid-run: progress, stats, current folder action, and status line. Paths and counts are illustrative.*
 
-## Why Unpackr
+## What It Does
 
-- Reduces manual cleanup: verify, extract, validate, move, and clean in one run.
-- Keeps risky operations explicit: fail-closed behavior, preflight checks, and dry-run support.
-- Built for operators: clear exit codes, diagnostics, and CI-tested behavior.
+- **Keeps** videos that play (moved to the destination, renamed sensibly), music, photo and document collections, and anything it does not recognise.
+- **Repairs and unpacks** RAR, 7z and zip sets, using PAR2 to fix damaged or obfuscated (renamed) volumes.
+- **Deletes** samples, previews, trailers, damaged or truncated videos, unfinished downloads, archive volumes after a clean extraction, `.par2`/`.nfo`/`.sfv` and tracker spam, bait executables, and the folders left empty.
+- **Undo is one command away**: removals go to a quarantine folder for 14 days by default (`unpackr restore latest`). Use `--dry-run` to see the plan first.
 
 ## Requirements
 
@@ -126,17 +129,17 @@ unpackr service uninstall --source "~/Downloads"
 
 `install` shows the units it will write to `~/.config/systemd/user/` and enables them only after you confirm (`--yes` skips the prompt). The timer runs every `--every`; `--on-change` also runs when the top level of the source folder changes. `uninstall` disables the units and removes every file `install` wrote. Logs: `journalctl --user -u unpackr-<id>.service`, plus the usual log files under `~/.local/state/unpackr/logs`. A desktop notification (`notify-send`) is shown when a run moved something or needs attention; pass `--no-notify` to turn it off.
 
-For cron, launchd or Task Scheduler, run `unpackr --unattended --source ... --destination ...` yourself. `--unattended` turns off animation, the countdown and prompts and prints one line per folder. It also takes a lock so overlapping runs on the same source exit cleanly, and skips any download changed in the last `settle_minutes` (default 2) so a later run picks it up once it is complete. Add `--notify` for the desktop notification.
+For cron, launchd or Task Scheduler, run `unpackr --unattended --source ... --destination ...` yourself. `--unattended` turns off animation, the countdown and prompts and prints one line per folder. It also takes a lock so overlapping runs on the same source exit cleanly, and, unlike a manual run, leaves unfinished downloads alone: releases with `.part`/`.!qB` files and anything changed in the last `settle_minutes` (default 2) are picked up by a later run. Add `--notify` for the desktop notification.
 
 ## Safety
 
-Unpackr is intended to clean messy download folders and produce clean, validated video outputs.
-It can perform destructive actions during live runs. Use at your own risk, and run `--dry-run` first.
+Unpackr deletes files; that is its job. The safeguards are there so it never deletes the *good* file:
 
-- Can remove junk, samples, previews, corrupt videos, and empty processed folders.
 - Removals are reversible by default: they go to `<source>/.unpackr-quarantine/<run_id>/` for 14 days. Undo a run with `unpackr restore latest --source "~/Downloads"`, list runs with `unpackr runs --source "~/Downloads"`, or set `delete_mode` to `trash` or `permanent`.
-- Uses conservative decision rules when state is uncertain.
-- Handles cancellation (`Ctrl+C`) with guarded shutdown behavior.
+- Archive volumes are only removed after their set extracted cleanly (7-Zip checks every file's CRC). A set that is incomplete, password-protected or blocked is kept and listed under NEEDS ATTENTION.
+- Damaged downloads are removed like any other junk and listed under DAMAGED, RE-DOWNLOAD.
+- Releases with executables or shortcuts are treated as bait: nothing from them is moved.
+- `Ctrl+C` finishes the current step and stops.
 
 Policy details and limits: [docs/SAFETY.md](docs/SAFETY.md)
 

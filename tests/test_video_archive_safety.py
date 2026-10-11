@@ -17,6 +17,7 @@ import pytest
 
 import unpackr
 from conftest import bind_app_helpers
+from core.remover import Remover
 from core.archive_processor import (
     ArchiveProcessor,
     classify_extract_failure,
@@ -208,6 +209,7 @@ class TestArchiveProcessing:
     def processor(self):
         p = ArchiveProcessor(Config())
         p.system_check.get_tool_command = Mock(return_value=["7z"])
+        p.remover = Remover(mode="permanent")
         return p
 
     def test_incomplete_set_is_held_and_never_extracted(self, processor, tmp_path):
@@ -341,9 +343,11 @@ class TestAppWiring:
     def test_dry_run_flags_incomplete_set_once(self, tmp_path):
         _touch(tmp_path, "movie.7z.001", "movie.7z.002", "clip.7z.001", "clip.7z.003")
         plan = Mock()
-        app = _fake_app(True, archive_processor=ArchiveProcessor(Config()))
+        processor = ArchiveProcessor(Config())
+        app = _fake_app(True, archive_processor=processor)
         app.dry_run_plan = plan
-        app._process_archives(tmp_path)
+        with patch.object(processor, "_validate_archive_paths", return_value=True):
+            app._process_archives(tmp_path)
         assert plan.add_archive_extract.call_count == 1  # one entry per set, not per volume
         assert plan.add_archive_skip.call_count == 1
         assert "missing clip.7z.002" in plan.add_archive_skip.call_args.args[1]
