@@ -43,6 +43,9 @@ def test_main_show_plan_exits_zero(monkeypatch, tmp_path):
         def display(self):
             pass
 
+        def as_plan_entries(self, _source):
+            return []
+
         def display_detailed(self):
             pass
 

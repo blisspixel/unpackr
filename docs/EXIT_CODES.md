@@ -50,6 +50,30 @@ Entries in `errors` and `warnings` start with a reason code in brackets, then `f
 
 A dry run reports problems it can predict (for example `archive_volume_missing`) as warnings and exits `0`.
 
+### Per-file items
+
+Runs with `--json` also include `items` (one entry per file decision) and `item_counts` (totals per action). `--report FILE` writes the same items as JSON Lines, one `{"type": "item", ...}` object per line followed by a `{"type": "summary", ...}` line with the run summary.
+
+```json
+{"path": "Movie.One/Movie.One.mkv", "folder": "Movie.One", "action": "moved",
+ "reason_code": "video_ok", "detail": "14.0s", "bytes": 5321113,
+ "destination": "/videos/Movie.One.mkv", "planned": false, "inferred": false}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `path` | Path relative to the source directory |
+| `folder` | Top-level folder under the source (empty for loose files) |
+| `action` | `moved`, `deleted`, `extracted`, `kept`, `skipped` or `blocked` |
+| `reason_code` | Why, for example `video_ok`, `video_too_short`, `video_truncated`, `sample_with_full_version`, `archive_extracted`, `archive_volume_missing`, `junk_extension`, `par2_cleanup`, `not_processed` |
+| `detail` | Human-readable specifics (duration, missing volume names) |
+| `bytes` | Size before the run |
+| `destination` | Final path for moved videos |
+| `planned` | `true` in `--dry-run` output |
+| `inferred` | `true` when the action was reconciled at the end of the run rather than recorded at the decision point (for example a junk file removed together with its folder) |
+
+Every file present in the source when the run starts has exactly one item. Files created during the run (extracted videos) appear too, under their extracted path. A dry run on an unchanged tree reports the same actions as the following live run, except where live validation finds a damaged video. `--show-plan --json` includes `plan`, a folder-level list (`process`, `keep`, `delete`, `validate_video`); per-file items come from `--dry-run --json`.
+
 ## unpackr-doctor
 
 | Code | When |

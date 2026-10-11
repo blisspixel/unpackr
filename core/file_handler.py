@@ -8,7 +8,7 @@ import stat
 import time
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 import psutil
 
@@ -43,6 +43,13 @@ class FileHandler:
         # remaining volumes of an incomplete archive set). A folder that holds any
         # of them is never removable.
         self.held_paths: Dict[Path, str] = {}
+        # Optional run report; folder removals are recorded on it.
+        self.report: Any = None
+        # Final path of the most recent successful move_file call.
+        self.last_moved_to: Optional[Path] = None
+        # Dry run only: files the plan moves, deletes or extracts. Folder cleanup
+        # decisions treat them as already gone so the plan matches a live run.
+        self.planned_gone: Set[Path] = set()
 
         # Defensive: verify config has required attributes
         required_attrs = ["video_extensions", "removable_extensions"]
@@ -409,6 +416,10 @@ class FileHandler:
     def held_reason(self, path: Path) -> Optional[str]:
         return self.held_paths.get(self._held_key(path))
 
+    def assume_gone(self, path: Path) -> None:
+        """Dry run: treat this file as already handled when judging its folder."""
+        self.planned_gone.add(self._held_key(path))
+
     def is_folder_empty_or_removable(self, folder: Path, par2_error: bool = False, archive_error: bool = False) -> bool:
         """
         Check if folder is empty or contains only removable files.
@@ -451,6 +462,9 @@ class FileHandler:
             if held:
                 logging.info(f"Folder '{folder}' not deleted: '{file.name}' is kept ({held})")
                 return False
+
+            if self.planned_gone and self._held_key(file) in self.planned_gone:
+                continue
 
             if is_dir:
                 # Recursively check if subdirectory is also removable. Link-like
@@ -513,7 +527,12 @@ class FileHandler:
         return True
 
     def safe_delete_folder(
-        self, folder: Path, max_attempts: Optional[int] = None, par2_error: bool = False, archive_error: bool = False
+        self,
+        folder: Path,
+        max_attempts: Optional[int] = None,
+        par2_error: bool = False,
+        archive_error: bool = False,
+        reason_code: str = "folder_cleanup",
     ) -> bool:
         """
         Safely delete a folder with retry logic and fallback methods.
@@ -550,6 +569,7 @@ class FileHandler:
             try:
                 self._delete_tree_safely(folder)
                 logging.info(f"Successfully deleted folder {folder}")
+                self._note_folder_removed(folder, reason_code)
                 return True
             except PermissionError as e:
                 # File is locked - try killing processes holding it
@@ -572,12 +592,17 @@ class FileHandler:
         try:
             if force_delete_directory(folder):
                 logging.info(f"{fallback_label} successfully deleted folder {folder}")
+                self._note_folder_removed(folder, reason_code)
                 return True
         except Exception as e:
             logging.error(f"{fallback_label} force delete failed for {folder}: {e}")
 
         logging.error(f"Could not delete folder {folder} after all attempts")
         return False
+
+    def _note_folder_removed(self, folder: Path, reason_code: str) -> None:
+        if self.report is not None:
+            self.report.record_folder_removed(folder, reason_code)
 
     def _build_powershell_delete_command(self, folder: Path) -> List[str]:
         """Compatibility wrapper around the shared Windows force-delete command builder."""
@@ -782,6 +807,7 @@ class FileHandler:
             # Use error recovery helper
             if ErrorRecovery.safe_move(source, destination_file):
                 logging.info(f"Moved file: {source.name} -> {destination_file}")
+                self.last_moved_to = destination_file
                 return True
             else:
                 log_error(

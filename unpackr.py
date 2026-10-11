@@ -26,6 +26,7 @@ from colorama import Fore, Style, init
 from core import Config, setup_logging
 from core.archive_processor import ArchiveProcessor, ArchiveSet, find_archive_sets
 from core.file_handler import FileHandler
+from core.run_report import ReportItem, RunReport
 from core.video_processor import VideoProcessor
 from utils.cli_prompts import clean_path, countdown_prompt, get_user_input, quick_preflight, resolve_cli_presentation
 from utils.cli_render import create_renderer
@@ -143,6 +144,35 @@ class WorkPlan:
         """Add a loose video file."""
         self.loose_videos.append(video)
         self.total_videos += 1
+
+    def as_plan_entries(self, source_dir: Path) -> List[Dict[str, Any]]:
+        """Folder-level plan for --show-plan --json (per-file items come from --dry-run --json)."""
+
+        def rel(path: Path) -> str:
+            try:
+                return path.relative_to(source_dir).as_posix()
+            except ValueError:
+                return str(path)
+
+        entries: List[Dict[str, Any]] = []
+        for item in self.video_folders:
+            entries.append(
+                {
+                    "path": rel(item["path"]),
+                    "role": "process",
+                    "videos": item["videos"],
+                    "archives": item["rars"],
+                    "par2": item["par2s"],
+                    "planned": True,
+                }
+            )
+        for item in self.content_folders:
+            entries.append({"path": rel(item["path"]), "role": "keep", "reason": item["reason"], "planned": True})
+        for folder in self.junk_folders:
+            entries.append({"path": rel(folder), "role": "delete", "reason": "junk_folder", "planned": True})
+        for video in self.loose_videos:
+            entries.append({"path": rel(video), "role": "validate_video", "planned": True})
+        return sorted(entries, key=lambda e: e["path"])
 
     def calculate_time_estimate(self):
         """Calculate estimated processing time."""
@@ -279,6 +309,9 @@ class UnpackrApp:
         # Problems a person should look at; errors make a live run exit non-zero.
         self.run_errors: List[str] = []
         self.run_warnings: List[str] = []
+        # Per-file decisions for --json items and --report.
+        self.report = RunReport()
+        self.file_handler.report = self.report
 
         # Load snarky comments for easter eggs
         self.comments = self._load_comments()
@@ -591,8 +624,10 @@ class UnpackrApp:
         for sample_video in to_delete:
             try:
                 if not self.dry_run:
+                    size = sample_video.stat().st_size
                     sample_video.unlink()
                     logging.info(f"Deleted sample video: {sample_video.name}")
+                    self._record(sample_video, "deleted", "sample_with_full_version", size=size)
                 else:
                     if self.dry_run_plan:
                         try:
@@ -601,11 +636,27 @@ class UnpackrApp:
                             logging.debug(f"Dry-run plan sample delete entry failed for {sample_video}: {e}")
                             self.dry_run_plan.add_video_delete(sample_video, "sample/preview file")
                     logging.info(f"[DRY-RUN] Would delete sample video: {sample_video.name}")
+                    self._record(sample_video, "deleted", "sample_with_full_version")
             except Exception as e:
                 logging.error(f"Failed to delete sample video {sample_video}: {e}")
 
         # Return filtered list
         return [v for v in video_files if v not in to_delete]
+
+    def _record(self, path: Path, action: str, reason_code: str, detail: str = "", **kwargs: Any) -> None:
+        """Record a per-file decision on the run report (no-op without one)."""
+        report = getattr(self, "report", None)
+        if report is not None:
+            report.record(path, action, reason_code, detail, **kwargs)
+        if getattr(self, "dry_run", False) and action in ("moved", "deleted", "extracted"):
+            assume_gone = getattr(getattr(self, "file_handler", None), "assume_gone", None)
+            if callable(assume_gone):
+                assume_gone(path)
+
+    def _record_folder_removed(self, folder: Path, reason_code: str) -> None:
+        report = getattr(self, "report", None)
+        if report is not None:
+            report.record_folder_removed(folder, reason_code)
 
     def _note(self, level: str, folder: Path, item: str, reason_code: str, detail: str) -> None:
         """Record a problem for the summary, the log and the --json errors/warnings."""
@@ -638,7 +689,11 @@ class UnpackrApp:
                             folder / archive_set.name, f"incomplete set, missing {missing}"
                         )
                     self._note("warning", folder, archive_set.name, "archive_volume_missing", f"missing {missing}")
+                    for volume in archive_set.volumes:
+                        self._record(volume, "kept", "archive_volume_missing", f"missing {missing}")
                     continue
+                for volume in archive_set.volumes:
+                    self._record(volume, "extracted", "archive_extracted", f"set {archive_set.name}")
                 if self.dry_run_plan:
                     try:
                         size = sum(v.stat().st_size for v in archive_set.volumes)
@@ -655,6 +710,9 @@ class UnpackrApp:
         if success:
             self.stats["rars_extracted"] += 1
         for outcome in self.archive_processor.last_outcomes:
+            action = {"extracted": "extracted", "held": "kept", "blocked": "blocked"}.get(outcome.status, "skipped")
+            for volume in outcome.volumes:
+                self._record(volume, action, outcome.reason_code, outcome.detail)
             if outcome.status == "held":
                 self.file_handler.hold_paths(outcome.volumes, outcome.reason_code)
                 self._note("error", folder, outcome.name, outcome.reason_code, f"{outcome.detail} (kept for retry)")
@@ -682,10 +740,19 @@ class UnpackrApp:
                 self.stats["videos_sample"] += 1
                 if self.dry_run_plan:
                     self.dry_run_plan.add_video_delete(video_file, f"preview or sample: {preview.detail}")
+                self._record(video_file, "deleted", preview.reason_code, preview.detail, size=size_bytes)
                 logging.info(f"[DRY-RUN] Would remove preview/sample video: {video_file.name} ({preview.detail})")
                 return False
             if self.dry_run_plan:
                 self.dry_run_plan.add_video_move(video_file, size_bytes, "unknown")
+            self._record(
+                video_file,
+                "moved",
+                "video_pending_validation",
+                "validated during the live run",
+                destination=destination_dir / video_file.name,
+                size=size_bytes,
+            )
             logging.info(f"[DRY-RUN] Would validate and move {video_file.name} to {destination_dir}")
             self.stats["videos_moved"] += 1
             return True
@@ -695,10 +762,20 @@ class UnpackrApp:
             if self.file_handler.move_file(video_file, destination_dir):
                 self.stats["videos_moved"] += 1
                 logging.info(f"MOVED: {video_file.name} ({size_bytes / (1024 * 1024):.1f}MB) -> {destination_dir}")
+                verdict = getattr(self.video_processor, "last_verdict", None)
+                self._record(
+                    video_file,
+                    "moved",
+                    verdict.reason_code if verdict else "video_ok",
+                    verdict.detail if verdict else "",
+                    destination=getattr(self.file_handler, "last_moved_to", None) or destination_dir / video_file.name,
+                    size=size_bytes,
+                )
                 return True
             self._note(
                 "warning", video_file.parent, video_file.name, "video_move_failed", "could not move to destination"
             )
+            self._record(video_file, "kept", "video_move_failed", "could not move to destination", size=size_bytes)
             return False
 
         verdict = self.video_processor.last_verdict
@@ -711,8 +788,14 @@ class UnpackrApp:
             category = verdict.category if verdict else "corrupt"
             detail = f" ({verdict.detail})" if verdict and verdict.detail else ""
             logging.info(f"Removing {category} video: {video_file.name}{detail}")
-        if self.file_handler.wait_for_file_release(str(video_file)):
-            self.file_handler.delete_video_file_with_retry(video_file)
+        reason_code = verdict.reason_code if verdict else "video_corrupt"
+        detail = verdict.detail if verdict else ""
+        if self.file_handler.wait_for_file_release(str(video_file)) and self.file_handler.delete_video_file_with_retry(
+            video_file
+        ):
+            self._record(video_file, "deleted", reason_code, detail, size=size_bytes)
+        else:
+            self._record(video_file, "kept", "video_delete_failed", f"{reason_code}: {detail}", size=size_bytes)
         return False
 
     def process_folder(self, folder: Path, destination_dir: Path, current: int, total: int) -> int:
@@ -805,6 +888,7 @@ class UnpackrApp:
             if self.dry_run:
                 if self.dry_run_plan:
                     self.dry_run_plan.add_folder_delete(folder)
+                self._record_folder_removed(folder, "processed_folder")
                 logging.info(f"[DRY-RUN] Would delete folder: {folder}")
                 self.stats["folders_deleted"] += 1
             else:
@@ -1280,6 +1364,7 @@ class UnpackrApp:
             # Check if subfolder can be deleted
             if self.file_handler.is_folder_empty_or_removable(subfolder, par2_error, archive_error):
                 if self.dry_run:
+                    self._record_folder_removed(subfolder, "processed_folder")
                     logging.info(f"[DRY-RUN] Would delete subfolder: {subfolder}")
                 else:
                     # Pass par2_error and archive_error for double-check (race condition protection)
@@ -1309,6 +1394,11 @@ class UnpackrApp:
             return
 
         video_folders = [item["path"] for item in self.work_plan.video_folders]
+
+        report = getattr(self, "report", None)
+        if report is not None:
+            report.planned = bool(getattr(self, "dry_run", False))
+            report.begin(source_dir)
 
         run_state = getattr(self, "run_state", None)
         if getattr(self, "resume_enabled", False) and run_state is not None:
@@ -1406,6 +1496,7 @@ class UnpackrApp:
                         break
                     try:
                         if self.dry_run:
+                            self._record_folder_removed(junk_folder, "junk_folder")
                             logging.info(f"[DRY-RUN] Would delete junk folder: {junk_folder}")
                             self.stats["folders_deleted"] += 1
                         else:
@@ -1413,7 +1504,7 @@ class UnpackrApp:
                             if self.file_handler.is_folder_empty_or_removable(
                                 junk_folder, par2_error=False, archive_error=False
                             ):
-                                if self.file_handler.safe_delete_folder(junk_folder):
+                                if self.file_handler.safe_delete_folder(junk_folder, reason_code="junk_folder"):
                                     self.stats["folders_deleted"] += 1
                                     logging.info(f"Deleted junk folder: {junk_folder.name}")
                                 else:
@@ -1630,6 +1721,9 @@ def main():
     app: Optional["UnpackrApp"] = None
     dry_run = False
 
+    report_path: Optional[Path] = None
+    report_items: Optional[list[Dict[str, Any]]] = None
+
     def emit_json_and_exit(
         exit_code: int,
         status: str,
@@ -1637,8 +1731,9 @@ def main():
         cancelled: bool = False,
         errors: Optional[list[str]] = None,
         warnings: Optional[list[str]] = None,
+        plan: Optional[list[Dict[str, Any]]] = None,
     ) -> NoReturn:
-        if json_mode:
+        if json_mode or report_path is not None:
             stats = app.stats.get_snapshot() if app is not None else {}
             summary = build_unpackr_run_summary(
                 status=status,
@@ -1651,15 +1746,34 @@ def main():
                 errors=errors,
                 warnings=warnings,
                 version=__version__,
+                items=report_items,
+                plan=plan,
             )
-            print(dumps_run_summary(summary))
+            if report_path is not None and report_items is not None:
+                try:
+                    header = {k: v for k, v in summary.items() if k not in ("items",)}
+                    RunReport.write_jsonl([ReportItem(**item) for item in report_items], report_path, summary=header)
+                except OSError as e:
+                    logging.error(f"Could not write report {report_path}: {e}")
+            if json_mode:
+                print(dumps_run_summary(summary))
         raise SystemExit(exit_code)
+
+    def collect_report_items() -> None:
+        nonlocal report_items
+        report = getattr(app, "report", None) if app is not None else None
+        if report is None:
+            return
+        removable = getattr(getattr(app, "config", None), "removable_extensions", [])
+        report_items = [item.to_dict() for item in report.finalize(removable)]
 
     try:
         # Parse arguments
         parser = build_unpackr_arg_parser()
         args = parser.parse_args()
         json_mode = bool(getattr(args, "json", False))
+        if getattr(args, "report", None):
+            report_path = Path(os.path.expanduser(args.report))
         dry_run = bool(args.dry_run)
 
         args.source, args.destination = resolve_unpackr_paths(args, parser)
@@ -1817,7 +1931,7 @@ def main():
             print(f"{Fore.CYAN}Destination: {destination_dir}{Style.RESET_ALL}")
             print(f"\n{Fore.GREEN}Pre-flight check complete. No changes made.{Style.RESET_ALL}")
             print(f"{Fore.YELLOW}Run without --show-plan to execute.{Style.RESET_ALL}\n")
-            emit_json_and_exit(0, "planned")
+            emit_json_and_exit(0, "planned", plan=work_plan.as_plan_entries(source_dir))
 
         # Display work plan (compact single line)
         work_plan.display()
@@ -1903,6 +2017,7 @@ def main():
                     print(f"{Fore.YELLOW}Video health check failed: {e}{Style.RESET_ALL}")
                     logging.error(f"vhealth failed: {e}", exc_info=True)
 
+            collect_report_items()
             if runtime_app.cancellation_requested:
                 emit_json_and_exit(0, "cancelled", cancelled=True)
             if runtime_app.run_state is not None:
