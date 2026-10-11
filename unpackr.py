@@ -28,6 +28,7 @@ from colorama import Fore, Style, init
 
 from core import Config, setup_logging
 from core.archive_processor import (
+    BROKEN_SET_REASONS,
     ArchiveOutcome,
     ArchiveProcessor,
     ArchiveSet,
@@ -924,6 +925,15 @@ class UnpackrApp:
     def _apply_archive_outcomes(self, folder: Path, outcomes: list[ArchiveOutcome]) -> None:
         """Record each set's outcome, hold what must stay and note what needs a look."""
         for outcome in outcomes:
+            broken = outcome.status == "failed" or (
+                outcome.status == "held"
+                and outcome.reason_code in BROKEN_SET_REASONS
+                and not getattr(self, "unattended", False)
+            )
+            if broken:
+                # A manual run means "clean now": a set that cannot be unpacked is junk.
+                UnpackrApp._remove_broken_set(self, folder, outcome)
+                continue
             action = {"extracted": "extracted", "held": "kept", "blocked": "blocked"}.get(outcome.status, "skipped")
             for volume in outcome.volumes:
                 self._record(volume, action, outcome.reason_code, outcome.detail)
@@ -934,10 +944,19 @@ class UnpackrApp:
                 self._note("error", folder, outcome.name, outcome.reason_code, f"{outcome.detail} (kept for retry)")
             elif outcome.status == "blocked":
                 self._note("error", folder, outcome.name, outcome.reason_code, outcome.detail)
-            elif outcome.status == "failed":
-                self._note("warning", folder, outcome.name, outcome.reason_code, f"{outcome.detail}; re-download it")
-                if hasattr(self, "damaged"):
-                    self.damaged.append(f"{folder.name}/{outcome.name}: {outcome.detail}")
+
+    def _remove_broken_set(self, folder: Path, outcome: ArchiveOutcome) -> None:
+        """Remove the volumes of a set that cannot be unpacked and list it for re-download."""
+        remove = getattr(getattr(self, "file_handler", None), "remove_file", None)
+        for volume in outcome.volumes:
+            if getattr(self, "dry_run", False) or (callable(remove) and remove(volume, outcome.reason_code)):
+                self._record(volume, "deleted", outcome.reason_code, outcome.detail)
+            else:
+                self._record(volume, "kept", outcome.reason_code, f"{outcome.detail}; could not be removed")
+        self._note("warning", folder, outcome.name, outcome.reason_code, f"{outcome.detail}; removed, re-download it")
+        damaged: list[str] | None = getattr(self, "damaged", None)
+        if damaged is not None:
+            damaged.append(f"{folder.name}/{outcome.name}: {outcome.detail}")
 
     def _verify_par2(self, folder: Path) -> Par2Outcome | None:
         """Verify/repair a folder's PAR2 sets before extraction. Never blocks extraction."""

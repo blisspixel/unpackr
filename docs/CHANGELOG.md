@@ -2,6 +2,10 @@
 
 Release dates are included where recorded.
 
+## v1.5.1 (2026-10-11)
+
+- On a manual run, an archive set that cannot be unpacked is junk: a set with a volume missing that PAR2 could not rebuild, one cut short, one 7-Zip cannot read, or a password-protected one is removed (to quarantine by default) and listed under DAMAGED, RE-DOWNLOAD and in `--json` `damaged`, instead of being kept and making the run exit `3`. Sets held back by the machine (disk full, extraction timeout, 7-Zip missing or failing) are still kept, and unattended runs keep every such set for a later run. Archives with CRC errors are now removed explicitly too, so leftovers in the source root no longer linger.
+
 ## v1.5.0 (2026-10-11)
 
 Unpackr cleans a downloads folder decisively and never throws away the good file. Removals are reversible by default, every decision is reported, PAR2 repairs obfuscated posts, and the code base is strictly typed on Python 3.12 to 3.15.
