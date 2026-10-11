@@ -4,6 +4,7 @@ Release dates are included where recorded.
 
 ## Unreleased
 
+- Removals are reversible by default. New `delete_mode` (`quarantine` default, `trash`, `permanent`) moves removed files and folders to `<source>/.unpackr-quarantine/<run_id>/` and journals every removal and move in `<source>/.unpackr-runs/<run_id>.jsonl`. New `unpackr restore <run_id>|latest` and `unpackr runs`. Quarantined runs older than `quarantine_retention_days` (14) are purged on the next live run. `--json` gains a `removal` block and per-item `disposal`; the final screen shows what is held and how to undo. `unpackr-doctor --source` reports quarantine size against `quarantine_warn_mb` (#6).
 - `--json` now includes `items`, one entry per file decision with an action and reason code, plus `item_counts`; `--report FILE` writes the same items as JSON Lines with a closing summary line. Every file present before the run gets exactly one terminal action, and the dry run produces the same items marked `planned` (#7).
 - The dry run treats files it plans to move, delete or extract as gone when deciding folder cleanup, so planned folder deletions match the live run.
 - `--show-plan --json` includes a folder-level `plan`.

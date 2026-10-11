@@ -1,6 +1,18 @@
 # Safety Contract
 
-Unpackr deletes files during cleanup. This document defines what can be deleted, what is protected, and which safeguards are enforced.
+Unpackr removes files during cleanup. This document defines what can be removed, what is protected, and which safeguards are enforced.
+
+## Removal Is Reversible By Default
+
+With the default `delete_mode: "quarantine"`, nothing a live run removes is destroyed right away. Removed files and folders are moved to `<source>/.unpackr-quarantine/<run_id>/`, keeping their relative paths (a rename on the same filesystem, so it is instant). Every removal and every video moved to the destination is recorded in `<source>/.unpackr-runs/<run_id>.jsonl`.
+
+- `unpackr runs --source <dir>` lists recent runs with their actions and quarantined size.
+- `unpackr restore <run_id> --source <dir>` (or `restore latest`) puts quarantined files back and moves videos back from the destination when they are unchanged (size and modification time). `--path '<glob>'` restores part of a run; `--dry-run` previews.
+- Quarantined runs older than `quarantine_retention_days` (default 14) are purged at the start of the next live run. The purge only touches direct children of `.unpackr-quarantine`, never follows symlinks, and never runs during `--dry-run`.
+- `delete_mode: "trash"` sends removals to the desktop trash (freedesktop Trash on Linux, `~/.Trash` on macOS, the Recycle Bin on Windows); restore those from the trash.
+- `delete_mode: "permanent"` keeps the previous behavior: removals are deleted immediately and cannot be restored by Unpackr.
+- `.unpackr-quarantine` and `.unpackr-runs` are never scanned, processed or cleaned up as content.
+- `unpackr-doctor --source <dir>` reports the quarantine size and warns above `quarantine_warn_mb`.
 
 ## Operating Guidance
 

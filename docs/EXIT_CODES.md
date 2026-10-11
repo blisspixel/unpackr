@@ -50,6 +50,17 @@ Entries in `errors` and `warnings` start with a reason code in brackets, then `f
 
 A dry run reports problems it can predict (for example `archive_volume_missing`) as warnings and exits `0`.
 
+### Removal block
+
+Live runs add `removal`: `mode`, `run_id`, `journal`, `quarantine_path`, `quarantined_files`, `quarantined_bytes`, `trashed_files`, `retention_days` and `restore_command`. When anything was quarantined, `recommended_actions` starts with the restore command.
+
+### Run subcommands
+
+| Command | Exit |
+|---------|------|
+| `unpackr runs --source DIR [--json]` | `0` |
+| `unpackr restore RUN_ID\|latest --source DIR [--path GLOB] [--dry-run] [--json]` | `0` when the journal exists (skipped items are listed), `1` when no journal or no runs exist |
+
 ### Per-file items
 
 Runs with `--json` also include `items` (one entry per file decision) and `item_counts` (totals per action). `--report FILE` writes the same items as JSON Lines, one `{"type": "item", ...}` object per line followed by a `{"type": "summary", ...}` line with the run summary.
@@ -70,6 +81,7 @@ Runs with `--json` also include `items` (one entry per file decision) and `item_
 | `bytes` | Size before the run |
 | `destination` | Final path for moved videos |
 | `planned` | `true` in `--dry-run` output |
+| `disposal` | For live `deleted` items: `quarantine`, `trash` or `permanent` |
 | `inferred` | `true` when the action was reconciled at the end of the run rather than recorded at the decision point (for example a junk file removed together with its folder) |
 
 Every file present in the source when the run starts has exactly one item. Files created during the run (extracted videos) appear too, under their extracted path. A dry run on an unchanged tree reports the same actions as the following live run, except where live validation finds a damaged video. `--show-plan --json` includes `plan`, a folder-level list (`process`, `keep`, `delete`, `validate_video`); per-file items come from `--dry-run --json`.

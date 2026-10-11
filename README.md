@@ -110,7 +110,8 @@ If the installed launcher is unavailable, run the same command as `python -m unp
 Unpackr is intended to clean messy download folders and produce clean, validated video outputs.
 It can perform destructive actions during live runs. Use at your own risk, and run `--dry-run` first.
 
-- Can delete junk, samples, corrupt videos, and empty processed folders.
+- Can remove junk, samples, previews, corrupt videos, and empty processed folders.
+- Removals are reversible by default: they go to `<source>/.unpackr-quarantine/<run_id>/` for 14 days. Undo a run with `unpackr restore latest --source "~/Downloads"`, list runs with `unpackr runs --source "~/Downloads"`, or set `delete_mode` to `trash` or `permanent`.
 - Uses conservative decision rules when state is uncertain.
 - Handles cancellation (`Ctrl+C`) with guarded shutdown behavior.
 
@@ -122,7 +123,7 @@ Only use Unpackr on files you are allowed to handle.
 
 You are responsible for following the laws, licenses, and rules that apply to your setup (including copyright, privacy, and retention requirements).
 
-Unpackr can move and permanently delete files. You are responsible for backups and for reviewing planned actions before live use.
+Unpackr moves files and removes files (to its quarantine by default, or permanently when configured). You are responsible for backups and for reviewing planned actions before live use.
 
 This project is a technical tool, not legal advice, and is provided "as is." The license terms are summarized at the top of this README, in [`LICENSE`](LICENSE), and in the package metadata.
 

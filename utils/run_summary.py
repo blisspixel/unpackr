@@ -32,6 +32,7 @@ def build_unpackr_run_summary(
     version: str = "",
     items: Optional[list[Dict[str, Any]]] = None,
     plan: Optional[list[Dict[str, Any]]] = None,
+    removal: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Build a structured unpackr run summary.
@@ -101,6 +102,10 @@ def build_unpackr_run_summary(
         summary["item_counts"] = item_counts
     if plan is not None:
         summary["plan"] = plan
+    if removal is not None:
+        summary["removal"] = removal
+        if removal.get("quarantined_files"):
+            actions.insert(0, f"Undo this run's removals with: {removal['restore_command']}")
     return summary
 
 

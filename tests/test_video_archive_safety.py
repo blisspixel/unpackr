@@ -298,7 +298,7 @@ class TestAppWiring:
             video_processor=vp,
             file_handler=types.SimpleNamespace(
                 wait_for_file_release=lambda *_: True,
-                delete_video_file_with_retry=lambda v: deleted.append(v),
+                delete_video_file_with_retry=lambda v, **_k: deleted.append(v) or True,
             ),
         )
         with patch(
