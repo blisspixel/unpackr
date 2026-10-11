@@ -39,8 +39,9 @@ class UnpackrDoctor:
         "ffmpeg": (4, 4),
     }
 
-    def __init__(self, config_path: Optional[Path] = None) -> None:
+    def __init__(self, config_path: Optional[Path] = None, source: Optional[Path] = None) -> None:
         self.config_path = config_path
+        self.source = source
         self.issues: list[str] = []
         self.warnings: list[str] = []
         self.passed: list[str] = []
@@ -467,6 +468,31 @@ class UnpackrDoctor:
         except Exception:
             print(f"{Fore.YELLOW}⚠ Could not check{Style.RESET_ALL}")
 
+    def check_quarantine(self):
+        """Report quarantine size for --source and warn when it passes quarantine_warn_mb."""
+        if self.source is None:
+            return
+        from core.config import Config
+        from core.remover import list_runs
+
+        config = Config(self.config_path) if self.config_path else Config()
+        runs = list_runs(self.source)
+        held_files = sum(r.quarantine_files for r in runs)
+        held_mb = sum(r.quarantine_bytes for r in runs) / (1024 * 1024)
+        limit_mb = config.quarantine_warn_mb
+        print(f"\n[Quarantine] {self.source}")
+        print(
+            f"  mode: {config.delete_mode}, retention: {config.quarantine_retention_days} days, "
+            f"held: {held_files} files, {held_mb:.1f} MB in {sum(1 for r in runs if r.quarantine_files)} run(s)"
+        )
+        if limit_mb and held_mb > limit_mb:
+            self.warnings.append(
+                f"Quarantine holds {held_mb:.0f} MB (over quarantine_warn_mb {limit_mb}); "
+                "it is purged after quarantine_retention_days, or review with `unpackr runs`"
+            )
+        else:
+            self.passed.append("Quarantine size")
+
     def print_summary(self):
         """Print diagnostic summary."""
         print(f"\n{Fore.CYAN}{'=' * 60}{Style.RESET_ALL}")
@@ -517,6 +543,7 @@ class UnpackrDoctor:
         self.check_core_modules()
         self.check_log_directory()
         self.check_running_processes()
+        self.check_quarantine()
 
         self.print_summary()
 
@@ -551,9 +578,12 @@ def main():
     )
     parser.add_argument("--json", action="store_true", help="Output machine-readable JSON results")
     parser.add_argument("--config", type=existing_file_path, help="Path to an existing custom config file")
+    parser.add_argument("--source", help="Also report the quarantine held in this source directory")
     args = parser.parse_args()
 
-    doctor = UnpackrDoctor(Path(args.config) if args.config else None)
+    source = Path(args.source).expanduser() if args.source else None
+    config_path = Path(args.config) if args.config else None
+    doctor = UnpackrDoctor(config_path) if source is None else UnpackrDoctor(config_path, source=source)
     if args.json:
         # Suppress human-readable output in JSON mode.
         with redirect_stdout(io.StringIO()):

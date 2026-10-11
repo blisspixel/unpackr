@@ -47,6 +47,8 @@ class FileHandler:
         self.report: Any = None
         # Final path of the most recent successful move_file call.
         self.last_moved_to: Optional[Path] = None
+        # Optional Remover: quarantine, trash or permanent delete, with a run journal.
+        self.remover: Any = None
         # Dry run only: files the plan moves, deletes or extracts. Folder cleanup
         # decisions treat them as already gone so the plan matches a live run.
         self.planned_gone: Set[Path] = set()
@@ -567,8 +569,8 @@ class FileHandler:
 
         for attempt in range(max_attempts):
             try:
-                self._delete_tree_safely(folder)
-                logging.info(f"Successfully deleted folder {folder}")
+                self._remove_tree(folder, reason_code)
+                logging.info(f"Successfully removed folder {folder} ({self.delete_mode})")
                 self._note_folder_removed(folder, reason_code)
                 return True
             except PermissionError as e:
@@ -581,6 +583,10 @@ class FileHandler:
                 logging.error(f"Failed to delete folder {folder} on attempt {attempt + 1}: {e}")
                 if attempt < max_attempts - 1:
                     time.sleep(retry_delay)
+
+        if self.delete_mode != "permanent":
+            logging.error(f"Could not {self.delete_mode} folder {folder}; it was left in place")
+            return False
 
         if self._tree_contains_linklike_entries(folder):
             logging.warning(f"Folder {folder} contains a symlink or junction; refusing force-delete fallback")
@@ -599,6 +605,41 @@ class FileHandler:
 
         logging.error(f"Could not delete folder {folder} after all attempts")
         return False
+
+    @property
+    def delete_mode(self) -> str:
+        return getattr(self.remover, "mode", "permanent")
+
+    def _remove(self, path: Path, reason_code: str, permanent: Any = None) -> None:
+        """Remove one file or folder through the remover (permanent delete without one)."""
+        if self.remover is not None:
+            self.remover.remove(path, reason_code, permanent=permanent)
+        elif permanent is not None:
+            permanent(path)
+        else:
+            path.unlink(missing_ok=True)
+
+    def remove_file(self, path: Path, reason_code: str) -> bool:
+        """Remove a single file (quarantine, trash or delete per delete_mode)."""
+        if self.enforcer:
+            try:
+                self.enforcer.enforce_delete(path)
+            except Exception as e:
+                logging.error(f"Safety check prevented removal of {path}: {e}")
+                return False
+        try:
+            self._remove(path, reason_code)
+            return True
+        except OSError as e:
+            logging.error(f"Could not remove {path}: {e}")
+            return False
+
+    def _remove_tree(self, folder: Path, reason_code: str) -> None:
+        # Quarantining or trashing an empty folder keeps nothing worth restoring.
+        if self.delete_mode != "permanent" and not any(folder.iterdir()):
+            folder.rmdir()
+            return
+        self._remove(folder, reason_code, permanent=self._delete_tree_safely)
 
     def _note_folder_removed(self, folder: Path, reason_code: str) -> None:
         if self.report is not None:
@@ -808,6 +849,8 @@ class FileHandler:
             if ErrorRecovery.safe_move(source, destination_file):
                 logging.info(f"Moved file: {source.name} -> {destination_file}")
                 self.last_moved_to = destination_file
+                if self.remover is not None:
+                    self.remover.record_move(source, destination_file)
                 return True
             else:
                 log_error(
@@ -828,7 +871,11 @@ class FileHandler:
             return False
 
     def delete_video_file_with_retry(
-        self, video_file: Path, max_attempts: Optional[int] = None, retry_delay: Optional[int] = None
+        self,
+        video_file: Path,
+        max_attempts: Optional[int] = None,
+        retry_delay: Optional[int] = None,
+        reason_code: str = "video_removed",
     ) -> bool:
         """
         Delete a video file with retry logic and exponential backoff.
@@ -870,8 +917,9 @@ class FileHandler:
                     time.sleep(current_delay)
                     current_delay *= 2  # Exponential backoff
 
-                video_file.unlink(missing_ok=True)
-                logging.info(f"Successfully deleted video file: {video_file}")
+                if video_file.exists() or video_file.is_symlink():
+                    self._remove(video_file, reason_code)
+                logging.info(f"Successfully removed video file: {video_file} ({self.delete_mode})")
                 return True
             except PermissionError:
                 logging.warning(f"Attempt {attempt + 1}/{max_attempts} - File locked: {video_file}")

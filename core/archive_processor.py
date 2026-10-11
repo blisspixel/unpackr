@@ -190,6 +190,8 @@ class ArchiveProcessor:
             self.enforcer = InvariantEnforcer(destination_root, config)
         self.last_outcomes: List[ArchiveOutcome] = []
         self._last_path_check = "archive_unsafe_paths"
+        # Optional Remover (quarantine, trash or permanent delete); permanent without one.
+        self.remover: Any = None
 
     @staticmethod
     def describe_missing(missing: List[str], limit: int = 3) -> str:
@@ -533,14 +535,19 @@ class ArchiveProcessor:
         # Try deleting with retries for locked files
         for attempt in range(3):
             try:
-                file.unlink()
-                logging.info(f"Deleted file: {file}")
+                if self.remover is not None:
+                    self.remover.remove(file, "archive_cleanup")
+                else:
+                    file.unlink()
+                logging.info(f"Removed file: {file}")
                 break  # Success
             except PermissionError:
                 if attempt < 2:
                     # File is locked, wait and retry
                     logging.warning(f"File locked (attempt {attempt + 1}/3): {file}")
                     time.sleep(1)
+                elif self.remover is not None and self.remover.mode != "permanent":
+                    logging.error(f"Could not {self.remover.mode} locked file {file} after 3 attempts")
                 else:
                     # Final attempt failed - try forcing via unlink with missing_ok
                     try:

@@ -40,6 +40,7 @@ class ReportItem:
     destination: Optional[str] = None
     planned: bool = False
     inferred: bool = False
+    disposal: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         data = asdict(self)
@@ -58,6 +59,8 @@ class RunReport:
 
     planned: bool = False
     root: Optional[Path] = None
+    # How live deletions were disposed of: "quarantine", "trash" or "permanent".
+    disposal: Optional[str] = None
     _items: Dict[str, ReportItem] = field(default_factory=dict)
     _inventory: Dict[str, int] = field(default_factory=dict)
     _removed_folders: Dict[str, _PendingRemoval] = field(default_factory=dict)
@@ -202,6 +205,10 @@ class RunReport:
                     planned=self.planned,
                     inferred=True,
                 )
+            if not self.planned and self.disposal:
+                for item in self._items.values():
+                    if item.action == "deleted":
+                        item.disposal = self.disposal
             return sorted(self._items.values(), key=lambda i: i.path)
 
     # ---------------------------------------------------------------- output

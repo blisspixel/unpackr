@@ -26,11 +26,13 @@ from colorama import Fore, Style, init
 from core import Config, setup_logging
 from core.archive_processor import ArchiveProcessor, ArchiveSet, find_archive_sets
 from core.file_handler import FileHandler
+from core.remover import Remover, is_internal, new_run_id, purge_quarantine
 from core.run_report import ReportItem, RunReport
 from core.video_processor import VideoProcessor
 from utils.cli_prompts import clean_path, countdown_prompt, get_user_input, quick_preflight, resolve_cli_presentation
 from utils.cli_render import create_renderer
 from utils.cli_runtime import build_unpackr_arg_parser, configure_windows_console_utf8, resolve_unpackr_paths
+from utils.cli_subcommands import SUBCOMMANDS, run_subcommand
 from utils.defensive import InputValidator, StateValidator, ValidationError
 from utils.dry_run_summary import DryRunPlan
 from utils.run_state import RunState, default_state_path
@@ -344,7 +346,8 @@ class UnpackrApp:
 
         # Enumerate root entries once; unreadable paths should not crash planning.
         try:
-            root_entries = list(source_dir.iterdir())
+            # Unpackr's own state (.unpackr-quarantine, .unpackr-runs, resume state) is never content.
+            root_entries = [entry for entry in source_dir.iterdir() if not is_internal(Path(entry.name))]
         except (PermissionError, OSError) as e:
             logging.warning(f"Cannot read source directory during pre-scan: {source_dir} ({e})")
             root_entries = []
@@ -625,9 +628,15 @@ class UnpackrApp:
             try:
                 if not self.dry_run:
                     size = sample_video.stat().st_size
-                    sample_video.unlink()
-                    logging.info(f"Deleted sample video: {sample_video.name}")
-                    self._record(sample_video, "deleted", "sample_with_full_version", size=size)
+                    file_handler = getattr(self, "file_handler", None)
+                    if file_handler is not None:
+                        removed = file_handler.remove_file(sample_video, "sample_with_full_version")
+                    else:
+                        sample_video.unlink()
+                        removed = True
+                    if removed:
+                        logging.info(f"Removed sample video: {sample_video.name}")
+                        self._record(sample_video, "deleted", "sample_with_full_version", size=size)
                 else:
                     if self.dry_run_plan:
                         try:
@@ -642,6 +651,32 @@ class UnpackrApp:
 
         # Return filtered list
         return [v for v in video_files if v not in to_delete]
+
+    def _prepare_removal(self, source_dir: Path) -> None:
+        """Set up reversible removal for a live run and purge expired quarantine."""
+        self.run_id = new_run_id()
+        self.remover = None
+        if getattr(self, "dry_run", False):
+            return
+        config = getattr(self, "config", None)
+        mode = getattr(config, "delete_mode", "quarantine")
+        if not isinstance(mode, str):
+            mode = "quarantine"
+        self.remover = Remover(mode=mode, source_root=source_dir, run_id=self.run_id)
+        for component in (getattr(self, "file_handler", None), getattr(self, "archive_processor", None)):
+            if component is not None:
+                component.remover = self.remover
+        report = getattr(self, "report", None)
+        if report is not None:
+            report.disposal = mode
+        retention = getattr(config, "quarantine_retention_days", 14)
+        if isinstance(retention, int) and retention > 0:
+            try:
+                runs, freed = purge_quarantine(source_dir, retention)
+                if runs:
+                    logging.info(f"Purged {runs} quarantined run(s) older than {retention} days ({freed / 1e6:.1f}MB)")
+            except OSError as e:
+                logging.warning(f"Could not purge old quarantine: {e}")
 
     def _record(self, path: Path, action: str, reason_code: str, detail: str = "", **kwargs: Any) -> None:
         """Record a per-file decision on the run report (no-op without one)."""
@@ -791,7 +826,7 @@ class UnpackrApp:
         reason_code = verdict.reason_code if verdict else "video_corrupt"
         detail = verdict.detail if verdict else ""
         if self.file_handler.wait_for_file_release(str(video_file)) and self.file_handler.delete_video_file_with_retry(
-            video_file
+            video_file, reason_code=reason_code
         ):
             self._record(video_file, "deleted", reason_code, detail, size=size_bytes)
         else:
@@ -880,7 +915,7 @@ class UnpackrApp:
 
         # Process subfolders AFTER processing videos in this folder
         for subfolder in folder.iterdir():
-            if subfolder.is_dir():
+            if subfolder.is_dir() and not is_internal(Path(subfolder.name)):
                 self._process_subfolder(subfolder, destination_dir)
 
         # Clean up folder if possible
@@ -1358,7 +1393,7 @@ class UnpackrApp:
 
             # Recursively process nested subfolders
             for sub in subfolder.iterdir():
-                if sub.is_dir():
+                if sub.is_dir() and not is_internal(Path(sub.name)):
                     self._process_subfolder(sub, destination_dir)
 
             # Check if subfolder can be deleted
@@ -1399,6 +1434,7 @@ class UnpackrApp:
         if report is not None:
             report.planned = bool(getattr(self, "dry_run", False))
             report.begin(source_dir)
+        self._prepare_removal(source_dir)
 
         run_state = getattr(self, "run_state", None)
         if getattr(self, "resume_enabled", False) and run_state is not None:
@@ -1600,6 +1636,8 @@ class UnpackrApp:
                 for root, dirs, _files in os.walk(source_dir, topdown=False):
                     for dir_name in dirs:
                         folder = Path(root) / dir_name
+                        if is_internal(folder.relative_to(source_dir)):
+                            continue
                         folders_checked += 1
 
                         # Show progress every 50 folders (only on first pass and if enabled)
@@ -1641,6 +1679,25 @@ class UnpackrApp:
             self.stats["empty_folders_deleted"] = total_deleted
             print(f"{Fore.GREEN}Cleaned up {total_deleted} empty folders{Style.RESET_ALL}")
             logging.info(f"Final cleanup: deleted {total_deleted} empty folders total")
+
+    def removal_summary(self) -> Optional[Dict[str, Any]]:
+        """How this run disposed of removed files, for the summary screen and --json."""
+        remover = getattr(self, "remover", None)
+        if remover is None:
+            return None
+        source = remover.source_root
+        retention = getattr(getattr(self, "config", None), "quarantine_retention_days", 14)
+        return {
+            "mode": remover.mode,
+            "run_id": remover.run_id,
+            "journal": str(remover.journal.path) if remover.journal else None,
+            "quarantine_path": str(remover.quarantine_dir) if remover.mode == "quarantine" else None,
+            "quarantined_files": remover.quarantined_files,
+            "quarantined_bytes": remover.quarantined_bytes,
+            "trashed_files": remover.trashed_files,
+            "retention_days": retention if isinstance(retention, int) else 14,
+            "restore_command": f'unpackr restore {remover.run_id} --source "{source}"',
+        }
 
     def finish_issues(self) -> Tuple[List[str], List[str]]:
         """Final error and warning lists, including whole-run observations."""
@@ -1696,6 +1753,20 @@ class UnpackrApp:
         if warnings:
             print(f"\n  {' | '.join(warnings)}")
 
+        removal = self.removal_summary()
+        if removal and (removal["quarantined_files"] or removal["trashed_files"]):
+            if removal["mode"] == "quarantine":
+                print(
+                    f"\n  {Style.DIM}QUARANTINE{Style.RESET_ALL} {removal['quarantined_files']} files, "
+                    f"{removal['quarantined_bytes'] / (1024 * 1024):.1f} MB held"
+                    + (f" for {removal['retention_days']} days" if removal["retention_days"] else "")
+                    + f"  |  undo: {removal['restore_command']}"
+                )
+            else:
+                print(
+                    f"\n  {Style.DIM}TRASH{Style.RESET_ALL} {removal['trashed_files']} files sent to the system trash"
+                )
+
         if self.run_errors:
             label = "WOULD NEED ATTENTION" if self.dry_run else "NEEDS ATTENTION"
             print(f"\n  {Fore.RED}{label} ({len(self.run_errors)}){Style.RESET_ALL}")
@@ -1748,6 +1819,7 @@ def main():
                 version=__version__,
                 items=report_items,
                 plan=plan,
+                removal=app.removal_summary() if app is not None and hasattr(app, "removal_summary") else None,
             )
             if report_path is not None and report_items is not None:
                 try:
@@ -1766,6 +1838,9 @@ def main():
             return
         removable = getattr(getattr(app, "config", None), "removable_extensions", [])
         report_items = [item.to_dict() for item in report.finalize(removable)]
+
+    if len(sys.argv) > 1 and sys.argv[1] in SUBCOMMANDS:
+        raise SystemExit(run_subcommand(sys.argv[1:]))
 
     try:
         # Parse arguments

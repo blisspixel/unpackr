@@ -30,6 +30,9 @@ Invalid or unreadable configuration is blocking. The commands exit instead of co
   "removable_extensions": [".nfo", ".sfv", ".url", ".diz", ".txt", ".m3u"],
   "min_sample_size_mb": 50,
   "min_video_duration_seconds": 10,
+  "delete_mode": "quarantine",
+  "quarantine_retention_days": 14,
+  "quarantine_warn_mb": 20480,
   "min_music_files": 10,
   "min_image_files": 10,
   "min_documents": 10,
@@ -82,6 +85,22 @@ To keep .txt files, remove ".txt" from the list.
 ### `video_extensions`
 
 File extensions recognized as videos. Add formats supported by your ffmpeg build.
+
+### `delete_mode`
+
+How a live run disposes of what it removes. Default: `"quarantine"`.
+
+- `"quarantine"`: move into `<source>/.unpackr-quarantine/<run_id>/` and journal it; undo with `unpackr restore <run_id> --source <dir>`.
+- `"trash"`: send to the desktop trash or Recycle Bin.
+- `"permanent"`: delete immediately (the behavior before quarantine existed).
+
+### `quarantine_retention_days`
+
+Days to keep a quarantined run before the next live run purges it. Default: `14`. `0` keeps quarantined runs until you remove them.
+
+### `quarantine_warn_mb`
+
+`unpackr-doctor --source <dir>` warns when the quarantine holds more than this many MB. Default: `20480` (20 GB).
 
 ### `max_log_files`
 

@@ -67,7 +67,16 @@ def bind_app_helpers(app):
 
     import unpackr
 
-    for name in ("_note", "_record", "_record_folder_removed", "_process_archives", "_handle_video", "finish_issues"):
+    for name in (
+        "_note",
+        "_record",
+        "_record_folder_removed",
+        "_process_archives",
+        "_handle_video",
+        "finish_issues",
+        "_prepare_removal",
+        "removal_summary",
+    ):
         if not hasattr(app, name):
             setattr(app, name, types.MethodType(getattr(unpackr.UnpackrApp, name), app))
     for attr in ("run_errors", "run_warnings"):
