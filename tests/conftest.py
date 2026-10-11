@@ -84,10 +84,14 @@ def bind_app_helpers(app):
         "_plan_destination",
         "_move_subtitles",
         "_is_settling",
+        "_apply_archive_outcomes",
+        "_verify_par2",
+        "_finish_par2",
+        "_unrecognised_files",
     ):
         if not hasattr(app, name):
             setattr(app, name, types.MethodType(getattr(unpackr.UnpackrApp, name), app))
-    for attr in ("run_errors", "run_warnings"):
+    for attr in ("run_errors", "run_warnings", "damaged"):
         if not hasattr(app, attr):
             setattr(app, attr, [])
     if not hasattr(app, "dry_run_plan"):
@@ -106,6 +110,23 @@ def bind_app_helpers(app):
             ap.last_outcomes = []
         if not hasattr(ap, "describe_missing"):
             ap.describe_missing = lambda missing, limit=3: ", ".join(missing[:limit])
+        if not hasattr(ap, "preflight_set"):
+            ap.preflight_set = lambda *_a, **_k: None
+        if not hasattr(ap, "remove_par2_files"):
+            ap.remove_par2_files = lambda *_a, **_k: None
+        if not hasattr(ap, "last_par2"):
+            from core.archive_processor import Par2Outcome
+
+            # Mirror what the fake's process_par2_files returns (True = verified).
+            par2 = getattr(ap, "process_par2_files", None)
+
+            def _par2_outcome(folder, _par2=par2, _ap=ap):
+                ok = _par2(folder) if callable(_par2) else True
+                _ap.last_par2 = Par2Outcome(*(("verified", "par2_verified", "") if ok else ("damaged", "par2_damaged", "x")))
+                return ok
+
+            ap.process_par2_files = _par2_outcome
+            ap.last_par2 = Par2Outcome("none", "", "")
     fh = getattr(app, "file_handler", None)
     if fh is not None:
         if not hasattr(fh, "hold_paths"):

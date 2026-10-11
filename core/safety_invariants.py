@@ -17,6 +17,7 @@ References:
 """
 
 import logging
+import re
 from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime
@@ -25,6 +26,17 @@ from pathlib import Path
 from typing import Any, Optional, Set
 
 logger = logging.getLogger(__name__)
+
+
+_ARCHIVE_SUFFIXES = (".rar", ".zip", ".7z", ".par2")
+# Split volumes whose last suffix is a number: movie.r00, movie.z01, movie.7z.001, movie.001
+_SPLIT_VOLUME = re.compile(r"\.(r\d{2,3}|z\d{2}|\d{3})$", re.IGNORECASE)
+
+
+def is_archive_volume(path: Path) -> bool:
+    """True for archive files and split volumes (``.rar``, ``.r00``, ``.7z.001``, ``.z01``, ``.par2`` ...)."""
+    name = path.name.lower()
+    return name.endswith(_ARCHIVE_SUFFIXES) or bool(_SPLIT_VOLUME.search(name))
 
 
 class OperationType(Enum):
@@ -213,13 +225,7 @@ class SafetyInvariants:
         Returns:
             True if safe to delete archive, False otherwise
         """
-        archive_extensions = {".rar", ".zip", ".7z", ".par2"}
-
-        if (
-            operation.type == OperationType.DELETE
-            and operation.path.suffix.lower() in archive_extensions
-            and not extraction_verified
-        ):
+        if operation.type == OperationType.DELETE and is_archive_volume(operation.path) and not extraction_verified:
             logger.error(
                 f"INVARIANT VIOLATION I3: Deleting archive before validation\n"
                 f"  Archive: {operation.path}\n"

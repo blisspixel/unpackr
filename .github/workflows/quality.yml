@@ -32,12 +32,12 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y p7zip-full ffmpeg par2
+          sudo apt-get install -y 7zip ffmpeg par2
 
       - name: Install external tools (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install p7zip ffmpeg par2 || true
+          brew install sevenzip ffmpeg par2
 
       - name: Install dependencies
         run: |
@@ -124,6 +124,7 @@ jobs:
           tests/test_paths.py
           tests/test_defensive.py
           tests/test_archive_processor.py
+          tests/test_par2_settle_and_parity.py
           tests/test_video_processor.py
           tests/test_preservation_thresholds.py
           tests/test_decision_matrix.py

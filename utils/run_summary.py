@@ -33,6 +33,7 @@ def build_unpackr_run_summary(
     items: Optional[list[Dict[str, Any]]] = None,
     plan: Optional[list[Dict[str, Any]]] = None,
     removal: Optional[Dict[str, Any]] = None,
+    damaged: Optional[list[str]] = None,
 ) -> Dict[str, Any]:
     """
     Build a structured unpackr run summary.
@@ -78,6 +79,7 @@ def build_unpackr_run_summary(
         },
         "counts": {
             "folders_processed": int(snapshot.get("folders_processed", 0)),
+            "folders_settling": int(snapshot.get("folders_settling", 0)),
             "folders_deleted": int(snapshot.get("folders_deleted", 0)),
             "videos_found": int(snapshot.get("videos_found", 0)),
             "videos_moved": int(snapshot.get("videos_moved", 0)),
@@ -102,6 +104,9 @@ def build_unpackr_run_summary(
         summary["item_counts"] = item_counts
     if plan is not None:
         summary["plan"] = plan
+    if damaged is not None:
+        # Downloads found damaged this run (removed as junk); worth fetching again.
+        summary["damaged"] = list(damaged)
     if removal is not None:
         summary["removal"] = removal
         if removal.get("quarantined_files"):

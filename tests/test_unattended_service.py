@@ -62,7 +62,7 @@ class TestNotifications:
         assert notification_text({"videos_moved": 0}, []) is None
 
     def test_text(self):
-        title, body = notification_text({"videos_moved": 3, "archives_extracted": 1}, ["[x] Rel/a: bad"])
+        title, body = notification_text({"videos_moved": 3, "rars_extracted": 1}, ["[x] Rel/a: bad"])
         assert title == "unpackr"
         assert body.startswith("3 videos moved, 1 archive extracted, 1 item needs attention")
         assert "[x] Rel/a: bad" in body

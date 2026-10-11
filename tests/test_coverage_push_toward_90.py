@@ -1,5 +1,6 @@
 import threading
 from collections import deque
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -341,7 +342,7 @@ def test_stop_spinner_thread_handles_renderer_and_thread_join():
     thread.join.assert_called_once_with(timeout=1.0)
 
 
-def test_process_folder_skips_archive_extraction_after_par2_failure(tmp_path):
+def test_process_folder_still_extracts_after_par2_failure(tmp_path):
     folder = tmp_path / "work"
     folder.mkdir()
     (folder / "set.par2").write_text("x", encoding="utf-8")
@@ -390,26 +391,21 @@ def test_process_folder_skips_archive_extraction_after_par2_failure(tmp_path):
 
     moved = unpackr.UnpackrApp.process_folder(app, folder, destination, 1, 1)
     assert moved == 0
-    assert rar_calls["n"] == 0
+    # PAR2 failing never stops extraction: 7-Zip's CRC check decides. Here the fake
+    # extraction reports failure, so the PAR2 files and the folder are kept.
+    assert rar_calls["n"] == 1
     assert remove_args == {"par2_error": True, "archive_error": True}
-    assert delete_args == {"par2_error": True, "archive_error": True}
+    assert (folder / "set.par2").exists()
 
 
 def test_process_folder_handles_archive_stat_error_in_dry_run(tmp_path):
-    folder = Mock(spec=Path)
-    folder.name = "work"
+    folder = tmp_path / "work"
+    folder.mkdir()
+    archive = folder / "arc.rar"
+    archive.write_text("x", encoding="utf-8")
     destination = tmp_path / "dest"
     destination.mkdir()
     recorded = []
-    archive = Mock(spec=Path)
-    archive.is_file.return_value = True
-    archive.suffix = ".rar"
-    archive.name = "arc.rar"
-    archive.stat.side_effect = OSError("denied")
-    subfolder = Mock(spec=Path)
-    subfolder.is_file.return_value = False
-    subfolder.is_dir.return_value = False
-    folder.iterdir.side_effect = [[archive], [archive], [subfolder]]
 
     class Plan:
         def add_archive_extract(self, path, size):
@@ -441,7 +437,16 @@ def test_process_folder_handles_archive_stat_error_in_dry_run(tmp_path):
 
     bind_app_helpers(app)
 
-    unpackr.UnpackrApp.process_folder(app, folder, destination, 1, 1)
+    real_stat = Path.stat
+
+    def stat(self, *args, **kwargs):
+        # Only the size lookup fails; pathlib's own is_file()/exists() call stat() on Python <= 3.12.
+        if self.name == "arc.rar" and sys._getframe(1).f_code.co_name == "<genexpr>":
+            raise OSError("denied")
+        return real_stat(self, *args, **kwargs)
+
+    with patch.object(Path, "stat", stat):
+        unpackr.UnpackrApp.process_folder(app, folder, destination, 1, 1)
 
     assert recorded == [(archive, 0)]
 

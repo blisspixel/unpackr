@@ -114,7 +114,7 @@ When `true` (default), subtitles that belong to a moved video (`<video>.en.srt`,
 
 ### `settle_minutes`
 
-Unattended runs (`--unattended`, the service) skip any top-level download with a file or folder changed in the last this many minutes, reported as `folder_still_growing`, and leave it for a later run. Range `0` to `1440`, default `2`; `0` turns the check off.
+Unattended runs (`--unattended`, the service) skip any top-level download with a file or folder changed in the last this many minutes, reported as `folder_still_growing` and counted in `counts.folders_settling`, and leave it for a later run. Range `0` to `1440`, default `2`; `0` turns the check off. Manual runs do not wait: running Unpackr by hand means "clean now", and unfinished files are junk.
 
 ### `notify`
 

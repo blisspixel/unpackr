@@ -10,7 +10,9 @@
         ".mpeg",
         ".m4v",
         ".3gp",
-        ".webm"
+        ".webm",
+        ".ts",
+        ".m2ts"
     ],
     "music_extensions": [
         ".mp3",

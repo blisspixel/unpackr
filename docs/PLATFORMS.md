@@ -18,19 +18,19 @@ Cross-platform policy helpers:
 
 ```bash
 sudo apt update
-sudo apt install p7zip-full par2 ffmpeg
+sudo apt install 7zip par2 ffmpeg   # Debian 12+, Ubuntu 24.04+ (older releases: use the static 7zz)
 ```
 
 ### Fedora / RHEL
 
 ```bash
-sudo dnf install p7zip par2cmdline ffmpeg
+sudo dnf install 7zip par2cmdline ffmpeg
 ```
 
 ### macOS (Homebrew)
 
 ```bash
-brew install p7zip par2 ffmpeg
+brew install sevenzip par2 ffmpeg   # provides 7zz; Homebrew's p7zip (16.02) is below the 22.0 minimum
 ```
 
 Then install Unpackr:
@@ -169,5 +169,5 @@ See [BENCHMARKS.md](BENCHMARKS.md).
 ## CI Expectations
 
 - Windows: full regression suite + coverage gate
-- Linux: full regression suite + coverage gate on 3.11 + real-tool checks (`p7zip`/`par2`/`ffmpeg`)
+- Linux: full regression suite + coverage gate on 3.11 + real-tool checks (`7zip`/`par2`/`ffmpeg`)
 - macOS: expanded platform/safety/doctor/archive suite + optional real-tool checks
