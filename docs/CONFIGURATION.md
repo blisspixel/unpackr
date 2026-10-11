@@ -86,6 +86,30 @@ To keep .txt files, remove ".txt" from the list.
 
 File extensions recognized as videos. Add formats supported by your ffmpeg build.
 
+### `max_sample_duration_seconds`
+
+A video with sample evidence (name or folder) is removed only when it is at most this long. Default: `300`. Protects real episodes titled "Preview" or "Promo".
+
+### `dedupe_same_title`
+
+Opt-in. When `true`, two videos of the same title in one release (differing only in quality, codec or group tags) keep only the largest; the others are removed as `duplicate_encode`. Default: `false`.
+
+### `dangerous_extensions`
+
+Extensions that mark a release as bait. Default: executables, scripts, shortcuts and installers (Sonarr/Radarr and TRaSH Guides lists). A release containing one is failed and nothing in it is moved.
+
+### `incomplete_download_markers`
+
+File endings that mean a download is still running. Default: `[".!qB", ".!ut", ".part", ".crdownload", ".partial", ".download", ".aria2"]`. Such releases are skipped until a later run.
+
+### `sample_folder_names`
+
+Folder names whose videos are treated as samples. Default: `["sample", "samples", "proof", "proofs", "screens", "screenshots"]`.
+
+### `junk_name_patterns`
+
+Case-insensitive name patterns that are always junk. Default includes `RARBG*.txt`, `WWW.*.COM*`, `Thumbs.db`, `.DS_Store`, `desktop.ini`, `._*` and `*.url`.
+
 ### `delete_mode`
 
 How a live run disposes of what it removes. Default: `"quarantine"`.

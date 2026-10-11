@@ -24,6 +24,16 @@ Before live runs:
 
 No automated deletion workflow can eliminate all risk.
 
+## Junk, Bait And Unfinished Downloads
+
+Usenet and torrent releases are mostly not the video you wanted. Each top-level release folder is screened before anything else happens:
+
+- **Still downloading.** A release containing `.!qB`, `.!ut`, `.part`, `.crdownload`, `.partial`, `.download` or `.aria2` files is skipped for this run (`download_in_progress`); nothing in it is moved or removed. Configure with `incomplete_download_markers`.
+- **Disc structures.** A release with `VIDEO_TS` or `BDMV` is kept whole (`disc_structure_kept`).
+- **Bait.** Executables, scripts, shortcuts and installers (`.exe`, `.lnk`, `.scr`, `.bat`, `.cmd`, `.js`, `.vbs`, `.hta`, `.ps1`, `.msi`, `.jar` and more, see `dangerous_extensions`), names that disguise their type (`Movie.mkv.exe`, Unicode direction controls) and subtitles that are oversized or binary are removed (to quarantine by default) and the **whole release fails**: no video from it is moved, the decoy stays for review, and the run exits `3` with `folder_failed_security`. Archives whose listing contains such files are never extracted (`archive_dangerous_member`). Two exceptions are removed and flagged without failing the release: `rename.bat`/`rename.sh` next to a real video, and RARBG's `RARBG_DO_NOT_MIRROR.exe` placeholder. Unpackr never runs or opens any of these files.
+- **Junk by name.** Tracker spam (`RARBG.txt`, `WWW.*.COM*`), OS cruft (`Thumbs.db`, `.DS_Store`, `desktop.ini`, `._*`, `@eaDir`), torrent padding files (verified all zeros) and empty files are removable whatever their extension (`junk_name_patterns`).
+- **Samples.** A video named sample, proof, trailer, preview or promo, or inside a `Sample`, `Proof` or `Screens` folder anywhere in the release, is removed when it is at most `max_sample_duration_seconds` (300) long, or, with no readable duration, smaller than `min_sample_size_mb`. Next to a main video of 20 minutes or more, another video under 10% of its length and under 5 minutes is also a sample. The longest video in a release is never removed as a sample, and a long video is never removed on its name alone.
+
 ## What Gets Deleted
 
 | Item | Configurable? |

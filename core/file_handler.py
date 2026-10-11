@@ -4,6 +4,7 @@ Manages file operations, folder cleanup, and content classification.
 """
 
 import logging
+import re
 import stat
 import time
 from contextlib import suppress
@@ -12,10 +13,15 @@ from typing import Any, Dict, List, Optional, Set
 
 import psutil
 
+from core.junk_rules import junk_name_reason
 from core.safety_invariants import InvariantEnforcer
 from utils.defensive import ErrorRecovery, InputValidator, StateValidator, ValidationError
 from utils.error_messages import log_error
 from utils.platform_support import force_delete_directory, is_windows
+
+# Only real RAR part volumes (including leftovers such as .part033.rar.1); a bare
+# ".part" suffix is a partial download that is still being written.
+_RAR_PART_IN_NAME = re.compile(r"\.part\d+\.rar")
 
 
 class FileHandler:
@@ -495,6 +501,10 @@ class FileHandler:
                     return False
                 continue  # Single images and small collections (cover art) are treated as removable
 
+            # Tracker spam, OS cruft, torrent padding and empty files are junk whatever their extension.
+            if junk_name_reason(file, self.config) is not None:
+                continue
+
             # Check if it's a removable file (junk)
             # Also check for incomplete RAR parts like .part033.rar.1 (filename contains .rar or .part)
             # Also check for incomplete 7z parts like .7z.100 (filename contains .7z.)
@@ -510,7 +520,7 @@ class FileHandler:
                 or (file_ext.startswith(".r") and len(file_ext) == 3 and file_ext[2:].isdigit())
                 or ".rar." in filename_lower
                 or ".7z." in filename_lower
-                or ".part" in filename_lower
+                or _RAR_PART_IN_NAME.search(filename_lower) is not None
                 or (is_misnamed_video and archive_error)
                 or (file_ext == ".par2" and par2_error)
                 or archive_error

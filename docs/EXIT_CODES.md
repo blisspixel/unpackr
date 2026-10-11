@@ -45,6 +45,12 @@ Entries in `errors` and `warnings` start with a reason code in brackets, then `f
 | `archive_timeout`, `disk_space_low`, `archive_extract_failed` | error | Extraction did not finish; kept |
 | `archive_unsafe_paths` | error | Entries would extract outside the folder; blocked |
 | `archive_corrupt` | warning | CRC or data error; treated as junk |
+| `archive_dangerous_member` | error | The archive contains an executable, script or shortcut; not extracted |
+| `security_executable`, `security_dangerous_ext`, `security_double_extension`, `security_bidi_name`, `security_suspicious_subtitle` | error | Bait file removed; its release fails |
+| `folder_failed_security` | error | Release contained bait; nothing was moved from it |
+| `security_rename_script`, `security_known_marker` | warning | Removed, but the release continues |
+| `download_in_progress` | warning | Release still downloading; skipped this run |
+| `disc_structure_kept` | warning | `VIDEO_TS`/`BDMV` release kept whole |
 | `video_move_failed` | warning | A valid video could not be moved |
 | `no_videos_kept` | warning | Videos were found but every one was removed as a preview, sample or damaged file |
 

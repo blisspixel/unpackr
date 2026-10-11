@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from core.junk_rules import dangerous_extensions
 from core.safety_invariants import InvariantEnforcer
 from utils.defensive import StateValidator
 from utils.error_messages import log_error
@@ -347,6 +348,14 @@ class ArchiveProcessor:
                         location=archive_file.parent,
                     )
                     return outcome("held", "archive_unlistable", "7-Zip could not list the archive")
+                if self._last_path_check == "archive_dangerous_member":
+                    log_error(
+                        what_failed=f"SECURITY: Blocked {archive_file.name}",
+                        reason="Archive contains an executable, script or shortcut",
+                        action="Treat the release as fake; do not extract or run anything from it",
+                        location=archive_file.parent,
+                    )
+                    return outcome("blocked", "archive_dangerous_member", "contains an executable, script or shortcut")
                 log_error(
                     what_failed=f"SECURITY: Blocked {archive_file.name}",
                     reason="Archive contains unsafe paths (path traversal attempt)",
@@ -616,6 +625,7 @@ class ArchiveProcessor:
             # truncated middle (see _read_bounded_text in utils/safety.py).
             target_folder_resolved = target_folder.resolve()
             unsafe: dict[str, str] = {}
+            dangerous = set(dangerous_extensions(self.config))
 
             def check_line(line: str) -> bool:
                 # Skip blank/header/footer lines.
@@ -636,6 +646,10 @@ class ArchiveProcessor:
                 if reason:
                     unsafe["reason"] = reason
                     return False
+                if Path(file_path.replace("\\", "/")).suffix.lower() in dangerous:
+                    unsafe["reason"] = f"dangerous member {file_path}"
+                    unsafe["dangerous"] = "1"
+                    return False
                 return True
 
             success, _, code = SubprocessSafety.run_with_line_handler(
@@ -647,6 +661,8 @@ class ArchiveProcessor:
 
             if unsafe:
                 logging.error(f"SECURITY: Archive contains {unsafe['reason']}")
+                if unsafe.get("dangerous"):
+                    self._last_path_check = "archive_dangerous_member"
                 return False
 
             if not success or code != 0:

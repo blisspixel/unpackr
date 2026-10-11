@@ -9,6 +9,13 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, TypeGuard, cast
 
+from core.junk_rules import (
+    DEFAULT_DANGEROUS_EXTENSIONS,
+    DEFAULT_INCOMPLETE_MARKERS,
+    DEFAULT_JUNK_NAME_PATTERNS,
+    DEFAULT_SAMPLE_FOLDER_NAMES,
+)
+
 
 def _is_str_list(value: Any) -> TypeGuard[List[str]]:
     """Return True when a config value is a list of strings."""
@@ -22,7 +29,21 @@ class Config:
 
     # Default configuration values
     DEFAULT_CONFIG = {
-        "video_extensions": [".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".mpg", ".mpeg", ".m4v", ".3gp", ".webm"],
+        "video_extensions": [
+            ".mp4",
+            ".avi",
+            ".mkv",
+            ".mov",
+            ".wmv",
+            ".flv",
+            ".mpg",
+            ".mpeg",
+            ".m4v",
+            ".3gp",
+            ".webm",
+            ".ts",
+            ".m2ts",
+        ],  # fmt: skip
         "music_extensions": [".mp3", ".flac", ".wav", ".aac", ".m4a", ".ogg", ".wma"],
         "image_extensions": [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp", ".raw", ".cr2", ".nef"],
         "document_extensions": [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".rtf", ".odt"],
@@ -55,6 +76,12 @@ class Config:
         "min_documents": 10,
         "min_sample_size_mb": 50,
         "min_video_duration_seconds": 10,
+        "max_sample_duration_seconds": 300,
+        "dedupe_same_title": False,
+        "dangerous_extensions": list(DEFAULT_DANGEROUS_EXTENSIONS),
+        "incomplete_download_markers": list(DEFAULT_INCOMPLETE_MARKERS),
+        "sample_folder_names": list(DEFAULT_SAMPLE_FOLDER_NAMES),
+        "junk_name_patterns": list(DEFAULT_JUNK_NAME_PATTERNS),
         "delete_mode": "quarantine",
         "quarantine_retention_days": 14,
         "quarantine_warn_mb": 20480,
@@ -167,6 +194,7 @@ class Config:
             "min_sample_size_mb": (1, 10000, "Minimum sample size", 50),
             "min_video_duration_seconds": (0, 3600, "Minimum video duration", 10),
             "quarantine_retention_days": (0, 3650, "Quarantine retention days", 14),
+            "max_sample_duration_seconds": (0, 7200, "Maximum sample duration", 300),
             "quarantine_warn_mb": (0, 10_000_000, "Quarantine warning size (MB)", 20480),
             "max_log_files": (1, 100, "Maximum log files", 3),
             "max_runtime_hours": (1, 168, "Maximum runtime hours", 48),
@@ -219,6 +247,10 @@ class Config:
             "image_extensions": [".jpg", ".png", ".gif"],
             "document_extensions": [".pdf", ".doc", ".txt"],
             "removable_extensions": [".nfo", ".sfv", ".txt"],
+            "dangerous_extensions": [".exe", ".lnk", ".scr"],
+            "incomplete_download_markers": [".!qB", ".part", ".crdownload"],
+            "sample_folder_names": ["sample", "proof"],
+            "junk_name_patterns": ["RARBG*.txt", "Thumbs.db"],
         }
 
         for field, examples in list_fields.items():
