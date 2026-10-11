@@ -228,6 +228,9 @@ def test_unpackr_main_vhealth_uses_destination_dir(monkeypatch, tmp_path):
             self.dry_run_plan = None
             self.stats = types.SimpleNamespace(get_snapshot=lambda: {"videos_moved": 0})
 
+        def finish_issues(self):
+            return [], []
+
         def _stop_spinner_thread(self):
             pass
 

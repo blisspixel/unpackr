@@ -54,6 +54,7 @@ class Config:
         "min_image_files": 10,
         "min_documents": 10,
         "min_sample_size_mb": 50,
+        "min_video_duration_seconds": 10,
         "max_log_files": 3,
         "log_folder": "logs",
         "max_runtime_hours": 48,
@@ -161,6 +162,7 @@ class Config:
             "min_image_files": (0, 1000, "Minimum image files", 10),
             "min_documents": (0, 1000, "Minimum documents", 10),
             "min_sample_size_mb": (1, 10000, "Minimum sample size", 50),
+            "min_video_duration_seconds": (0, 3600, "Minimum video duration", 10),
             "max_log_files": (1, 100, "Maximum log files", 3),
             "max_runtime_hours": (1, 168, "Maximum runtime hours", 48),
             "max_videos_per_folder": (1, 10000, "Maximum videos per folder", 500),
@@ -344,6 +346,11 @@ class Config:
     def min_documents(self) -> int:
         """Get minimum number of documents to preserve folder."""
         return self._get_int("min_documents", 10)
+
+    @property
+    def min_video_duration_seconds(self) -> int:
+        """Videos shorter than this many seconds are previews or samples and are removed. 0 disables."""
+        return self._get_int("min_video_duration_seconds", 10)
 
     @property
     def max_log_files(self) -> int:

@@ -3,10 +3,12 @@ from pathlib import Path
 import types
 
 import unpackr
+from conftest import bind_app_helpers
 
 
 def test_run_handles_missing_or_empty_work_plan(capsys, tmp_path):
     app = types.SimpleNamespace(work_plan=None, destination_dir=None)
+    bind_app_helpers(app)
     unpackr.UnpackrApp.run(app, tmp_path, tmp_path)
     out = capsys.readouterr().out
     assert "No work plan available" in out
@@ -17,6 +19,7 @@ def test_run_handles_missing_or_empty_work_plan(capsys, tmp_path):
             video_folders=[], content_folders=[], total_videos=0, loose_videos=[], junk_folders=[]
         ),
     )
+    bind_app_helpers(app2)
     unpackr.UnpackrApp.run(app2, tmp_path, tmp_path)
     out = capsys.readouterr().out
     assert "No video folders found" in out
@@ -59,13 +62,17 @@ def test_run_dry_run_loose_and_junk_paths(tmp_path):
         process_folder=lambda *_a, **_k: 0,
         cancellation_requested=False,
         dry_run=True,
-        dry_run_plan=types.SimpleNamespace(print_summary=lambda: None),
+        dry_run_plan=types.SimpleNamespace(
+            print_summary=lambda: None, add_video_move=lambda *_a, **_k: None, add_video_delete=lambda *_a, **_k: None
+        ),
         video_processor=types.SimpleNamespace(check_video_health=lambda *_: True),
         file_handler=types.SimpleNamespace(
             is_folder_empty_or_removable=lambda *_a, **_k: True, safe_delete_folder=lambda *_a, **_k: True
         ),
         _stop_spinner_thread=lambda: None,
     )
+
+    bind_app_helpers(app)
 
     unpackr.UnpackrApp.run(app, tmp_path, tmp_path / "dest")
     assert app.stats["folders_preserved"] == 1
@@ -138,6 +145,7 @@ def test_display_summary_prints_tip(capsys):
         failed_deletions=[],
         destination_dir=Path("D:/Videos"),
     )
+    bind_app_helpers(app)
     unpackr.UnpackrApp.display_summary(app)
     out = capsys.readouterr().out
     assert "Tip: Run 'vhealth" in out

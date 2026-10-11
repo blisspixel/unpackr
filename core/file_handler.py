@@ -8,7 +8,7 @@ import stat
 import time
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 import psutil
 
@@ -39,6 +39,10 @@ class FileHandler:
         self.enforcer = None
         if destination_root:
             self.enforcer = InvariantEnforcer(destination_root, config)
+        # Files kept on purpose for the user to fix and retry (for example the
+        # remaining volumes of an incomplete archive set). A folder that holds any
+        # of them is never removable.
+        self.held_paths: Dict[Path, str] = {}
 
         # Defensive: verify config has required attributes
         required_attrs = ["video_extensions", "removable_extensions"]
@@ -390,6 +394,21 @@ class FileHandler:
             logging.warning(f"Could not fully scan {folder} for unwanted files: {e}")
             return True
 
+    @staticmethod
+    def _held_key(path: Path) -> Path:
+        try:
+            return path.resolve()
+        except OSError:
+            return path.absolute()
+
+    def hold_paths(self, paths: List[Path], reason: str) -> None:
+        """Keep these files: their folder will not be cleaned up in this run."""
+        for path in paths:
+            self.held_paths[self._held_key(path)] = reason
+
+    def held_reason(self, path: Path) -> Optional[str]:
+        return self.held_paths.get(self._held_key(path))
+
     def is_folder_empty_or_removable(self, folder: Path, par2_error: bool = False, archive_error: bool = False) -> bool:
         """
         Check if folder is empty or contains only removable files.
@@ -426,6 +445,11 @@ class FileHandler:
 
             if self._is_linklike_path(file):
                 logging.info(f"Folder '{folder}' not deleted: contains symlink or junction '{file.name}'")
+                return False
+
+            held = self.held_paths and self.held_reason(file)
+            if held:
+                logging.info(f"Folder '{folder}' not deleted: '{file.name}' is kept ({held})")
                 return False
 
             if is_dir:

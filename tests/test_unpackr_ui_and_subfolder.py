@@ -2,6 +2,7 @@ import threading
 import types
 
 import unpackr
+from conftest import bind_app_helpers
 
 
 def _base_stats():
@@ -143,6 +144,7 @@ def test_process_subfolder_dry_and_live_paths(tmp_path):
         _process_subfolder=lambda *_a, **_k: None,
         failed_deletions=[],
     )
+    bind_app_helpers(app_dry)
     unpackr.UnpackrApp._process_subfolder(app_dry, sub, destination)
     assert app_dry.stats["videos_found"] == 1
     assert app_dry.stats["videos_moved"] == 1
@@ -174,6 +176,7 @@ def test_process_subfolder_dry_and_live_paths(tmp_path):
         _process_subfolder=lambda *_a, **_k: None,
         failed_deletions=[],
     )
+    bind_app_helpers(app_live)
     unpackr.UnpackrApp._process_subfolder(app_live, sub, destination)
     assert app_live.stats["videos_healthy"] == 1
     assert app_live.stats["videos_corrupt"] == 1

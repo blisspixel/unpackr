@@ -19,12 +19,12 @@ from collections import deque
 from contextlib import suppress
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Deque, Dict, List, NoReturn, Optional, Tuple
+from typing import Any, Callable, Deque, Dict, List, NoReturn, Optional, Tuple
 
 from colorama import Fore, Style, init
 
 from core import Config, setup_logging
-from core.archive_processor import ArchiveProcessor
+from core.archive_processor import ArchiveProcessor, ArchiveSet, find_archive_sets
 from core.file_handler import FileHandler
 from core.video_processor import VideoProcessor
 from utils.cli_prompts import clean_path, countdown_prompt, get_user_input, quick_preflight, resolve_cli_presentation
@@ -40,6 +40,10 @@ from version import __version__
 
 # Set UTF-8 encoding for Windows console to handle special characters in easter eggs
 configure_windows_console_utf8()
+
+
+# Live run finished, but some items need attention (held archive sets, blocked archives).
+EXIT_COMPLETED_WITH_ERRORS = 3
 
 
 class ThreadSafeStats:
@@ -272,6 +276,9 @@ class UnpackrApp:
         # Cancellation support
         self.cancellation_requested = False
         self.active_process = None  # Track current subprocess for termination
+        # Problems a person should look at; errors make a live run exit non-zero.
+        self.run_errors: List[str] = []
+        self.run_warnings: List[str] = []
 
         # Load snarky comments for easter eggs
         self.comments = self._load_comments()
@@ -600,6 +607,114 @@ class UnpackrApp:
         # Return filtered list
         return [v for v in video_files if v not in to_delete]
 
+    def _note(self, level: str, folder: Path, item: str, reason_code: str, detail: str) -> None:
+        """Record a problem for the summary, the log and the --json errors/warnings."""
+        message = f"[{reason_code}] {folder.name}/{item}: {detail}"
+        (self.run_errors if level == "error" else self.run_warnings).append(message)
+
+    def _process_archives(
+        self,
+        folder: Path,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None,
+        archive_sets: Optional[List[ArchiveSet]] = None,
+    ) -> Tuple[bool, int]:
+        """Extract the archive sets in one folder.
+
+        Returns (archive_error, number_of_sets). Sets that are incomplete, unreadable,
+        password-protected or interrupted are kept in place and the folder is not
+        removed, so the user can fetch the missing part and run again.
+        """
+        if archive_sets is None:
+            archive_sets = find_archive_sets(folder)
+        if not archive_sets:
+            return False, 0
+
+        if self.dry_run:
+            for archive_set in archive_sets:
+                if archive_set.missing or archive_set.first is None:
+                    missing = self.archive_processor.describe_missing(archive_set.missing)
+                    if self.dry_run_plan:
+                        self.dry_run_plan.add_archive_skip(
+                            folder / archive_set.name, f"incomplete set, missing {missing}"
+                        )
+                    self._note("warning", folder, archive_set.name, "archive_volume_missing", f"missing {missing}")
+                    continue
+                if self.dry_run_plan:
+                    try:
+                        size = sum(v.stat().st_size for v in archive_set.volumes)
+                    except OSError:
+                        size = 0
+                    self.dry_run_plan.add_archive_extract(archive_set.first, size)
+            logging.info(f"[DRY-RUN] Would extract {len(archive_sets)} archive set(s) in {folder}")
+            return False, len(archive_sets)
+
+        if progress_callback is not None:
+            success = self.archive_processor.process_rar_files(folder, progress_callback=progress_callback)
+        else:
+            success = self.archive_processor.process_rar_files(folder)
+        if success:
+            self.stats["rars_extracted"] += 1
+        for outcome in self.archive_processor.last_outcomes:
+            if outcome.status == "held":
+                self.file_handler.hold_paths(outcome.volumes, outcome.reason_code)
+                self._note("error", folder, outcome.name, outcome.reason_code, f"{outcome.detail} (kept for retry)")
+            elif outcome.status == "blocked":
+                self._note("error", folder, outcome.name, outcome.reason_code, outcome.detail)
+            elif outcome.status == "failed":
+                self._note("warning", folder, outcome.name, outcome.reason_code, outcome.detail)
+        return not success, len(archive_sets)
+
+    def _handle_video(self, video_file: Path, destination_dir: Path) -> bool:
+        """Validate one video, then move it to the destination or remove it.
+
+        Previews and samples (shorter than min_video_duration_seconds) and damaged
+        or truncated files are removed. Returns True when the video was moved
+        (or, in a dry run, would be moved).
+        """
+        try:
+            size_bytes = video_file.stat().st_size
+        except OSError:
+            size_bytes = 0
+
+        if self.dry_run:
+            preview = self.video_processor.classify_preview(self.video_processor.probe_duration(video_file))
+            if preview is not None:
+                self.stats["videos_sample"] += 1
+                if self.dry_run_plan:
+                    self.dry_run_plan.add_video_delete(video_file, f"preview or sample: {preview.detail}")
+                logging.info(f"[DRY-RUN] Would remove preview/sample video: {video_file.name} ({preview.detail})")
+                return False
+            if self.dry_run_plan:
+                self.dry_run_plan.add_video_move(video_file, size_bytes, "unknown")
+            logging.info(f"[DRY-RUN] Would validate and move {video_file.name} to {destination_dir}")
+            self.stats["videos_moved"] += 1
+            return True
+
+        if self.video_processor.check_video_health(video_file):
+            self.stats["videos_healthy"] += 1
+            if self.file_handler.move_file(video_file, destination_dir):
+                self.stats["videos_moved"] += 1
+                logging.info(f"MOVED: {video_file.name} ({size_bytes / (1024 * 1024):.1f}MB) -> {destination_dir}")
+                return True
+            self._note(
+                "warning", video_file.parent, video_file.name, "video_move_failed", "could not move to destination"
+            )
+            return False
+
+        verdict = self.video_processor.last_verdict
+        if verdict is not None and verdict.category == "preview":
+            self.stats["videos_sample"] += 1
+            logging.info(f"Removing preview/sample video: {video_file.name} ({verdict.detail})")
+        else:
+            self.stats["videos_corrupt"] += 1
+            self.stats["videos_failed"] += 1
+            category = verdict.category if verdict else "corrupt"
+            detail = f" ({verdict.detail})" if verdict and verdict.detail else ""
+            logging.info(f"Removing {category} video: {video_file.name}{detail}")
+        if self.file_handler.wait_for_file_release(str(video_file)):
+            self.file_handler.delete_video_file_with_retry(video_file)
+        return False
+
     def process_folder(self, folder: Path, destination_dir: Path, current: int, total: int) -> int:
         """
         Process a single folder.
@@ -644,57 +759,23 @@ class UnpackrApp:
         else:
             par2_error = False
 
-        # Process archive files AFTER PAR2 (only if PAR2 didn't delete them)
-        # Skip extraction if PAR2 repair failed (archives already deleted as corrupted)
+        # Process archive sets AFTER PAR2 (skipped when PAR2 repair failed and removed them)
         if not par2_error:
-            rar_pattern = re.compile(r"\.r\d{2}$")
-            archive_files = []
+            archive_sets = find_archive_sets(folder)
+            if archive_sets:
+                self._update_progress(current, total, f"Extract {len(archive_sets)} archive set(s): {folder.name[:40]}")
+            self.stuck_detector.mark_progress()
 
-            for file in folder.iterdir():
-                if file.is_file():
-                    ext_lower = file.suffix.lower()
-                    filename_lower = file.name.lower()
-                    if (
-                        ext_lower == ".rar"
-                        or rar_pattern.match(ext_lower)
-                        or ext_lower == ".7z"
-                        or ".7z." in filename_lower
-                    ):
-                        archive_files.append(file)
-            if archive_files:
-                # More specific message - show archive count
-                self._update_progress(current, total, f"Extract {len(archive_files)} archives: {folder.name[:40]}")
-                self.stuck_detector.mark_progress()  # Mark progress before extraction
-                if self.dry_run:
-                    if self.dry_run_plan:
-                        for archive in archive_files:
-                            try:
-                                size = archive.stat().st_size
-                                self.dry_run_plan.add_archive_extract(archive, size)
-                            except OSError:
-                                self.dry_run_plan.add_archive_extract(archive, 0)
-                    logging.info(f"[DRY-RUN] Would extract {len(archive_files)} archives in {folder}")
-                    success = True
-                    archive_error = False
-                else:
-                    # Pass progress callback to show extraction progress with folder context
-                    def extraction_progress(idx, total_archives, msg):
-                        # Add folder context to extraction message
-                        folder_context = f"[{folder.name[:30]}]" if len(folder.name) > 30 else f"[{folder.name}]"
-                        msg_with_context = f"{folder_context} {msg}"
-                        self._update_progress(current, total, msg_with_context)
-                        self.stuck_detector.mark_progress()  # Mark progress during extraction
+            def extraction_progress(idx, total_archives, msg):
+                folder_context = f"[{folder.name[:30]}]" if len(folder.name) > 30 else f"[{folder.name}]"
+                self._update_progress(current, total, f"{folder_context} {msg}")
+                self.stuck_detector.mark_progress()
 
-                    success = self.archive_processor.process_rar_files(folder, progress_callback=extraction_progress)
-                    if success:
-                        self.stats["rars_extracted"] += 1
-                    self.stuck_detector.mark_progress()  # Mark progress after extraction
-                    # If extraction failed, archives are now junk and should be treated as removable
-                    archive_error = not success
-            else:
-                archive_error = False
+            archive_error, _ = self._process_archives(
+                folder, progress_callback=extraction_progress, archive_sets=archive_sets
+            )
+            self.stuck_detector.mark_progress()
         else:
-            # PAR2 repair failed - archives already deleted
             archive_error = True
 
         # Process video files FIRST (before recursing into subfolders)
@@ -707,45 +788,12 @@ class UnpackrApp:
         # Don't increment here to avoid double-counting
 
         for idx, video_file in enumerate(video_files, 1):
-            # Show folder context and video being validated
             folder_context = f"[{folder.name[:30]}]" if len(folder.name) > 30 else f"[{folder.name}]"
             self._update_progress(
                 current, total, f"{folder_context} Validate {idx}/{len(video_files)}: {video_file.name[:40]}"
             )
-
-            if self.dry_run:
-                if self.dry_run_plan:
-                    try:
-                        size = video_file.stat().st_size
-                        self.dry_run_plan.add_video_move(video_file, size, "unknown")
-                    except OSError:
-                        self.dry_run_plan.add_video_move(video_file, 0, "unknown")
-                logging.info(f"[DRY-RUN] Would validate video: {video_file}")
-                # In dry-run, simulate success
-                logging.info(f"[DRY-RUN] Would move {video_file.name} to {destination_dir}")
+            if self._handle_video(video_file, destination_dir):
                 moved_count += 1
-                self.stats["videos_moved"] += 1
-            else:
-                # Get file size BEFORE moving (after move, file no longer at original path)
-                try:
-                    file_size_mb = video_file.stat().st_size / (1024 * 1024)
-                except OSError:
-                    file_size_mb = 0
-
-                if self.video_processor.check_video_health(video_file):
-                    self.stats["videos_healthy"] += 1
-                    if self.file_handler.move_file(video_file, destination_dir):
-                        moved_count += 1
-                        self.stats["videos_moved"] += 1
-                        # Log success so user knows videos are being moved
-                        logging.info(f"MOVED: {video_file.name} ({file_size_mb:.1f}MB) -> {destination_dir}")
-                else:
-                    # Delete corrupt video
-                    self.stats["videos_corrupt"] += 1
-                    self.stats["videos_failed"] += 1
-                    logging.info(f"Deleting corrupt video: {video_file.name}")
-                    if self.file_handler.wait_for_file_release(str(video_file)):
-                        self.file_handler.delete_video_file_with_retry(video_file)
 
         # Process subfolders AFTER processing videos in this folder
         for subfolder in folder.iterdir():
@@ -1209,38 +1257,12 @@ class UnpackrApp:
                         self.stats["par2s_repaired"] += 1
                     par2_error = not success
 
-            # Process archives AFTER PAR2 in this subfolder (only if PAR2 didn't delete them)
+            # Process archive sets AFTER PAR2 in this subfolder
             if not par2_error:
-                rar_pattern = re.compile(r"\.r\d{2}$")
-                archive_files = []
-
-                for file in subfolder.iterdir():
-                    if file.is_file():
-                        ext_lower = file.suffix.lower()
-                        filename_lower = file.name.lower()
-                        if (
-                            ext_lower == ".rar"
-                            or rar_pattern.match(ext_lower)
-                            or ext_lower == ".7z"
-                            or ".7z." in filename_lower
-                        ):
-                            archive_files.append(file)
-
-                archive_error = False
-                if archive_files:
-                    logging.info(f"Extracting {len(archive_files)} archives in subfolder {subfolder.name}")
-                    if self.dry_run:
-                        logging.info(f"[DRY-RUN] Would extract {len(archive_files)} archives in {subfolder}")
-                        success = True
-                        archive_error = False
-                    else:
-                        # Extraction progress is logged but no progress bar in subfolders
-                        success = self.archive_processor.process_rar_files(subfolder)
-                        if success:
-                            self.stats["rars_extracted"] += 1
-                        archive_error = not success
+                archive_error, sets_here = self._process_archives(subfolder)
+                if sets_here:
+                    logging.info(f"Processed {sets_here} archive set(s) in subfolder {subfolder.name}")
             else:
-                # PAR2 repair failed - archives already deleted
                 archive_error = True
 
             # Find and process videos in this subfolder
@@ -1248,29 +1270,7 @@ class UnpackrApp:
             # Track total videos found (before processing)
             self.stats["videos_found"] += len(video_files)
             for video_file in video_files:
-                if self.dry_run:
-                    logging.info(f"[DRY-RUN] Would validate and move video: {video_file.name}")
-                    self.stats["videos_moved"] += 1
-                else:
-                    # Get file size BEFORE moving (after move, file no longer at original path)
-                    try:
-                        file_size_mb = video_file.stat().st_size / (1024 * 1024)
-                    except OSError:
-                        file_size_mb = 0
-
-                    if self.video_processor.check_video_health(video_file):
-                        self.stats["videos_healthy"] += 1
-                        if self.file_handler.move_file(video_file, destination_dir):
-                            self.stats["videos_moved"] += 1
-                            # Log success so user knows videos are being moved
-                            logging.info(f"MOVED: {video_file.name} ({file_size_mb:.1f}MB) -> {destination_dir}")
-                    else:
-                        # Delete corrupt video
-                        self.stats["videos_corrupt"] += 1
-                        self.stats["videos_failed"] += 1
-                        logging.info(f"Deleting corrupt video: {video_file.name}")
-                        if self.file_handler.wait_for_file_release(str(video_file)):
-                            self.file_handler.delete_video_file_with_retry(video_file)
+                self._handle_video(video_file, destination_dir)
 
             # Recursively process nested subfolders
             for sub in subfolder.iterdir():
@@ -1394,24 +1394,7 @@ class UnpackrApp:
                     if self.cancellation_requested:
                         break
                     try:
-                        if self.dry_run:
-                            logging.info(f"[DRY-RUN] Would validate and move loose video: {video.name}")
-                            self.stats["videos_moved"] += 1
-                        else:
-                            # Validate video using video_processor (not undefined video_validator)
-                            if self.video_processor and self.video_processor.check_video_health(video):
-                                self.stats["videos_healthy"] += 1
-                                # Move to destination
-                                dest_file = destination_dir / video.name
-                                if not dest_file.exists():
-                                    video.rename(dest_file)
-                                    self.stats["videos_moved"] += 1
-                                    logging.info(f"Moved loose video: {video.name}")
-                            else:
-                                self.stats["videos_corrupt"] += 1
-                                self.stats["videos_failed"] += 1
-                                logging.warning(f"Loose video failed validation: {video.name}")
-                                video.unlink()  # Delete corrupt video
+                        self._handle_video(video, destination_dir)
                     except Exception as e:
                         logging.error(f"Error processing loose video {video}: {e}")
 
@@ -1568,6 +1551,17 @@ class UnpackrApp:
             print(f"{Fore.GREEN}Cleaned up {total_deleted} empty folders{Style.RESET_ALL}")
             logging.info(f"Final cleanup: deleted {total_deleted} empty folders total")
 
+    def finish_issues(self) -> Tuple[List[str], List[str]]:
+        """Final error and warning lists, including whole-run observations."""
+        warnings = list(self.run_warnings)
+        removed = self.stats["videos_sample"] + self.stats["videos_corrupt"]
+        if not self.dry_run and self.stats["videos_moved"] == 0 and removed > 0:
+            warnings.append(
+                f"[no_videos_kept] no videos were kept: {self.stats['videos_sample']} removed as previews or samples, "
+                f"{self.stats['videos_corrupt']} as damaged"
+            )
+        return list(self.run_errors), warnings
+
     def display_summary(self):
         """Display processing summary with detailed stats."""
         elapsed = time.time() - self.start_time if self.start_time else 0
@@ -1610,6 +1604,14 @@ class UnpackrApp:
 
         if warnings:
             print(f"\n  {' | '.join(warnings)}")
+
+        if self.run_errors:
+            label = "WOULD NEED ATTENTION" if self.dry_run else "NEEDS ATTENTION"
+            print(f"\n  {Fore.RED}{label} ({len(self.run_errors)}){Style.RESET_ALL}")
+            for message in self.run_errors[:10]:
+                print(f"    {message}")
+            if len(self.run_errors) > 10:
+                print(f"    ... and {len(self.run_errors) - 10} more (see the log or --json)")
 
         # Suggest vhealth for collection maintenance if videos were processed
         if self.stats["videos_moved"] > 0 and self.destination_dir:
@@ -1905,7 +1907,13 @@ def main():
                 emit_json_and_exit(0, "cancelled", cancelled=True)
             if runtime_app.run_state is not None:
                 runtime_app.run_state.clear()
-            emit_json_and_exit(0, "completed")
+            run_errors, run_warnings = runtime_app.finish_issues()
+            if run_errors and not runtime_app.dry_run:
+                logging.warning(f"Completed with {len(run_errors)} item(s) needing attention")
+                emit_json_and_exit(
+                    EXIT_COMPLETED_WITH_ERRORS, "completed_with_errors", errors=run_errors, warnings=run_warnings
+                )
+            emit_json_and_exit(0, "completed", warnings=run_errors + run_warnings)
         except Exception as e:
             print(Fore.RED + f"\nFatal error during processing: {e}" + Style.RESET_ALL)
             logging.error(f"Processing failed: {e}", exc_info=True)
