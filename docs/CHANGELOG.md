@@ -4,6 +4,9 @@ Release dates are included where recorded.
 
 ## Unreleased
 
+- `--json` now includes `items`, one entry per file decision with an action and reason code, plus `item_counts`; `--report FILE` writes the same items as JSON Lines with a closing summary line. Every file present before the run gets exactly one terminal action, and the dry run produces the same items marked `planned` (#7).
+- The dry run treats files it plans to move, delete or extract as gone when deciding folder cleanup, so planned folder deletions match the live run.
+- `--show-plan --json` includes a folder-level `plan`.
 - Videos shorter than `min_video_duration_seconds` (default 10) are removed as previews or samples and counted as samples, not reported as corrupt. A missing duration is the only duration-based corruption. The dry run probes durations and lists previews as deletions instead of "validated" moves (#2).
 - Truncated videos are rejected: the stream check compares how far the first video stream actually reaches with the declared duration, and recognizes ffmpeg's "File ended prematurely" and "partial file" messages (#4).
 - Archive volumes are grouped into sets. A set with a missing volume, an archive 7-Zip cannot list, a password-protected archive, or an interrupted extraction is kept with its folder instead of deleted, and listing failures are no longer reported as path traversal. Only sets that extracted successfully are removed (#3).

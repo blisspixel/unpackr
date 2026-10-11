@@ -30,6 +30,8 @@ def build_unpackr_run_summary(
     warnings: Optional[list[str]] = None,
     recommended_actions: Optional[list[str]] = None,
     version: str = "",
+    items: Optional[list[Dict[str, Any]]] = None,
+    plan: Optional[list[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     Build a structured unpackr run summary.
@@ -61,7 +63,7 @@ def build_unpackr_run_summary(
             actions.append("Run without --dry-run to execute the planned actions.")
         actions.append("Run `unpackr-doctor --json` and confirm status is ready before unattended live runs.")
 
-    return {
+    summary: Dict[str, Any] = {
         "timestamp_utc": utc_now_iso(),
         "tool": "unpackr",
         "version": version,
@@ -90,6 +92,16 @@ def build_unpackr_run_summary(
         "warnings": warns,
         "recommended_actions": actions,
     }
+    if items is not None:
+        item_counts: Dict[str, int] = {}
+        for item in items:
+            action = str(item.get("action", ""))
+            item_counts[action] = item_counts.get(action, 0) + 1
+        summary["items"] = items
+        summary["item_counts"] = item_counts
+    if plan is not None:
+        summary["plan"] = plan
+    return summary
 
 
 def dumps_run_summary(summary: Mapping[str, Any]) -> str:
