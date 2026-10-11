@@ -26,6 +26,13 @@ from colorama import Fore, Style, init
 from core import Config, setup_logging
 from core.archive_processor import ArchiveProcessor, ArchiveSet, find_archive_sets
 from core.file_handler import FileHandler
+from core.junk_rules import (
+    classify_security,
+    decide_duplicate_encodes,
+    decide_release_samples,
+    has_disc_structure,
+    is_incomplete_marker,
+)
 from core.remover import Remover, is_internal, new_run_id, purge_quarantine
 from core.run_report import ReportItem, RunReport
 from core.video_processor import VideoProcessor
@@ -112,6 +119,12 @@ ASCII_ART = r"""
              |_|
 
 """
+
+
+# "video.mkv.1", "video.mp4.2": duplicate-download suffixes left by downloaders.
+_NUMBERED_VIDEO_SUFFIX = re.compile(
+    r"(\.(?:mp4|mkv|avi|mov|wmv|flv|webm|m4v|mpg|mpeg|ts|m2ts))\.\d{1,3}$", re.IGNORECASE
+)
 
 
 class WorkPlan:
@@ -436,24 +449,22 @@ class UnpackrApp:
                 except (PermissionError, OSError):
                     continue
 
-                if is_regular_file:
-                    filename_lower = file.name.lower()
-                    # Check if filename contains a video extension followed by another extension
-                    video_exts = [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v", ".mpg", ".mpeg"]
-                    for video_ext in video_exts:
-                        if f"{video_ext}." in filename_lower:
-                            # File like "video.mp4.1" - rename to "video.mp4"
-                            new_name = file.name[: file.name.lower().rindex(video_ext) + len(video_ext)]
-                            new_path = file.parent / new_name
-                            try:
-                                if not new_path.exists():
-                                    file.rename(new_path)
-                                    logging.info(f"Renamed misnamed video: {file.name} -> {new_name}")
-                                else:
-                                    logging.warning(f"Cannot rename {file.name} - target already exists: {new_name}")
-                            except Exception as e:
-                                logging.error(f"Failed to rename {file.name}: {e}")
-                            break
+                # Only duplicate-download suffixes such as "video.mp4.1" are renamed. Anything else
+                # after a video extension ("x.mkv.part" still downloading, "x.mkv.exe" bait) is left
+                # as is, and a dry run renames nothing.
+                if is_regular_file and not getattr(self, "dry_run", False):
+                    match = _NUMBERED_VIDEO_SUFFIX.search(file.name)
+                    if match:
+                        new_name = file.name[: match.start(1) + len(match.group(1))]
+                        new_path = file.parent / new_name
+                        try:
+                            if not new_path.exists():
+                                file.rename(new_path)
+                                logging.info(f"Renamed misnamed video: {file.name} -> {new_name}")
+                            else:
+                                logging.warning(f"Cannot rename {file.name} - target already exists: {new_name}")
+                        except Exception as e:
+                            logging.error(f"Failed to rename {file.name}: {e}")
 
             # Count videos, RARs, 7z, PAR2s, and content files (optimized single-pass)
             video_extensions = set(self.config.video_extensions)
@@ -568,6 +579,19 @@ class UnpackrApp:
         self.work_plan = plan
         return plan
 
+    def _longer_than_sample_cap(self, video: Path) -> bool:
+        """True when the video's duration is known and exceeds max_sample_duration_seconds."""
+        probe = getattr(getattr(self, "video_processor", None), "probe_duration", None)
+        if not callable(probe):
+            return False
+        duration = probe(video)
+        cap = getattr(getattr(self, "config", None), "get", lambda *_a: 300)("max_sample_duration_seconds", 300)
+        cap = cap if isinstance(cap, (int, float)) else 300
+        if isinstance(duration, (int, float)) and duration > cap:
+            logging.info(f"Keeping {video.name}: {duration:.0f}s is longer than a sample ({cap}s cap)")
+            return True
+        return False
+
     def _remove_sample_videos(self, video_files: List[Path]) -> List[Path]:
         """
         Remove sample/preview videos if full version exists.
@@ -649,8 +673,9 @@ class UnpackrApp:
                                     match_ratio_2 = len(common_words) / len(other_words) if other_words else 0
                                     avg_ratio = (match_ratio_1 + match_ratio_2) / 2
 
-                                    # If >50% average match, consider it the same video
-                                    if avg_ratio > 0.5:
+                                    # If >50% average match, consider it the same video; a long
+                                    # "preview" or "promo" episode is real content, not a sample.
+                                    if avg_ratio > 0.5 and not UnpackrApp._longer_than_sample_cap(self, video):
                                         to_delete.append(video)
                                         logging.info(
                                             f"Sample video detected: {video.name} ({sample_size / (1024 * 1024):.1f}MB) - full version: {other_video.name} ({other_size / (1024 * 1024):.1f}MB)"
@@ -796,6 +821,108 @@ class UnpackrApp:
                 self._note("warning", folder, outcome.name, outcome.reason_code, outcome.detail)
         return not success, len(archive_sets)
 
+    def _release_files(self, folder: Path) -> List[Path]:
+        """Files that belong to one work item: direct files for the source root, the whole tree otherwise."""
+        try:
+            if folder == getattr(self, "source_root", None):
+                return [p for p in folder.iterdir() if p.is_file() and not is_internal(Path(p.name))]
+            files: List[Path] = []
+            for current, dirs, names in os.walk(folder):
+                dirs[:] = [d for d in dirs if not d.startswith(".unpackr-")]
+                files.extend(Path(current) / n for n in names)
+            return files
+        except (OSError, TypeError):
+            return []
+
+    def _screen_release(self, folder: Path) -> bool:
+        """Return False when a release must not be processed this run.
+
+        - Partial downloads (.!qB, .part, .crdownload ...) mean it is still downloading.
+        - VIDEO_TS / BDMV disc structures are kept whole.
+        - Bait (executables, shortcuts, disguised names, payload subtitles) is quarantined and
+          the release fails: no video from it is moved.
+        """
+        files = self._release_files(folder)
+        if not files:
+            return True
+        config = getattr(self, "config", None)
+
+        partial = [f for f in files if is_incomplete_marker(f, config)]
+        if partial:
+            self._note(
+                "warning", folder, partial[0].name, "download_in_progress", "still downloading; skipped this run"
+            )
+            for path in files:
+                self._record(path, "skipped", "download_in_progress")
+            return False
+
+        if folder != getattr(self, "source_root", None):
+            disc = has_disc_structure(folder)
+            if disc is not None:
+                self._note("warning", folder, disc.name, "disc_structure_kept", "disc structure kept whole")
+                for path in files:
+                    self._record(path, "kept", "disc_structure_kept")
+                return False
+
+        video_exts = set(getattr(config, "video_extensions", []) or [])
+        has_video = any(f.suffix.lower() in video_exts for f in files)
+        failed = False
+        for path in files:
+            finding = classify_security(path, config, has_video)
+            if finding is None:
+                continue
+            level = "error" if finding.fails_release else "warning"
+            self._note(level, folder, path.name, finding.reason_code, finding.detail)
+            if not self.dry_run:
+                if self.file_handler.remove_file(path, finding.reason_code):
+                    self._record(path, "deleted", finding.reason_code, finding.detail)
+                else:
+                    self._record(path, "blocked", finding.reason_code, f"{finding.detail}; could not be removed")
+            else:
+                self._record(path, "deleted", finding.reason_code, finding.detail)
+            failed = failed or finding.fails_release
+
+        if failed:
+            self._note("error", folder, "", "folder_failed_security", "bait found; nothing moved from this release")
+            for path in files:
+                if path.exists() and getattr(self, "report", None) is not None:
+                    rel = self.report._rel(path)
+                    if rel not in self.report._items:
+                        self._record(path, "blocked", "folder_failed_security")
+            if hasattr(self, "failed_releases"):
+                self.failed_releases.add(folder)
+            # Keep the release folder: its decoy files stay for review and cleanup leaves it alone.
+            hold = getattr(self.file_handler, "hold_paths", None)
+            if callable(hold):
+                hold([p for p in files if p.exists()], "folder_failed_security")
+            return False
+        return True
+
+    def _decide_release_samples(self, folder: Path) -> None:
+        """Mark sample, proof and trailer videos across one release for removal."""
+        if folder == getattr(self, "source_root", None) or not hasattr(self, "release_samples"):
+            return
+        config = getattr(self, "config", None)
+        video_exts = set(getattr(config, "video_extensions", []) or [])
+        videos = [f for f in self._release_files(folder) if f.suffix.lower() in video_exts]
+        if len(videos) < 2:
+            return
+        durations = {}
+        sizes = {}
+        for video in videos:
+            try:
+                sizes[video] = video.stat().st_size
+            except OSError:
+                sizes[video] = 0
+            probe = getattr(self.video_processor, "probe_duration", None)
+            durations[video] = probe(video) if callable(probe) else None
+        samples = decide_release_samples(videos, durations, sizes, config)
+        self.release_samples.update(samples)
+        dedupe = getattr(config, "get", lambda *_a: False)("dedupe_same_title", False)
+        if dedupe is True:
+            remaining = [v for v in videos if v not in samples]
+            self.release_samples.update(decide_duplicate_encodes(remaining, sizes))
+
     def _handle_video(self, video_file: Path, destination_dir: Path) -> bool:
         """Validate one video, then move it to the destination or remove it.
 
@@ -807,6 +934,22 @@ class UnpackrApp:
             size_bytes = video_file.stat().st_size
         except OSError:
             size_bytes = 0
+
+        sample = getattr(self, "release_samples", {}).get(video_file)
+        if sample is not None:
+            reason_code, detail = sample
+            self.stats["videos_sample"] += 1
+            if self.dry_run:
+                if self.dry_run_plan:
+                    self.dry_run_plan.add_video_delete(video_file, f"sample: {detail}")
+                self._record(video_file, "deleted", reason_code, detail, size=size_bytes)
+                return False
+            logging.info(f"Removing sample video: {video_file.name} ({reason_code}: {detail})")
+            if self.file_handler.remove_file(video_file, reason_code):
+                self._record(video_file, "deleted", reason_code, detail, size=size_bytes)
+            else:
+                self._record(video_file, "kept", "video_delete_failed", f"{reason_code}: {detail}", size=size_bytes)
+            return False
 
         if self.dry_run:
             preview = self.video_processor.classify_preview(self.video_processor.probe_duration(video_file))
@@ -893,6 +1036,11 @@ class UnpackrApp:
         # Update progress immediately when starting a folder
         self._update_progress(current, total, f"Scanning folder: {folder.name[:57]}")
 
+        # Unfinished downloads, disc structures and bait releases are left alone (bait is quarantined).
+        if not self._screen_release(folder):
+            self.stats["folders_processed"] += 1
+            return 0
+
         # Process PAR2 files FIRST - verify/repair archives before extraction
         # This is more efficient: if no repair needed, PAR2 files are deleted early (saves disk I/O)
         # If repair fails, corrupted archives are deleted, skipping extraction entirely
@@ -935,6 +1083,9 @@ class UnpackrApp:
         else:
             archive_error = True
 
+        # Decide samples across the whole release (Sample/ and Proof/ folders included).
+        self._decide_release_samples(folder)
+
         # Process video files FIRST (before recursing into subfolders)
         video_files = self.file_handler.find_video_files(folder)
 
@@ -952,10 +1103,12 @@ class UnpackrApp:
             if self._handle_video(video_file, destination_dir):
                 moved_count += 1
 
-        # Process subfolders AFTER processing videos in this folder
-        for subfolder in folder.iterdir():
-            if subfolder.is_dir() and not is_internal(Path(subfolder.name)):
-                self._process_subfolder(subfolder, destination_dir)
+        # Process subfolders AFTER processing videos in this folder. The source root's
+        # subfolders are releases of their own and are processed as separate work items.
+        if folder != getattr(self, "source_root", None):
+            for subfolder in folder.iterdir():
+                if subfolder.is_dir() and not is_internal(Path(subfolder.name)):
+                    self._process_subfolder(subfolder, destination_dir)
 
         # Clean up folder if possible
         if self.file_handler.is_folder_empty_or_removable(folder, par2_error, archive_error):
@@ -1474,6 +1627,9 @@ class UnpackrApp:
             report.planned = bool(getattr(self, "dry_run", False))
             report.begin(source_dir)
         self._prepare_removal(source_dir)
+        self.source_root = source_dir
+        self.release_samples: Dict[Path, Tuple[str, str]] = {}
+        self.failed_releases: set[Path] = set()
 
         run_state = getattr(self, "run_state", None)
         if getattr(self, "resume_enabled", False) and run_state is not None:
@@ -1557,6 +1713,8 @@ class UnpackrApp:
             if self.work_plan.loose_videos and not self.cancellation_requested:
                 for video in self.work_plan.loose_videos:
                     if self.cancellation_requested:
+                        break
+                    if source_dir in self.failed_releases:
                         break
                     try:
                         self._handle_video(video, destination_dir)

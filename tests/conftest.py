@@ -76,6 +76,10 @@ def bind_app_helpers(app):
         "finish_issues",
         "_prepare_removal",
         "removal_summary",
+        "_release_files",
+        "_screen_release",
+        "_decide_release_samples",
+        "_longer_than_sample_cap",
     ):
         if not hasattr(app, name):
             setattr(app, name, types.MethodType(getattr(unpackr.UnpackrApp, name), app))
