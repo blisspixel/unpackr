@@ -2,7 +2,17 @@
 
 Release dates are included where recorded.
 
-## Unreleased
+## v1.5.0 (2026-10-11)
+
+Unpackr cleans a downloads folder decisively and never throws away the good file. Removals are reversible by default, every decision is reported, PAR2 repairs obfuscated posts, and the code base is strictly typed on Python 3.12 to 3.15.
+
+**Upgrade notes**
+- Python 3.12 or newer is required (3.11 is dropped). Reinstall with `python -m pip install .`.
+- 7-Zip 22.0+ is required: on macOS use `brew install sevenzip`, on Debian/Ubuntu/Fedora the `7zip` package (the old `p7zip` 16.02 is too old).
+- Removals now go to `<source>/.unpackr-quarantine/` for 14 days by default; set `delete_mode` to `trash` or `permanent` for the old behavior.
+- A manual run removes unfinished downloads as junk; unattended runs wait for them.
+- `--json` writes only JSON to stdout; human output moved to stderr.
+
 
 - PAR2 never removes archive volumes (#21). par2 is given every file in the folder (`par2 r <set>.par2 *`), so obfuscated posts with renamed volumes are matched, renamed back and extracted instead of being discarded as "damaged beyond repair". Every PAR2 set in a folder is checked, not just the first. Whatever PAR2 reports, extraction still runs and 7-Zip's CRC check decides; `.par2` files are removed only with a set that extracted. A release PAR2 says is damaged beyond repair (nothing extractable) is junk and listed for re-download; one par2 could not judge (tool error, par2 not installed) next to unrecognized files is kept and needs attention. Without par2 installed, archives still extract.
 - Archive removal is guarded in depth (#21): removals pass a truthful `extraction_verified`, invariant I3 recognises split volumes (`.r00`, `.7z.001`, `.z01`, `.001`) and is wired into CLI runs, and the archive step refuses to remove anything without a configured remover instead of falling back to a permanent unlink.
