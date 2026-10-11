@@ -5,9 +5,11 @@ Input validation, state verification, and error recovery.
 
 import logging
 import uuid
+from collections.abc import Callable
 from contextlib import suppress
+from functools import wraps
 from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import Any, cast
 
 
 class ValidationError(Exception):
@@ -21,13 +23,13 @@ class InputValidator:
 
     @staticmethod
     def validate_path(
-        path: Union[str, Path, None],
+        path: object,
         must_exist: bool = False,
         must_be_dir: bool = False,
         must_be_file: bool = False,
         allow_none: bool = False,
-        base_dir: Optional[Path] = None,
-    ) -> Optional[Path]:
+        base_dir: Path | None = None,
+    ) -> Path | None:
         """
         Validate and sanitize path input with security checks.
 
@@ -92,11 +94,9 @@ class InputValidator:
 
             # If base_dir specified, ensure path is within it
             if base_dir is not None:
-                try:
-                    base_resolved = base_dir.resolve()
-                    resolved_path.relative_to(base_resolved)
-                except ValueError:
-                    raise ValidationError(f"Path {resolved_path} escapes base directory {base_resolved}") from None
+                base_resolved = base_dir.resolve()
+                if not resolved_path.is_relative_to(base_resolved):
+                    raise ValidationError(f"Path {resolved_path} escapes base directory {base_resolved}")
 
             return resolved_path
         except ValidationError:
@@ -108,7 +108,7 @@ class InputValidator:
     @staticmethod
     def validate_string(
         value: Any, min_length: int = 0, max_length: int = 10000, allow_empty: bool = True, allow_none: bool = False
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Validate string input.
 
@@ -149,8 +149,8 @@ class InputValidator:
 
     @staticmethod
     def validate_int(
-        value: Any, min_val: Optional[int] = None, max_val: Optional[int] = None, allow_none: bool = False
-    ) -> Optional[int]:
+        value: Any, min_val: int | None = None, max_val: int | None = None, allow_none: bool = False
+    ) -> int | None:
         """
         Validate integer input.
 
@@ -189,12 +189,12 @@ class InputValidator:
 
     @staticmethod
     def validate_list(
-        value: Any,
+        value: object,
         min_length: int = 0,
-        max_length: Optional[int] = None,
+        max_length: int | None = None,
         allow_none: bool = False,
         allow_empty: bool = True,
-    ) -> Optional[list]:
+    ) -> list[object] | None:
         """
         Validate list input.
 
@@ -218,17 +218,18 @@ class InputValidator:
 
         if not isinstance(value, list):
             raise ValidationError(f"Expected list, got {type(value)}")
+        items = cast(list[object], value)
 
-        if not allow_empty and len(value) == 0:
+        if not allow_empty and len(items) == 0:
             raise ValidationError("List cannot be empty")
 
-        if len(value) < min_length:
-            raise ValidationError(f"List too short: {len(value)} < {min_length}")
+        if len(items) < min_length:
+            raise ValidationError(f"List too short: {len(items)} < {min_length}")
 
-        if max_length is not None and len(value) > max_length:
-            raise ValidationError(f"List too long: {len(value)} > {max_length}")
+        if max_length is not None and len(items) > max_length:
+            raise ValidationError(f"List too long: {len(items)} > {max_length}")
 
-        return value
+        return items
 
 
 class StateValidator:
@@ -257,7 +258,7 @@ class StateValidator:
                 f.read(1)
 
             return True
-        except (PermissionError, OSError, IOError):
+        except (PermissionError, OSError):
             return False
 
     @staticmethod
@@ -284,7 +285,7 @@ class StateValidator:
             test_file.unlink()
 
             return True
-        except (PermissionError, OSError, IOError):
+        except (PermissionError, OSError):
             return False
 
     @staticmethod
@@ -315,7 +316,7 @@ class StateValidator:
             return False
 
     @staticmethod
-    def validate_config_dict(config: dict, required_keys: List[str]) -> bool:
+    def validate_config_dict(config: object, required_keys: list[str]) -> bool:
         """
         Validate configuration dictionary.
 
@@ -504,7 +505,7 @@ class ErrorRecovery:
             return default
 
 
-def defensive_wrapper(func):
+def defensive_wrapper[**P, R](func: Callable[P, R]) -> Callable[P, R | bool | None]:
     """
     Decorator to wrap functions with defensive error handling.
 
@@ -515,7 +516,8 @@ def defensive_wrapper(func):
         Wrapped function
     """
 
-    def wrapper(*args, **kwargs):
+    @wraps(func)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R | bool | None:
         try:
             # Log function entry
             logging.debug(f"[DEFENSIVE] Entering {func.__name__}")

@@ -68,7 +68,7 @@ def test_doctor_json_mode_blocked(monkeypatch, capsys):
                 "passed": self.passed,
                 "warnings": self.warnings,
                 "issues": self.issues,
-                "recommended_actions": ["Install Python 3.11+ and run doctor again."],
+                "recommended_actions": ["Install Python 3.12+ and run doctor again."],
             }
 
     monkeypatch.setattr(doctor, "UnpackrDoctor", BlockedDoctor)

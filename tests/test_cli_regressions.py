@@ -28,7 +28,7 @@ def test_vhealth_main_default_is_not_auto_delete(monkeypatch, tmp_path):
         def print_summary(self, auto_delete=False):
             calls["summary_auto_delete"] = auto_delete
 
-        def _resolve_ffmpeg_command(self):
+        def resolve_ffmpeg_command(self):
             return ["ffmpeg"]
 
     monkeypatch.setattr(vhealth, "VideoHealthChecker", DummyChecker)
@@ -61,7 +61,7 @@ def test_vhealth_main_passes_config_path(monkeypatch, tmp_path):
         def print_summary(self, auto_delete=False):
             pass
 
-        def _resolve_ffmpeg_command(self):
+        def resolve_ffmpeg_command(self):
             return ["ffmpeg"]
 
     def fake_config(config_path=None):
@@ -115,7 +115,7 @@ def test_vhealth_warns_when_ffmpeg_missing(monkeypatch, tmp_path, capsys):
         def print_summary(self, auto_delete=False):
             pass
 
-        def _resolve_ffmpeg_command(self):
+        def resolve_ffmpeg_command(self):
             return None
 
     monkeypatch.setattr(vhealth, "VideoHealthChecker", DummyChecker)
@@ -141,7 +141,7 @@ def test_vhealth_expands_user_home(monkeypatch, tmp_path):
         def print_summary(self, auto_delete=False):
             pass
 
-        def _resolve_ffmpeg_command(self):
+        def resolve_ffmpeg_command(self):
             return ["ffmpeg"]
 
     monkeypatch.setenv("HOME", str(tmp_path))

@@ -26,7 +26,7 @@ Point it at a downloads folder, not at folders you curate by hand. Run it when y
 ## Requirements
 
 - **OS:** Windows, Linux, or macOS
-- Python `3.11+`
+- Python `3.12+` (tested on `3.12` through `3.15`)
 - Required: [7-Zip](https://www.7-zip.org/) 22.0+ (`7zz` or `7z` on PATH; the old `p7zip` 16.02 is too old)
 - Recommended: [par2cmdline](https://github.com/Parchive/par2cmdline), [ffmpeg](https://ffmpeg.org/)
 
@@ -80,7 +80,7 @@ pre-commit run --all-files
 Current engineering baseline:
 - full regression suite required to pass
 - `80%` minimum coverage enforced in CI
-- stricter Pyright tier on `core/config.py`, `core/file_handler.py`, and `core/safety_invariants.py`
+- strict type checking (`mypy --strict` and Pyright strict) on `core`, `utils`, `doctor.py` and `vhealth.py`; `unpackr.py` and a few modules mid-change are temporarily relaxed (listed in `pyproject.toml`)
 - enforced local + CI gate via `ruff`, `mypy`, `pyright`, `bandit`, `pytest`, coverage, and `pre-commit`
 
 ## Quick Start

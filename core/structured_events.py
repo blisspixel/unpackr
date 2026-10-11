@@ -20,11 +20,12 @@ References:
 import json
 import logging
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, auto
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -102,12 +103,12 @@ class StructuredEvent:
     timestamp: datetime
     severity: EventSeverity
     message: str
-    context: Dict[str, Any] = field(default_factory=dict)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    session_id: Optional[str] = None
-    parent_event_id: Optional[str] = None
+    context: dict[str, Any] = field(default_factory=dict[str, Any])
+    metadata: dict[str, Any] = field(default_factory=dict[str, Any])
+    session_id: str | None = None
+    parent_event_id: str | None = None
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "event_id": self.event_id,
@@ -126,13 +127,13 @@ class StructuredEvent:
         return json.dumps(self.to_dict())
 
     @classmethod
-    def from_dict(cls, data: dict) -> "StructuredEvent":
+    def from_dict(cls, data: Mapping[str, Any]) -> "StructuredEvent":
         """Create from dictionary."""
-        data = data.copy()
-        data["event_type"] = EventType[data["event_type"]]
-        data["severity"] = EventSeverity[data["severity"]]
-        data["timestamp"] = datetime.fromisoformat(data["timestamp"])
-        return cls(**data)
+        values = dict(data)
+        values["event_type"] = EventType[values["event_type"]]
+        values["severity"] = EventSeverity[values["severity"]]
+        values["timestamp"] = datetime.fromisoformat(values["timestamp"])
+        return cls(**values)
 
 
 class EventEmitter:
@@ -148,11 +149,11 @@ class EventEmitter:
 
     def __init__(
         self,
-        log_file: Optional[Path] = None,
-        session_id: Optional[str] = None,
+        log_file: Path | None = None,
+        session_id: str | None = None,
         enable_console: bool = True,
         enable_file: bool = True,
-    ):
+    ) -> None:
         """
         Initialize event emitter.
 
@@ -168,7 +169,7 @@ class EventEmitter:
         self.enable_file = enable_file
 
         # In-memory buffer for current session
-        self.event_buffer: List[StructuredEvent] = []
+        self.event_buffer: list[StructuredEvent] = []
 
         # Ensure log directory exists
         if self.enable_file:
@@ -179,9 +180,9 @@ class EventEmitter:
         event_type: EventType,
         message: str,
         severity: EventSeverity = EventSeverity.INFO,
-        context: Optional[Dict] = None,
-        metadata: Optional[Dict] = None,
-        parent_event_id: Optional[str] = None,
+        context: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+        parent_event_id: str | None = None,
     ) -> StructuredEvent:
         """
         Emit a structured event.
@@ -222,7 +223,7 @@ class EventEmitter:
 
         return event
 
-    def _emit_to_console(self, event: StructuredEvent):
+    def _emit_to_console(self, event: StructuredEvent) -> None:
         """Emit event to console via standard logging."""
         # Map severity to logging level
         level_map = {
@@ -244,7 +245,7 @@ class EventEmitter:
 
         logger.log(log_level, f"[{event.event_type.name}] {event.message}{context_str}")
 
-    def _emit_to_file(self, event: StructuredEvent):
+    def _emit_to_file(self, event: StructuredEvent) -> None:
         """Emit event to JSON lines file."""
         try:
             with open(self.log_file, "a") as f:
@@ -252,17 +253,17 @@ class EventEmitter:
         except Exception as e:
             logger.error(f"Failed to write event to file: {e}")
 
-    def get_session_events(self) -> List[StructuredEvent]:
+    def get_session_events(self) -> list[StructuredEvent]:
         """Get all events for current session."""
         return self.event_buffer.copy()
 
     def query_events(
         self,
-        event_type: Optional[EventType] = None,
-        severity: Optional[EventSeverity] = None,
-        since: Optional[datetime] = None,
-        until: Optional[datetime] = None,
-    ) -> List[StructuredEvent]:
+        event_type: EventType | None = None,
+        severity: EventSeverity | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+    ) -> list[StructuredEvent]:
         """
         Query events with filters.
 
@@ -299,7 +300,7 @@ class EventBuilder:
     Provides convenience methods for typical events with consistent formatting.
     """
 
-    def __init__(self, emitter: EventEmitter):
+    def __init__(self, emitter: EventEmitter) -> None:
         """
         Initialize event builder.
 
@@ -320,7 +321,7 @@ class EventBuilder:
         )
 
     def archive_extraction_started(
-        self, path: Path, timeout: int, parent_event_id: Optional[str] = None
+        self, path: Path, timeout: int, parent_event_id: str | None = None
     ) -> StructuredEvent:
         """Emit archive extraction started event."""
         return self.emitter.emit(
@@ -332,7 +333,7 @@ class EventBuilder:
         )
 
     def archive_extraction_completed(
-        self, path: Path, duration: float, files_extracted: int, parent_event_id: Optional[str] = None
+        self, path: Path, duration: float, files_extracted: int, parent_event_id: str | None = None
     ) -> StructuredEvent:
         """Emit archive extraction completed event."""
         # Calculate extraction speed if file exists and duration > 0
@@ -350,9 +351,7 @@ class EventBuilder:
             parent_event_id=parent_event_id,
         )
 
-    def archive_extraction_failed(
-        self, path: Path, error: str, parent_event_id: Optional[str] = None
-    ) -> StructuredEvent:
+    def archive_extraction_failed(self, path: Path, error: str, parent_event_id: str | None = None) -> StructuredEvent:
         """Emit archive extraction failed event."""
         return self.emitter.emit(
             EventType.ARCHIVE_EXTRACTION_FAILED,
@@ -373,7 +372,7 @@ class EventBuilder:
             context={"path": str(path), "size_bytes": size, "size_mb": size / (1024 * 1024)},
         )
 
-    def video_validation_started(self, path: Path, parent_event_id: Optional[str] = None) -> StructuredEvent:
+    def video_validation_started(self, path: Path, parent_event_id: str | None = None) -> StructuredEvent:
         """Emit video validation started event."""
         return self.emitter.emit(
             EventType.VIDEO_VALIDATION_STARTED,
@@ -384,7 +383,7 @@ class EventBuilder:
         )
 
     def video_validation_passed(
-        self, path: Path, duration: float, resolution: str, bitrate: int, parent_event_id: Optional[str] = None
+        self, path: Path, duration: float, resolution: str, bitrate: int, parent_event_id: str | None = None
     ) -> StructuredEvent:
         """Emit video validation passed event."""
         return self.emitter.emit(
@@ -400,9 +399,7 @@ class EventBuilder:
             parent_event_id=parent_event_id,
         )
 
-    def video_validation_failed(
-        self, path: Path, reason: str, parent_event_id: Optional[str] = None
-    ) -> StructuredEvent:
+    def video_validation_failed(self, path: Path, reason: str, parent_event_id: str | None = None) -> StructuredEvent:
         """Emit video validation failed event."""
         return self.emitter.emit(
             EventType.VIDEO_VALIDATION_FAILED,
@@ -513,7 +510,7 @@ class EventAnalyzer:
     - Operation timing trends
     """
 
-    def __init__(self, log_file: Path):
+    def __init__(self, log_file: Path) -> None:
         """
         Initialize event analyzer.
 
@@ -521,9 +518,9 @@ class EventAnalyzer:
             log_file: Path to event log file (JSON lines)
         """
         self.log_file = log_file
-        self.events: List[StructuredEvent] = []
+        self.events: list[StructuredEvent] = []
 
-    def load_events(self, since: Optional[datetime] = None):
+    def load_events(self, since: datetime | None = None) -> None:
         """
         Load events from log file.
 
@@ -536,17 +533,19 @@ class EventAnalyzer:
             return
 
         try:
-            with open(self.log_file, "r") as f:
+            with open(self.log_file) as f:
                 for line in f:
                     try:
                         data = json.loads(line)
-                        event = StructuredEvent.from_dict(data)
+                        if not isinstance(data, dict):
+                            continue  # valid JSON but not an event record
+                        event = StructuredEvent.from_dict(cast(dict[str, Any], data))
 
                         if since and event.timestamp < since:
                             continue
 
                         self.events.append(event)
-                    except (json.JSONDecodeError, KeyError, ValueError):
+                    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
                         continue  # Skip malformed lines
 
             logger.info(f"Loaded {len(self.events)} events")
@@ -578,7 +577,7 @@ class EventAnalyzer:
 
         return passed / total_terminal
 
-    def get_average_duration(self, event_type: EventType) -> Optional[float]:
+    def get_average_duration(self, event_type: EventType) -> float | None:
         """
         Get average duration for completed operations.
 
@@ -596,7 +595,7 @@ class EventAnalyzer:
         durations = [float(e.context["duration_seconds"]) for e in relevant_events]
         return float(sum(durations) / len(durations))
 
-    def get_error_summary(self) -> Dict[str, int]:
+    def get_error_summary(self) -> dict[str, int]:
         """
         Get summary of errors by type.
 
@@ -605,7 +604,7 @@ class EventAnalyzer:
         """
         error_events = [e for e in self.events if e.severity in (EventSeverity.ERROR, EventSeverity.CRITICAL)]
 
-        summary: Dict[str, int] = {}
+        summary: dict[str, int] = {}
         for event in error_events:
             event_type = event.event_type.name
             summary[event_type] = summary.get(event_type, 0) + 1

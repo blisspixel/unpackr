@@ -12,11 +12,10 @@ All error messages follow the pattern:
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 
 def format_error(
-    what_failed: str, reason: str, action: str, location: Optional[Path] = None, details: Optional[str] = None
+    what_failed: str, reason: str, action: str, location: Path | None = None, details: str | None = None
 ) -> str:
     """
     Format a clear, actionable error message.
@@ -45,8 +44,8 @@ def format_error(
 
 
 def log_error(
-    what_failed: str, reason: str, action: str, location: Optional[Path] = None, details: Optional[str] = None
-):
+    what_failed: str, reason: str, action: str, location: Path | None = None, details: str | None = None
+) -> None:
     """
     Log a clear, actionable error message.
 
@@ -69,7 +68,7 @@ def format_disk_space_error(path: Path, needed_mb: int, available_mb: int) -> st
     )
 
 
-def format_extraction_error(archive: Path, reason: str, stderr: Optional[str] = None) -> str:
+def format_extraction_error(archive: Path, reason: str, stderr: str | None = None) -> str:
     """Format archive extraction error."""
     details = None
     if stderr:
@@ -98,7 +97,7 @@ def format_validation_error(file: Path, reason: str) -> str:
 def format_timeout_error(
     operation: str,
     timeout_seconds: int,
-    file_size_mb: Optional[float] = None,
+    file_size_mb: float | None = None,
 ) -> str:
     """Format timeout error."""
     reason = f"Operation exceeded {timeout_seconds}s timeout"

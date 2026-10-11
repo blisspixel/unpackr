@@ -15,9 +15,10 @@ from __future__ import annotations
 
 import fnmatch
 import re
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Iterator, List, Optional, Sequence, Tuple
+from typing import Any, cast
 
 # Executables, scripts, shortcuts and installers that a video release never needs.
 DEFAULT_DANGEROUS_EXTENSIONS = (
@@ -55,6 +56,10 @@ BIDI_CONTROLS = re.compile(r"[\u202a-\u202e\u2066-\u2069\u200e\u200f]")
 MEDIA_EXTENSIONS = (".mkv", ".mp4", ".avi", ".mov", ".wmv", ".m4v", ".mpg", ".mpeg", ".ts", ".webm", ".flv")
 
 
+# (reason_code, human-readable detail) for a video picked for removal.
+type SampleDecision = tuple[str, str]
+
+
 @dataclass(frozen=True)
 class Finding:
     """A classified path. ``fails_release`` means no video from that release may be kept."""
@@ -73,9 +78,16 @@ def _get(config: Any, key: str, default: Any) -> Any:
     return getattr(config, key, default)
 
 
-def dangerous_extensions(config: Any) -> List[str]:
-    values = _get(config, "dangerous_extensions", list(DEFAULT_DANGEROUS_EXTENSIONS))
-    return [v.lower() for v in values] if isinstance(values, list) else list(DEFAULT_DANGEROUS_EXTENSIONS)
+def _lower_str_list(value: object, default: Iterable[str]) -> list[str]:
+    """Lower-cased string entries of a config list, or the default when it is not a list."""
+    if not isinstance(value, list):
+        return list(default)
+    items = cast(list[object], value)  # JSON list; entries are validated below
+    return [item.lower() for item in items if isinstance(item, str)]
+
+
+def dangerous_extensions(config: Any) -> list[str]:
+    return _lower_str_list(_get(config, "dangerous_extensions", None), DEFAULT_DANGEROUS_EXTENSIONS)
 
 
 def _is_binary(path: Path, probe_bytes: int = 4096) -> bool:
@@ -87,7 +99,7 @@ def _is_binary(path: Path, probe_bytes: int = 4096) -> bool:
     return b"\x00" in chunk
 
 
-def classify_security(path: Path, config: Any, release_has_video: bool) -> Optional[Finding]:
+def classify_security(path: Path, config: Any, release_has_video: bool) -> Finding | None:
     """Return a security finding for bait or payload files, else None."""
     name = path.name
     lower = name.lower()
@@ -119,15 +131,15 @@ def classify_security(path: Path, config: Any, release_has_video: bool) -> Optio
 
 
 def is_incomplete_marker(path: Path, config: Any = None) -> bool:
-    markers = _get(config, "incomplete_download_markers", list(DEFAULT_INCOMPLETE_MARKERS)) if config else None
-    markers = [m.lower() for m in markers] if isinstance(markers, list) else list(DEFAULT_INCOMPLETE_MARKERS)
+    raw = _get(config, "incomplete_download_markers", None) if config else None
+    markers = _lower_str_list(raw, DEFAULT_INCOMPLETE_MARKERS)
     lower = path.name.lower()
     return any(lower.endswith(marker) for marker in markers)
 
 
-def find_incomplete_markers(folder: Path, config: Any = None, limit: int = 3) -> List[Path]:
+def find_incomplete_markers(folder: Path, config: Any = None, limit: int = 3) -> list[Path]:
     """Partial-download files anywhere under folder (a download that is still running)."""
-    found: List[Path] = []
+    found: list[Path] = []
     for path in _walk_files(folder):
         if is_incomplete_marker(path, config):
             found.append(path)
@@ -149,11 +161,11 @@ def is_padding_file(path: Path, verify_bytes: int = 1024 * 1024) -> bool:
     return chunk.count(0) == len(chunk)
 
 
-def junk_name_reason(path: Path, config: Any = None) -> Optional[str]:
+def junk_name_reason(path: Path, config: Any = None) -> str | None:
     """Reason code when the name alone marks a file as junk."""
     lower = path.name.lower()
-    patterns = _get(config, "junk_name_patterns", list(DEFAULT_JUNK_NAME_PATTERNS)) if config else None
-    patterns = [p.lower() for p in patterns] if isinstance(patterns, list) else list(DEFAULT_JUNK_NAME_PATTERNS)
+    raw = _get(config, "junk_name_patterns", None) if config else None
+    patterns = _lower_str_list(raw, DEFAULT_JUNK_NAME_PATTERNS)
     if any(part.lower() in OS_CRUFT_DIRS for part in path.parts[:-1]):
         return "junk_os_cruft"
     if any(fnmatch.fnmatch(lower, pattern) for pattern in patterns):
@@ -168,7 +180,7 @@ def junk_name_reason(path: Path, config: Any = None) -> Optional[str]:
     return None
 
 
-def has_disc_structure(folder: Path) -> Optional[Path]:
+def has_disc_structure(folder: Path) -> Path | None:
     """Return a VIDEO_TS or BDMV directory under folder; such releases are kept whole."""
     try:
         for current, dirs, _files in _walk(folder):
@@ -180,12 +192,11 @@ def has_disc_structure(folder: Path) -> Optional[Path]:
     return None
 
 
-def sample_folder_names(config: Any) -> List[str]:
-    values = _get(config, "sample_folder_names", list(DEFAULT_SAMPLE_FOLDER_NAMES))
-    return [v.lower() for v in values] if isinstance(values, list) else list(DEFAULT_SAMPLE_FOLDER_NAMES)
+def sample_folder_names(config: Any) -> list[str]:
+    return _lower_str_list(_get(config, "sample_folder_names", None), DEFAULT_SAMPLE_FOLDER_NAMES)
 
 
-def looks_like_sample(path: Path, config: Any) -> Optional[str]:
+def looks_like_sample(path: Path, config: Any) -> str | None:
     """Name or folder evidence that a video is a sample/proof/trailer; returns the reason code."""
     folders = set(sample_folder_names(config))
     if any(part.lower() in folders for part in path.parts[:-1]):
@@ -197,10 +208,10 @@ def looks_like_sample(path: Path, config: Any) -> Optional[str]:
 
 def decide_release_samples(
     videos: Sequence[Path],
-    durations: dict,
-    sizes: dict,
+    durations: Mapping[Path, float | None],
+    sizes: Mapping[Path, int],
     config: Any,
-) -> dict:
+) -> dict[Path, SampleDecision]:
     """Pick the samples in one release. Returns {path: (reason_code, detail)}.
 
     - A video named sample/proof/trailer/preview/promo, or inside a Sample/Proof/Screens
@@ -212,17 +223,17 @@ def decide_release_samples(
     """
     if not videos:
         return {}
-    cap = _get(config, "max_sample_duration_seconds", 300)
-    cap = cap if isinstance(cap, (int, float)) else 300
-    min_size_mb = _get(config, "min_sample_size_mb", 50)
-    min_size_mb = min_size_mb if isinstance(min_size_mb, (int, float)) else 50
+    raw_cap = _get(config, "max_sample_duration_seconds", 300)
+    cap: float = raw_cap if isinstance(raw_cap, (int, float)) else 300
+    raw_min_size = _get(config, "min_sample_size_mb", 50)
+    min_size_mb: float = raw_min_size if isinstance(raw_min_size, (int, float)) else 50
 
     def key_len(v: Path) -> float:
         return float(durations.get(v) or 0) or sizes.get(v, 0) / 1e9
 
     main = max(videos, key=key_len)
     main_duration = durations.get(main) or 0
-    decided: dict = {}
+    decided: dict[Path, SampleDecision] = {}
     for video in videos:
         if video == main and len(videos) > 1:
             continue
@@ -260,12 +271,12 @@ def normalized_title(path: Path) -> str:
     return " ".join(stem.lower().split())
 
 
-def decide_duplicate_encodes(videos: Sequence[Path], sizes: dict) -> dict:
+def decide_duplicate_encodes(videos: Sequence[Path], sizes: Mapping[Path, int]) -> dict[Path, SampleDecision]:
     """{path: (reason_code, detail)} for smaller copies of the same title (keeps the largest)."""
-    groups: dict = {}
+    groups: dict[str, list[Path]] = {}
     for video in videos:
         groups.setdefault(normalized_title(video), []).append(video)
-    decided: dict = {}
+    decided: dict[Path, SampleDecision] = {}
     for title, members in groups.items():
         if not title or len(members) < 2:
             continue
@@ -276,7 +287,7 @@ def decide_duplicate_encodes(videos: Sequence[Path], sizes: dict) -> dict:
     return decided
 
 
-def _walk(folder: Path) -> Iterator[Tuple[str, List[str], List[str]]]:
+def _walk(folder: Path) -> Iterator[tuple[str, list[str], list[str]]]:
     import os
 
     return os.walk(folder)

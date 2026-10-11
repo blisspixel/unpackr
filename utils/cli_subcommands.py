@@ -12,7 +12,6 @@ import argparse
 import json
 import os
 from pathlib import Path
-from typing import List
 
 from core.remover import list_runs, restore_run
 
@@ -108,7 +107,7 @@ def _human_mb(size: int) -> str:
     return f"{size / (1024 * 1024):.1f} MB"
 
 
-def run_subcommand(argv: List[str]) -> int:
+def run_subcommand(argv: list[str]) -> int:
     args = build_subcommand_parser().parse_args(argv)
     write = print
 

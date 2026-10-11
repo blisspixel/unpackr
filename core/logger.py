@@ -6,6 +6,7 @@ import datetime
 import glob
 import logging
 import os
+import subprocess
 from pathlib import Path
 
 from utils.platform_support import user_state_dir
@@ -55,7 +56,7 @@ def setup_logging(log_folder: str = "logs", max_log_files: int = 5) -> Path:
     return log_file
 
 
-def cleanup_old_logs(logs_folder: Path, max_files: int):
+def cleanup_old_logs(logs_folder: Path, max_files: int) -> None:
     """
     Remove old log files, keeping only the most recent ones.
 
@@ -71,7 +72,7 @@ def cleanup_old_logs(logs_folder: Path, max_files: int):
             logging.warning(f"Could not remove old log file: {e}")
 
 
-def log_subprocess_error(error, process_name: str):
+def log_subprocess_error(error: subprocess.CalledProcessError, process_name: str) -> None:
     """
     Log detailed error information for subprocess failures.
 

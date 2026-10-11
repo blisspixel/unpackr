@@ -9,15 +9,18 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional, Tuple, Union
+from typing import Any, Literal, cast, overload
 
+from core.config import ConfigSource
 from core.safety_invariants import ValidationCache, ValidationDecision, ValidationResult
 from utils.error_messages import log_error
-from utils.safety import SafetyLimits, SubprocessSafety
+from utils.safety import ProcessTracker, SafetyLimits, SubprocessSafety
 from utils.system_check import SystemCheck
 
-Resolution = Optional[Tuple[int, int]]
-HealthResult = Union[bool, Tuple[bool, bool, Optional[str], Resolution]]
+type Resolution = tuple[int, int] | None
+# (is_healthy, is_low_quality, quality_reason, resolution)
+type QualityResult = tuple[bool, bool, str | None, Resolution]
+type HealthResult = bool | QualityResult
 
 # ffmpeg stderr phrases that mean the file is damaged or incomplete.
 CORRUPTION_INDICATORS = (
@@ -58,7 +61,7 @@ class VideoVerdict:
 
 def _config_value(config: Any, key: str, default: Any) -> Any:
     if isinstance(config, dict):
-        return config.get(key, default)
+        return cast(dict[str, Any], config).get(key, default)
     getter = getattr(config, "get", None)
     if callable(getter):
         value = getter(key, default)
@@ -66,7 +69,7 @@ def _config_value(config: Any, key: str, default: Any) -> Any:
     return getattr(config, key, default)
 
 
-def parse_ffmpeg_duration(stderr: str) -> Optional[float]:
+def parse_ffmpeg_duration(stderr: str) -> float | None:
     """Return the container duration in seconds from ffmpeg -i output, or None."""
     for line in stderr.split("\n"):
         if "Duration:" not in line:
@@ -80,9 +83,9 @@ def parse_ffmpeg_duration(stderr: str) -> Optional[float]:
     return None
 
 
-def parse_progress_seconds(stdout: str) -> Optional[float]:
+def parse_progress_seconds(stdout: str) -> float | None:
     """Return the last media position reported by ffmpeg -progress, in seconds."""
-    last: Optional[float] = None
+    last: float | None = None
     for line in stdout.splitlines():
         key, _, value = line.partition("=")
         if key in ("out_time_us", "out_time_ms") and value.strip().lstrip("-").isdigit():
@@ -94,17 +97,17 @@ def parse_progress_seconds(stdout: str) -> Optional[float]:
 class VideoProcessor:
     """Handles video file validation and health checks."""
 
-    def __init__(self, config=None, process_tracker=None):
+    def __init__(self, config: ConfigSource | None = None, process_tracker: ProcessTracker | None = None) -> None:
         """Initialize the video processor.
 
         Args:
             config: Configuration object
             process_tracker: Object with 'active_process' attribute for cancellation support
         """
-        self.config = config or {}
+        self.config: ConfigSource = config or {}
         self.system_check = SystemCheck(config)
         self.process_tracker = process_tracker
-        self.last_verdict: Optional[VideoVerdict] = None
+        self.last_verdict: VideoVerdict | None = None
 
     @property
     def min_duration_seconds(self) -> float:
@@ -115,10 +118,10 @@ class VideoProcessor:
         except (TypeError, ValueError):
             return 10.0
 
-    def _ffmpeg_cmd(self) -> list:
+    def _ffmpeg_cmd(self) -> list[str]:
         return self.system_check.get_tool_command("ffmpeg") or ["ffmpeg"]
 
-    def probe_duration(self, video_file: Path) -> Optional[float]:
+    def probe_duration(self, video_file: Path) -> float | None:
         """Read the container duration without decoding (fast, read-only)."""
         try:
             _ok, _out, stderr, _code = SubprocessSafety.run_with_timeout(
@@ -132,7 +135,7 @@ class VideoProcessor:
             return None
         return parse_ffmpeg_duration(stderr or "")
 
-    def classify_preview(self, duration_seconds: Optional[float]) -> Optional[VideoVerdict]:
+    def classify_preview(self, duration_seconds: float | None) -> VideoVerdict | None:
         """Return a preview verdict when a known duration is under the minimum."""
         minimum = self.min_duration_seconds
         if duration_seconds and minimum > 0 and duration_seconds < minimum:
@@ -149,6 +152,13 @@ class VideoProcessor:
         if check_quality:
             return (False, False, None, resolution)
         return False
+
+    @overload
+    def check_video_health(self, video_file: Path, check_quality: Literal[False] = False) -> bool: ...
+    @overload
+    def check_video_health(self, video_file: Path, check_quality: Literal[True]) -> QualityResult: ...
+    @overload
+    def check_video_health(self, video_file: Path, check_quality: bool) -> HealthResult: ...
 
     def check_video_health(self, video_file: Path, check_quality: bool = False) -> HealthResult:
         """
@@ -320,7 +330,7 @@ class VideoProcessor:
                 )
 
             is_low_quality = False
-            quality_reason: Optional[str] = None
+            quality_reason: str | None = None
             if check_quality:
                 if resolution:
                     width, height = resolution
@@ -347,7 +357,7 @@ class VideoProcessor:
             self.last_verdict = VideoVerdict(True, "healthy", "video_ok", f"{duration_seconds:.1f}s")
 
             # Register validated video with ValidationCache to prevent accidental deletion
-            metadata: dict = {"size_mb": file_size_mb, "duration_s": duration_seconds}
+            metadata: dict[str, Any] = {"size_mb": file_size_mb, "duration_s": duration_seconds}
             if check_quality:
                 metadata["resolution"] = resolution
             decision = ValidationDecision.FAIL_LOW_QUALITY if is_low_quality else ValidationDecision.PASS

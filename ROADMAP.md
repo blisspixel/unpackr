@@ -13,7 +13,7 @@ This roadmap is reliability-first: safety, correctness, cross-platform parity, o
 - The full regression suite must pass before merge.
 - Dependency/version policy is enforced by `unpackr-doctor` and runtime preflight.
 - Installed CLI entry points and documented path flags are covered by regression and CI smoke tests.
-- Python support floor is `3.11+` (CI matrix includes `3.11` through `3.14`).
+- Python support floor is `3.12+` (CI matrix includes `3.12` through `3.15`).
 - Active documentation stays under `docs/`; superseded content belongs in `docs/archive/`.
 - Platform policy lives in `utils/platform_support.py` rather than ad-hoc `sys.platform` checks.
 

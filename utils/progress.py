@@ -3,7 +3,8 @@ Progress tracking and display for Unpackr.
 """
 
 import threading
-from typing import Optional
+from types import TracebackType
+from typing import NoReturn, Self
 
 from tqdm import tqdm
 
@@ -11,12 +12,12 @@ from tqdm import tqdm
 class ProgressTracker:
     """Manages progress bar display and updates with thread safety."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the progress tracker."""
-        self.pbar: Optional[tqdm] = None
+        self.pbar: tqdm[NoReturn] | None = None
         self._lock = threading.Lock()  # Protect concurrent access to progress bar
 
-    def start(self, total: int, desc: str = "Processing", unit: str = "folder"):
+    def start(self, total: int, desc: str = "Processing", unit: str = "folder") -> None:
         """
         Start a new progress bar.
 
@@ -28,7 +29,7 @@ class ProgressTracker:
         with self._lock:
             self.pbar = tqdm(total=total, desc=desc, unit=unit)
 
-    def update(self, n: int = 1, desc: Optional[str] = None):
+    def update(self, n: int = 1, desc: str | None = None) -> None:
         """
         Update progress bar.
 
@@ -42,17 +43,22 @@ class ProgressTracker:
                     self.pbar.set_description(desc)
                 self.pbar.update(n)
 
-    def close(self):
+    def close(self) -> None:
         """Close the progress bar."""
         with self._lock:
             if self.pbar:
                 self.pbar.close()
                 self.pbar = None
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         """Context manager entry."""
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         """Context manager exit."""
         self.close()

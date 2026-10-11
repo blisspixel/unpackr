@@ -8,33 +8,34 @@ destructive-path policy.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
-from typing import Any, Dict, Mapping, Optional
+from collections.abc import Mapping
+from datetime import UTC, datetime
+from typing import Any
 
 
 def utc_now_iso() -> str:
     """Return an ISO-8601 UTC timestamp with timezone."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def build_unpackr_run_summary(
     *,
     status: str,
     exit_code: int,
-    source: Optional[str] = None,
-    destination: Optional[str] = None,
+    source: str | None = None,
+    destination: str | None = None,
     dry_run: bool = False,
     cancelled: bool = False,
-    stats: Optional[Mapping[str, int]] = None,
-    errors: Optional[list[str]] = None,
-    warnings: Optional[list[str]] = None,
-    recommended_actions: Optional[list[str]] = None,
+    stats: Mapping[str, int] | None = None,
+    errors: list[str] | None = None,
+    warnings: list[str] | None = None,
+    recommended_actions: list[str] | None = None,
     version: str = "",
-    items: Optional[list[Dict[str, Any]]] = None,
-    plan: Optional[list[Dict[str, Any]]] = None,
-    removal: Optional[Dict[str, Any]] = None,
-    damaged: Optional[list[str]] = None,
-) -> Dict[str, Any]:
+    items: list[dict[str, Any]] | None = None,
+    plan: list[dict[str, Any]] | None = None,
+    removal: dict[str, Any] | None = None,
+    damaged: list[str] | None = None,
+) -> dict[str, Any]:
     """
     Build a structured unpackr run summary.
 
@@ -65,7 +66,7 @@ def build_unpackr_run_summary(
             actions.append("Run without --dry-run to execute the planned actions.")
         actions.append("Run `unpackr-doctor --json` and confirm status is ready before unattended live runs.")
 
-    summary: Dict[str, Any] = {
+    summary: dict[str, Any] = {
         "timestamp_utc": utc_now_iso(),
         "tool": "unpackr",
         "version": version,
@@ -96,7 +97,7 @@ def build_unpackr_run_summary(
         "recommended_actions": actions,
     }
     if items is not None:
-        item_counts: Dict[str, int] = {}
+        item_counts: dict[str, int] = {}
         for item in items:
             action = str(item.get("action", ""))
             item_counts[action] = item_counts.get(action, 0) + 1

@@ -7,7 +7,7 @@ import json
 import shutil
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, TypeGuard, cast
+from typing import Any, Protocol, TypeGuard, cast
 
 from core.junk_rules import (
     DEFAULT_DANGEROUS_EXTENSIONS,
@@ -17,11 +17,17 @@ from core.junk_rules import (
 )
 
 
-def _is_str_list(value: Any) -> TypeGuard[List[str]]:
+class ConfigSource(Protocol):
+    """Anything with a dict-style ``get``: a ``Config`` or a plain settings dict."""
+
+    def get(self, key: str, default: Any = None, /) -> Any: ...
+
+
+def _is_str_list(value: Any) -> TypeGuard[list[str]]:
     """Return True when a config value is a list of strings."""
     if not isinstance(value, list):
         return False
-    return all(isinstance(item, str) for item in cast(List[object], value))
+    return all(isinstance(item, str) for item in cast(list[object], value))
 
 
 class Config:
@@ -105,7 +111,7 @@ class Config:
         "archive_extraction_loop_limit": 100,
     }
 
-    def __init__(self, config_path: Optional[Path] = None) -> None:
+    def __init__(self, config_path: Path | None = None) -> None:
         """
         Initialize configuration.
 
@@ -113,7 +119,7 @@ class Config:
             config_path: Path to config.json file. If None, uses defaults.
         """
         self.config_path = config_path
-        self.config: Dict[str, Any] = deepcopy(self.DEFAULT_CONFIG)
+        self.config: dict[str, Any] = deepcopy(self.DEFAULT_CONFIG)
         self.is_valid = config_path is None
 
         if config_path is not None:
@@ -127,7 +133,7 @@ class Config:
     def load_config(self, config_path: Path) -> bool:
         """Load configuration from JSON file."""
         try:
-            with open(config_path, "r", encoding="utf-8") as f:
+            with open(config_path, encoding="utf-8") as f:
                 user_config = json.load(f)
                 if not isinstance(user_config, dict):
                     print("\nERROR: Config file must contain a JSON object at top level")
@@ -136,7 +142,7 @@ class Config:
                     return False
 
                 # Validate loaded config before applying
-                is_valid, errors = self._validate_config(cast(Dict[str, Any], user_config))
+                is_valid, errors = self._validate_config(cast(dict[str, Any], user_config))
                 if not is_valid:
                     print("\nConfiguration validation failed:")
                     print(f"  Config file: {config_path.absolute()}")
@@ -147,7 +153,7 @@ class Config:
                     print("Configuration is invalid and will block startup.")
                     return False
 
-                self.config.update(cast(Dict[str, Any], user_config))
+                self.config.update(cast(dict[str, Any], user_config))
                 return True
         except json.JSONDecodeError as e:
             print("\nERROR: Invalid JSON in config file")
@@ -182,14 +188,14 @@ class Config:
         """Set configuration value."""
         self.config[key] = value
 
-    def _validate_config(self, config: Dict[str, Any]) -> Tuple[bool, List[str]]:
+    def _validate_config(self, config: dict[str, Any]) -> tuple[bool, list[str]]:
         """
         Validate configuration dictionary.
 
         Returns:
             Tuple of (is_valid, error_messages)
         """
-        errors: List[str] = []
+        errors: list[str] = []
 
         # Validate numeric ranges
         numeric_fields = {
@@ -307,7 +313,7 @@ class Config:
             if not isinstance(tool_paths, dict):
                 errors.append("tool_paths must be a dictionary")
             else:
-                for tool, paths in cast(Dict[str, Any], tool_paths).items():
+                for tool, paths in cast(dict[str, Any], tool_paths).items():
                     if not isinstance(paths, list):
                         errors.append(f"tool_paths['{tool}'] must be a list of paths")
                     elif not _is_str_list(paths):
@@ -325,19 +331,19 @@ class Config:
 
         return (len(errors) == 0, errors)
 
-    def validate_tool_paths(self) -> Tuple[bool, List[str]]:
+    def validate_tool_paths(self) -> tuple[bool, list[str]]:
         """
         Validate that configured tool paths exist and are executable.
 
         Returns:
             Tuple of (all_valid, error_messages)
         """
-        errors: List[str] = []
+        errors: list[str] = []
         tool_paths = self.config.get("tool_paths", {})
         if not isinstance(tool_paths, dict):
             return False, ["tool_paths must be a dictionary"]
 
-        for tool_name, paths in cast(Dict[str, Any], tool_paths).items():
+        for tool_name, paths in cast(dict[str, Any], tool_paths).items():
             if not _is_str_list(paths):
                 continue  # Already caught by _validate_config
 
@@ -375,29 +381,29 @@ class Config:
         return (len(errors) == 0, errors)
 
     @property
-    def video_extensions(self) -> List[str]:
+    def video_extensions(self) -> list[str]:
         """Get list of video file extensions."""
-        return self._get_str_list("video_extensions", cast(List[str], self.DEFAULT_CONFIG["video_extensions"]))
+        return self._get_str_list("video_extensions", cast(list[str], self.DEFAULT_CONFIG["video_extensions"]))
 
     @property
-    def image_extensions(self) -> List[str]:
+    def image_extensions(self) -> list[str]:
         """Get list of image file extensions."""
-        return self._get_str_list("image_extensions", cast(List[str], self.DEFAULT_CONFIG["image_extensions"]))
+        return self._get_str_list("image_extensions", cast(list[str], self.DEFAULT_CONFIG["image_extensions"]))
 
     @property
-    def removable_extensions(self) -> List[str]:
+    def removable_extensions(self) -> list[str]:
         """Get list of removable file extensions."""
-        return self._get_str_list("removable_extensions", cast(List[str], self.DEFAULT_CONFIG["removable_extensions"]))
+        return self._get_str_list("removable_extensions", cast(list[str], self.DEFAULT_CONFIG["removable_extensions"]))
 
     @property
-    def music_extensions(self) -> List[str]:
+    def music_extensions(self) -> list[str]:
         """Get list of music file extensions."""
-        return self._get_str_list("music_extensions", cast(List[str], self.DEFAULT_CONFIG["music_extensions"]))
+        return self._get_str_list("music_extensions", cast(list[str], self.DEFAULT_CONFIG["music_extensions"]))
 
     @property
-    def document_extensions(self) -> List[str]:
+    def document_extensions(self) -> list[str]:
         """Get list of document file extensions."""
-        return self._get_str_list("document_extensions", cast(List[str], self.DEFAULT_CONFIG["document_extensions"]))
+        return self._get_str_list("document_extensions", cast(list[str], self.DEFAULT_CONFIG["document_extensions"]))
 
     @property
     def min_music_files(self) -> int:
@@ -527,7 +533,7 @@ class Config:
     def archive_extraction_loop_limit(self, value: int) -> None:
         self.set("archive_extraction_loop_limit", value)
 
-    def _get_str_list(self, key: str, default: List[str]) -> List[str]:
+    def _get_str_list(self, key: str, default: list[str]) -> list[str]:
         value = self.config.get(key, default)
         if _is_str_list(value):
             return value

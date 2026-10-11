@@ -14,8 +14,9 @@ import os
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence
+from typing import cast
 
 
 def is_windows() -> bool:
@@ -58,13 +59,13 @@ LINUX_INSTALL_COMMANDS = {
 NO_ROOT_7Z_HINT = "Without root: download the static 7zz from https://www.7-zip.org/ and set tool_paths.7z to its path."
 
 
-def linux_distro_family(os_release: Path = Path("/etc/os-release")) -> Optional[str]:
+def linux_distro_family(os_release: Path = Path("/etc/os-release")) -> str | None:
     """Return "arch", "debian", "fedora" or "suse" from os-release ID/ID_LIKE, else None."""
     try:
         text = os_release.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return None
-    ids: List[str] = []
+    ids: list[str] = []
     for line in text.splitlines():
         key, _, value = line.partition("=")
         if key in ("ID", "ID_LIKE"):
@@ -122,7 +123,7 @@ def tool_missing_hint(tool_key: str, include_recipe: bool = True) -> str:
     return f"Install {label}. {package_manager_install_hint()}"
 
 
-def default_tool_candidates(tool_key: str) -> List[str]:
+def default_tool_candidates(tool_key: str) -> list[str]:
     """
     Return ordered executable candidates for a tool on the current platform.
 
@@ -132,7 +133,7 @@ def default_tool_candidates(tool_key: str) -> List[str]:
     key = (tool_key or "").strip().lower()
     # 7zz is the official 7-Zip binary and always current; an old p7zip `7z` (16.02)
     # is below the 22.0 minimum, so 7zz wins when both are installed.
-    path_first: dict[str, List[str]] = {
+    path_first: dict[str, list[str]] = {
         "7z": ["7zz", "7z", "7za"],
         "par2": ["par2"],
         "ffmpeg": ["ffmpeg"],
@@ -140,7 +141,7 @@ def default_tool_candidates(tool_key: str) -> List[str]:
     candidates = list(path_first.get(key, [key] if key else []))
 
     if is_windows():
-        windows_paths: dict[str, List[str]] = {
+        windows_paths: dict[str, list[str]] = {
             "7z": [
                 r"C:\Program Files\7-Zip\7z.exe",
                 r"C:\Program Files (x86)\7-Zip\7z.exe",
@@ -168,7 +169,7 @@ def default_tool_candidates(tool_key: str) -> List[str]:
     return candidates
 
 
-def merge_tool_candidates(configured: Sequence[str] | str | None, tool_key: str) -> List[str]:
+def merge_tool_candidates(configured: object, tool_key: str) -> list[str]:
     """
     Merge user-configured tool paths with platform defaults.
 
@@ -177,18 +178,20 @@ def merge_tool_candidates(configured: Sequence[str] | str | None, tool_key: str)
     if isinstance(configured, str):
         configured_list = [configured]
     elif isinstance(configured, Sequence):
-        configured_list = [item for item in configured if isinstance(item, str) and item.strip()]
+        # Config values come from JSON, so entries are validated individually.
+        entries = cast(Sequence[object], configured)
+        configured_list = [item for item in entries if isinstance(item, str) and item.strip()]
     else:
         configured_list = []
 
-    merged: List[str] = []
+    merged: list[str] = []
     for item in [*configured_list, *default_tool_candidates(tool_key)]:
         if item not in merged:
             merged.append(item)
     return merged
 
 
-def resolve_first_available_tool(tool_key: str, configured: Sequence[str] | str | None = None) -> str:
+def resolve_first_available_tool(tool_key: str, configured: object = None) -> str:
     """
     Resolve the first usable executable for a tool key.
 
@@ -212,7 +215,7 @@ def resolve_first_available_tool(tool_key: str, configured: Sequence[str] | str 
     return ""
 
 
-def helper_process_names() -> dict[str, List[str]]:
+def helper_process_names() -> dict[str, list[str]]:
     """Map logical helper labels to process name fragments used for detection."""
     if is_windows():
         return {
@@ -227,7 +230,7 @@ def helper_process_names() -> dict[str, List[str]]:
     }
 
 
-def detect_running_helpers(labels: Iterable[str] | None = None) -> List[str]:
+def detect_running_helpers(labels: Iterable[str] | None = None) -> list[str]:
     """
     Detect running helper processes that may conflict with Unpackr work.
 
@@ -238,7 +241,7 @@ def detect_running_helpers(labels: Iterable[str] | None = None) -> List[str]:
     if not mapping:
         return []
 
-    running: List[str] = []
+    running: list[str] = []
     try:
         if is_windows():
             result = subprocess.run(
@@ -328,7 +331,7 @@ def force_delete_directory(folder: Path) -> bool:
     return _force_delete_posix(folder)
 
 
-def build_powershell_delete_command(folder: Path) -> List[str]:
+def build_powershell_delete_command(folder: Path) -> list[str]:
     """
     Build a PowerShell command that treats the folder path as data rather
     than command text. Windows-only force-delete helper.
@@ -362,7 +365,7 @@ def _force_delete_windows(folder: Path) -> bool:
 
 
 def _force_delete_posix(folder: Path) -> bool:
-    def _onerror(func, path, _exc_info):  # noqa: ANN001 - shutil signature
+    def _onexc(func: Callable[..., object], path: str, _exc: BaseException) -> None:
         del func
         path_obj = Path(path)
         try:
@@ -374,8 +377,7 @@ def _force_delete_posix(folder: Path) -> bool:
             pass
 
     try:
-        # Use onerror for broad type-checker and runtime compatibility.
-        shutil.rmtree(folder, onerror=_onerror)
+        shutil.rmtree(folder, onexc=_onexc)
     except OSError as exc:
         logging.error(f"POSIX force delete failed for {folder}: {exc}")
         return False
