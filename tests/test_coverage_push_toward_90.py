@@ -1,5 +1,6 @@
 import threading
 from collections import deque
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -439,7 +440,8 @@ def test_process_folder_handles_archive_stat_error_in_dry_run(tmp_path):
     real_stat = Path.stat
 
     def stat(self, *args, **kwargs):
-        if self.name == "arc.rar" and not kwargs and not args:
+        # Only the size lookup fails; pathlib's own is_file()/exists() call stat() on Python <= 3.12.
+        if self.name == "arc.rar" and sys._getframe(1).f_code.co_name == "<genexpr>":
             raise OSError("denied")
         return real_stat(self, *args, **kwargs)
 

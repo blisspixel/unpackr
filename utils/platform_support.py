@@ -51,8 +51,8 @@ def platform_label() -> str:
 
 LINUX_INSTALL_COMMANDS = {
     "arch": "Arch/Manjaro/Omarchy: sudo pacman -S 7zip par2cmdline ffmpeg",
-    "debian": "Debian/Ubuntu: sudo apt install p7zip-full par2 ffmpeg",
-    "fedora": "Fedora/RHEL: sudo dnf install p7zip par2cmdline ffmpeg",
+    "debian": "Debian 12+/Ubuntu 24.04+: sudo apt install 7zip par2 ffmpeg",
+    "fedora": "Fedora/RHEL: sudo dnf install 7zip par2cmdline ffmpeg",
     "suse": "openSUSE: sudo zypper install 7zip par2cmdline ffmpeg",
 }
 NO_ROOT_7Z_HINT = "Without root: download the static 7zz from https://www.7-zip.org/ and set tool_paths.7z to its path."
@@ -99,7 +99,7 @@ def package_manager_install_hint() -> str:
             "(or set absolute paths in config tool_paths)."
         )
     if is_macos():
-        return "brew install p7zip par2 ffmpeg"
+        return "brew install sevenzip par2 ffmpeg"
     if is_linux():
         family = linux_distro_family()
         if family in LINUX_INSTALL_COMMANDS:
@@ -130,8 +130,10 @@ def default_tool_candidates(tool_key: str) -> List[str]:
     Windows absolute paths are appended only on Windows.
     """
     key = (tool_key or "").strip().lower()
+    # 7zz is the official 7-Zip binary and always current; an old p7zip `7z` (16.02)
+    # is below the 22.0 minimum, so 7zz wins when both are installed.
     path_first: dict[str, List[str]] = {
-        "7z": ["7z", "7zz", "7za"],
+        "7z": ["7zz", "7z", "7za"],
         "par2": ["par2"],
         "ffmpeg": ["ffmpeg"],
     }

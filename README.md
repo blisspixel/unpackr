@@ -27,7 +27,7 @@ Point it at a downloads folder, not at folders you curate by hand. Run it when y
 
 - **OS:** Windows, Linux, or macOS
 - Python `3.11+`
-- Required: [7-Zip](https://www.7-zip.org/) / `p7zip` (`7z` or `7zz` on PATH)
+- Required: [7-Zip](https://www.7-zip.org/) 22.0+ (`7zz` or `7z` on PATH; the old `p7zip` 16.02 is too old)
 - Recommended: [par2cmdline](https://github.com/Parchive/par2cmdline), [ffmpeg](https://ffmpeg.org/)
 
 Minimum supported versions:
@@ -39,16 +39,16 @@ Package-manager examples:
 
 ```bash
 # Debian / Ubuntu
-sudo apt install p7zip-full par2 ffmpeg
+sudo apt install 7zip par2 ffmpeg   # Debian 12+, Ubuntu 24.04+
 
 # Fedora
-sudo dnf install p7zip par2cmdline ffmpeg
+sudo dnf install 7zip par2cmdline ffmpeg
 
 # Arch / Manjaro / Omarchy
 sudo pacman -S 7zip par2cmdline ffmpeg
 
 # macOS (Homebrew)
-brew install p7zip par2 ffmpeg
+brew install sevenzip par2 ffmpeg   # provides 7zz
 ```
 
 Windows: install [7-Zip](https://www.7-zip.org/), then put `par2` and `ffmpeg` on `PATH` (or set absolute paths in config `tool_paths`).

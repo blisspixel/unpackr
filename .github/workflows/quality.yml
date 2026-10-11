@@ -32,12 +32,12 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y p7zip-full ffmpeg par2
+          sudo apt-get install -y 7zip ffmpeg par2
 
       - name: Install external tools (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install p7zip ffmpeg par2 || true
+          brew install sevenzip ffmpeg par2
 
       - name: Install dependencies
         run: |
