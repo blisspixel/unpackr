@@ -78,6 +78,9 @@ class Config:
         "min_video_duration_seconds": 10,
         "max_sample_duration_seconds": 300,
         "dedupe_same_title": False,
+        "output_layout": "{name}{ext}",
+        "deobfuscate_names": True,
+        "keep_subtitles": True,
         "dangerous_extensions": list(DEFAULT_DANGEROUS_EXTENSIONS),
         "incomplete_download_markers": list(DEFAULT_INCOMPLETE_MARKERS),
         "sample_folder_names": list(DEFAULT_SAMPLE_FOLDER_NAMES),
@@ -230,6 +233,21 @@ class Config:
                         f"  Expected: number between {min_val} and {max_val}\n"
                         f"  Example: {example}"
                     )
+
+        layout = config.get("output_layout")
+        if "output_layout" in config and (not isinstance(layout, str) or not layout.strip()):
+            errors.append(
+                "ERROR: Invalid config value\n"
+                "  Field: output_layout\n"
+                f"  Value: {layout!r}\n"
+                '  Expected: a preset ("flat", "release", "movies", "tv", "auto") or a template string\n'
+                '  Example: "auto"'
+            )
+        for flag in ("deobfuscate_names", "keep_subtitles", "dedupe_same_title"):
+            if flag in config and not isinstance(config[flag], bool):
+                errors.append(
+                    f"ERROR: Invalid config value\n  Field: {flag}\n  Value: {config[flag]!r}\n  Expected: true or false"
+                )
 
         if "delete_mode" in config and config["delete_mode"] not in ("quarantine", "trash", "permanent"):
             errors.append(

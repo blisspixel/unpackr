@@ -90,6 +90,28 @@ File extensions recognized as videos. Add formats supported by your ffmpeg build
 
 A video with sample evidence (name or folder) is removed only when it is at most this long. Default: `300`. Protects real episodes titled "Preview" or "Promo".
 
+### `output_layout`
+
+Where and under what name videos land in the destination. Default: `"{name}{ext}"` (flat, as before). Presets:
+
+| Preset | Template | Example |
+|---|---|---|
+| `flat` | `{name}{ext}` | `Some.Show.S01E02.1080p.mkv` |
+| `release` | `{release}{ext}` | `Some.Show.S01E02.1080p.mkv` |
+| `movies` | `Movies/{title} ({year})/{title} ({year}){ext}` | `Movies/Movie Title (2026)/Movie Title (2026).mkv` |
+| `tv` | `TV/{show}/Season {season:02}/{show} - S{season:02}E{episode:02}{episode_suffix}{ext}` | `TV/Some Show/Season 01/Some Show - S01E02.mkv` |
+| `auto` | `tv` for episodes, `movies` for movies, `flat` otherwise | |
+
+Fields for custom templates: `name` (video name, deobfuscated), `ext`, `release` (top-level release folder), `title`, `year`, `show`, `season`, `episode`, `episode_suffix` (`-E03` for multi-episode files). Names are parsed locally from the release folder or file name; there are no network lookups. When a video's name does not provide the fields a template needs, it is moved with the flat layout and a `layout_unparsed` warning. Rendered paths never leave the destination.
+
+### `deobfuscate_names`
+
+When `true` (default), a video with an obfuscated or meaningless name (`a1b2c3d4e5f6...mkv`, 32-character hashes, `abc.xyz...`, `movie.mkv`) takes the name of its release folder, following SABnzbd's heuristics. Reported as `renamed_deobfuscated`.
+
+### `keep_subtitles`
+
+When `true` (default), subtitles that belong to a moved video (`<video>.en.srt`, or RARBG-style `Subs/2_English.srt` in a single-video release) are moved next to it with a matching name, such as `Some Show - S01E02.English.srt`. Reported as `subtitle_moved`. A shared `Subs` folder in a multi-video release is left alone.
+
 ### `dedupe_same_title`
 
 Opt-in. When `true`, two videos of the same title in one release (differing only in quality, codec or group tags) keep only the largest; the others are removed as `duplicate_encode`. Default: `false`.

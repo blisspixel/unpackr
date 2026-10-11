@@ -14,7 +14,7 @@ class _DryRunPlan:
     def add_archive_extract(self, archive, size):
         self.calls.append(("archive", archive, size))
 
-    def add_video_move(self, video, size, resolution):
+    def add_video_move(self, video, size, resolution, destination=""):
         self.calls.append(("video", video, size, resolution))
 
     def add_folder_delete(self, folder):

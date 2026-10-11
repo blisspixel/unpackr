@@ -4,6 +4,8 @@ Release dates are included where recorded.
 
 ## Unreleased
 
+- Output naming (#8): `output_layout` with `flat`, `release`, `movies`, `tv` and `auto` presets or a custom template, using a local release-name parser (episodes, multi-episode, `1x02`, years inside titles). Obfuscated video names take the release folder name (`deobfuscate_names`), subtitles move with their video under a matching name (`keep_subtitles`), and the dry run shows each video's final destination.
+- A timing-sensitive adaptive-policy test no longer compares disk benchmark classifications between runs.
 - Bait releases fail safely (#12): executables, scripts, shortcuts, disguised double extensions, Unicode direction tricks and payload subtitles are removed and no video from the release is moved; archives listing such files are not extracted; `rename.bat`/`.sh` and RARBG's placeholder exe are removed without failing the release.
 - Unfinished downloads are left alone (#13): releases with `.!qB`, `.!ut`, `.part`, `.crdownload` and similar files are skipped. A bare `.part` file no longer counts as a RAR part, and the duplicate-name fix only renames numeric suffixes such as `video.mkv.1` (it used to turn `x.mkv.part` and `x.mkv.exe` into `.mkv`) and never runs in a dry run.
 - Samples are found across the release (#14): `Sample/`, `Proof/` and `Screens/` folders, `sample|proof|trailer|preview|promo` names with a `max_sample_duration_seconds` cap (300), a relative rule against a long main video, and `min_sample_size_mb` as the fallback when the duration is unreadable. A long video is never removed on its name alone.
