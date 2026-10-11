@@ -40,6 +40,7 @@ Usenet and torrent releases are mostly not the video you wanted. Each top-level 
 | Unfinished downloads (manual runs) | Yes: `incomplete_download_markers` |
 | Archive sets and their `.par2` files after a successful extraction | No: always deleted |
 | Archive sets that fail with CRC/data errors | No: always deleted, listed for re-download |
+| Archive sets that cannot be unpacked on a manual run: a volume missing that PAR2 could not rebuild, cut short, unreadable, password-protected | No: deleted, listed for re-download (unattended runs keep them) |
 | Releases PAR2 says are damaged beyond repair (no set could be extracted) | No: always deleted, listed for re-download |
 | Empty folders | No: always deleted |
 | Processed folders after extraction | No: always deleted |
@@ -53,7 +54,8 @@ Usenet and torrent releases are mostly not the video you wanted. Each top-level 
 | Image folders (10+ files, 10MB+) | Yes: `min_image_files` |
 | Document folders (10+ files) | Yes: `min_documents` |
 | Folders with files of an unrecognized extension | Always preserved |
-| Incomplete, unreadable, password-protected or interrupted archive sets | Kept for retry; the run exits `3` |
+| Archive sets held back by the machine: disk full, extraction timeout, 7-Zip missing or failing | Kept for retry; the run exits `3` |
+| Incomplete, unreadable or password-protected archive sets on an unattended run | Kept for a later run; the run exits `3` |
 | A PAR2 release par2 could not judge (not installed, tool error) next to unrecognized files, which may be renamed volumes | Kept; the run exits `3` |
 | Anything in destination directory | Never touched |
 

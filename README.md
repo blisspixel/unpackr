@@ -6,7 +6,7 @@ Commercial/enterprise products require separate license from Nick Seal.
 
 # Unpackr
 
-**Version 1.5.0** · October 2026
+**Version 1.5.1** · October 2026
 
 Unpackr turns a messy downloads folder (Usenet, torrents, whatever landed there) into a clean one. It repairs and unpacks archives, checks every video, moves the good ones to your library, keeps the music, photos and documents it finds, and **deletes everything else**. Deleting the junk is the point. It runs on **Windows, Linux, and macOS**.
 
@@ -136,7 +136,7 @@ For cron, launchd or Task Scheduler, run `unpackr --unattended --source ... --de
 Unpackr deletes files; that is its job. The safeguards are there so it never deletes the *good* file:
 
 - Removals are reversible by default: they go to `<source>/.unpackr-quarantine/<run_id>/` for 14 days. Undo a run with `unpackr restore latest --source "~/Downloads"`, list runs with `unpackr runs --source "~/Downloads"`, or set `delete_mode` to `trash` or `permanent`.
-- Archive volumes are only removed after their set extracted cleanly (7-Zip checks every file's CRC). A set that is incomplete, password-protected or blocked is kept and listed under NEEDS ATTENTION.
+- A good archive set's volumes are removed only after it extracted cleanly (7-Zip checks every file's CRC). On a manual run, a set that cannot be unpacked (missing volume PAR2 could not rebuild, cut short, unreadable, password-protected) is junk: removed and listed for re-download. Problems with your machine rather than the download (disk full, timeout, 7-Zip missing) keep the set and list it under NEEDS ATTENTION.
 - Damaged downloads are removed like any other junk and listed under DAMAGED, RE-DOWNLOAD.
 - Releases with executables or shortcuts are treated as bait: nothing from them is moved.
 - `Ctrl+C` finishes the current step and stops.

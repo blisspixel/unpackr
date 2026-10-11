@@ -88,6 +88,7 @@ def bind_app_helpers(app):
         "_verify_par2",
         "_finish_par2",
         "_unrecognised_files",
+        "_remove_broken_set",
     ):
         if not hasattr(app, name):
             setattr(app, name, types.MethodType(getattr(unpackr.UnpackrApp, name), app))

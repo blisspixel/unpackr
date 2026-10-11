@@ -326,7 +326,7 @@ class TestAppWiring:
         assert "preview" in plan.add_video_delete.call_args.args[1]
         plan.add_video_move.assert_not_called()
 
-    def test_held_archive_becomes_run_error(self, tmp_path):
+    def test_unattended_run_holds_incomplete_set(self, tmp_path):
         _touch(tmp_path, "clip.7z.001", "clip.7z.003")
         processor = ArchiveProcessor(Config())
         held = []
@@ -335,10 +335,45 @@ class TestAppWiring:
             archive_processor=processor,
             file_handler=types.SimpleNamespace(hold_paths=lambda paths, reason: held.append((paths, reason))),
         )
+        app.unattended = True
         archive_error, count = app._process_archives(tmp_path)
         assert archive_error is True and count == 1
         assert held and held[0][1] == "archive_volume_missing"
         assert app.run_errors and "archive_volume_missing" in app.run_errors[0]
+
+    def test_manual_run_removes_incomplete_set_as_junk(self, tmp_path):
+        _touch(tmp_path, "clip.7z.001", "clip.7z.003")
+        processor = ArchiveProcessor(Config())
+        removed = []
+        app = _fake_app(
+            False,
+            archive_processor=processor,
+            file_handler=types.SimpleNamespace(
+                hold_paths=lambda *_a: pytest.fail("a manual run must not hold a broken set"),
+                remove_file=lambda path, reason: removed.append((path.name, reason)) or True,
+            ),
+        )
+        archive_error, _ = app._process_archives(tmp_path)
+        assert archive_error is True
+        assert removed == [("clip.7z.001", "archive_volume_missing"), ("clip.7z.003", "archive_volume_missing")]
+        assert not app.run_errors
+        assert app.damaged and "clip.7z" in app.damaged[0]
+
+    def test_machine_problems_are_held_even_on_a_manual_run(self, tmp_path):
+        from core.archive_processor import ArchiveOutcome
+
+        held = []
+        app = _fake_app(
+            False,
+            archive_processor=ArchiveProcessor(Config()),
+            file_handler=types.SimpleNamespace(
+                hold_paths=lambda paths, reason: held.append(reason),
+                remove_file=lambda *_a: pytest.fail("not junk: the download may be fine"),
+            ),
+        )
+        for code in ("disk_space_low", "archive_timeout", "tool_missing", "archive_extract_failed"):
+            app._apply_archive_outcomes(tmp_path, [ArchiveOutcome("x.7z", "held", code, "d", [tmp_path / "x.7z"])])
+        assert held == ["disk_space_low", "archive_timeout", "tool_missing", "archive_extract_failed"]
 
     def test_dry_run_flags_incomplete_set_once(self, tmp_path):
         _touch(tmp_path, "movie.7z.001", "movie.7z.002", "clip.7z.001", "clip.7z.003")
@@ -409,11 +444,12 @@ def test_end_to_end_previews_truncation_and_incomplete_sets(tmp_path):
     )  # fmt: skip
     summary = json.loads(result.stdout[result.stdout.index("{") :])
 
-    assert result.returncode == unpackr.EXIT_COMPLETED_WITH_ERRORS, result.stdout[-2000:]
-    assert summary["status"] == "completed_with_errors"
+    assert result.returncode == 0, result.stdout[-2000:]
+    assert summary["status"] == "completed"
     assert [p.name for p in dst.iterdir()] == ["Good.Movie.mkv"]
     assert summary["counts"]["videos_sample"] == 1  # the 6 second preview, not "corrupt"
     assert summary["counts"]["videos_corrupt"] == 1  # the truncated file
-    assert broken.exists() and len(list(broken.iterdir())) == len(volumes) - 1
-    assert any("archive_volume_missing" in e for e in summary["errors"])
-    assert not any("traversal" in e for e in summary["errors"])
+    # A manual run treats the set with a missing volume as junk: removed, listed for re-download.
+    assert not broken.exists()
+    assert any("clip.7z" in d and "missing" in d for d in summary["damaged"])
+    assert not any("traversal" in e for e in summary["errors"] + summary["warnings"])

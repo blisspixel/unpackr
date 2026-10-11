@@ -4,7 +4,7 @@ Unpackr turns a messy downloads folder into a clean one: it keeps the good conte
 
 ## Version Focus
 
-- Current line: `1.5.x` (latest: `1.5.0`, October 2026) — first-class **Windows, Linux, and macOS**, Python `3.12` to `3.15`
+- Current line: `1.5.x` (latest: `1.5.1`, October 2026) — first-class **Windows, Linux, and macOS**, Python `3.12` to `3.15`
 - Primary objective: delete the junk decisively, never the good file, and make every removal reversible and explained
 
 ## Quality Baseline
@@ -104,7 +104,6 @@ Status:
 
 ### Next
 
-- Decide whether incomplete multi-volume archive sets on a manual run are junk (like other unfinished downloads) or stay held for retry, as they are today.
 - Real-tool CI on Windows (7-Zip, par2 and ffmpeg are installed on Linux and macOS runners only).
 - Unattended runs on macOS (launchd) and Windows (Task Scheduler) with the same `service install` experience as systemd.
 - Concurrency stays deferred until a real multi-archive workload is measured with and without it.

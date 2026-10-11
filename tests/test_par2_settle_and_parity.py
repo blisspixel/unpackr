@@ -300,7 +300,8 @@ def test_obfuscated_release_without_par2_is_kept(tmp_path):
 
 
 @pytest.mark.skipif(not SEVENZ, reason="needs 7-Zip")
-def test_header_encrypted_archive_is_held_as_password(tmp_path):
+@pytest.mark.parametrize("unattended", [False, True])
+def test_header_encrypted_archive_is_reported_as_password(tmp_path, unattended):
     src, dst = tmp_path / "src", tmp_path / "dst"
     (src / "Locked").mkdir(parents=True)
     dst.mkdir()
@@ -313,13 +314,21 @@ def test_header_encrypted_archive_is_held_as_password(tmp_path):
     _age(src)
 
     start = time.monotonic()
-    code, summary = _run(src, dst, tmp_path)
+    code, summary = _run(src, dst, tmp_path, *(["--unattended"] if unattended else []))
 
     assert time.monotonic() - start < 120
-    assert code == 3
     items = {i["path"]: i for i in summary["items"]}
     assert items["Locked/locked.7z"]["reason_code"] == "archive_password"
-    assert (src / "Locked" / "locked.7z").exists()
+    if unattended:
+        # A timer keeps it: the user may know the password.
+        assert code == 3
+        assert (src / "Locked" / "locked.7z").exists()
+    else:
+        # A manual run means "clean now": an archive that cannot be opened is junk.
+        assert code == 0
+        assert items["Locked/locked.7z"]["action"] == "deleted"
+        assert any("locked.7z" in d for d in summary["damaged"])
+        assert not (src / "Locked").exists()
 
 
 @pytest.mark.skipif(not (SEVENZ and FFMPEG), reason="needs 7-Zip and ffmpeg")
@@ -366,7 +375,9 @@ def test_dry_run_matches_live_run(tmp_path):
 
     assert actions(planned) == actions(live)
     assert planned["counts"]["folders_deleted"] == live["counts"]["folders_deleted"]
-    assert (src / "Missing.Volume" / "mv.7z.001").exists() and (src / "Encrypted" / "enc.7z").exists()
+    # A manual run treats sets that cannot be unpacked as junk; the dry run plans the same.
+    assert not (src / "Missing.Volume").exists() and not (src / "Encrypted").exists()
+    assert sorted(planned["damaged"]) == sorted(live["damaged"])
 
 
 @pytest.mark.skipif(not FFMPEG, reason="needs ffmpeg")

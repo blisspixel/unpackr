@@ -17,7 +17,7 @@ Stable contracts for CI and automation. Prefer machine JSON when available.
 | `0` | Successful processing; dry-run finished; user cancelled countdown; process-conflict abort before work |
 | `1` | Invalid/missing config; path validation failure; logging setup failure; missing required tools; scan/preflight failure; initialization failure; force-cancel after first Ctrl+C |
 | `2` | Invalid CLI arguments (argparse) |
-| `3` | Live run completed, but some items need attention: an archive set was kept because a volume is missing, it could not be listed, it is password-protected or extraction was interrupted; an archive was blocked for unsafe paths; a release contained bait; or par2 could not judge a release with unrecognized files (possibly renamed volumes). Details are in `errors`. Damaged downloads that were removed are listed in `damaged` and do not change the exit code. |
+| `3` | Live run completed, but some items need attention: an archive set was kept because of the machine (disk full, timeout, 7-Zip missing or failing), or, on an unattended run, because a volume is missing, it could not be listed or it is password-protected; an archive was blocked for unsafe paths; a release contained bait; or par2 could not judge a release with unrecognized files (possibly renamed volumes). Details are in `errors`. Damaged downloads that were removed are listed in `damaged` and do not change the exit code. |
 
 ### Structured run summary (`--json`)
 
@@ -39,10 +39,10 @@ Entries in `errors` and `warnings` start with a reason code in brackets, then `f
 
 | Reason code | Level | Meaning |
 |-------------|-------|---------|
-| `archive_volume_missing` | error | A numbered volume is missing; the set was kept for retry |
-| `archive_unlistable` | error | 7-Zip could not list the archive (missing volume, damage or password); kept |
-| `archive_incomplete` | error | Extraction stopped at a missing or cut-short volume; kept |
-| `archive_password` | error | Password-protected; kept |
+| `archive_volume_missing` | warning or error | A numbered volume is missing (and PAR2 could not rebuild it). Manual run: the set is junk, removed and listed in `damaged` (warning). Unattended run: kept for a later run (error) |
+| `archive_unlistable` | warning or error | 7-Zip could not list the archive (missing volume, damage or password); as above |
+| `archive_incomplete` | warning or error | Extraction stopped at a missing or cut-short volume; as above |
+| `archive_password` | warning or error | Password-protected; as above |
 | `archive_timeout`, `disk_space_low`, `archive_extract_failed` | error | Extraction did not finish; kept |
 | `archive_unsafe_paths` | error | Entries would extract outside the folder; blocked |
 | `archive_corrupt` | warning | CRC or data error; treated as junk and listed in `damaged` |
