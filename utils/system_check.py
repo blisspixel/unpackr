@@ -3,11 +3,13 @@ System tools validation for Unpackr.
 Checks availability of required external tools.
 """
 
+import contextlib
 import os
 import re
 import shutil
 import subprocess
-from typing import Dict, List, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 from colorama import Fore, Style
 
@@ -43,6 +45,9 @@ class SystemCheck:
         """Initialize SystemCheck with optional config containing tool paths."""
         self.config = config or {}
         self._version_status: Dict[str, Tuple[bool, str]] = {}
+        # Set by the CLI so conflict handling only touches helpers working on this source.
+        self.source_dir: Optional[Path] = None
+        self.dry_run = False
 
     def check_tool(self, tool_key: str) -> bool:
         """
@@ -299,13 +304,66 @@ class SystemCheck:
         """
         return kill_helper_processes(process_names)
 
+    HELPER_NAMES = {"7z", "7zz", "7za", "7z.exe", "7zz.exe", "par2", "par2.exe", "ffmpeg", "ffmpeg.exe"}
+
+    def find_source_processes(self, source_dir: Path) -> List[Any]:
+        """Helper processes (7-Zip, par2, ffmpeg) whose command line points into source_dir."""
+        import psutil
+
+        source = str(Path(source_dir).absolute())
+        found = []
+        for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+            try:
+                name = (proc.info.get("name") or "").lower()
+                cmdline = proc.info.get("cmdline") or []
+            except (psutil.Error, OSError):
+                continue
+            if name in self.HELPER_NAMES and any(source in str(arg) for arg in cmdline):
+                found.append(proc)
+        return found
+
+    def _handle_processes_for_source(self, source_dir: Path, dry_run: bool) -> bool:
+        """Stop only helpers left over from a run on this source; never touch other work."""
+        import psutil
+
+        leftovers = self.find_source_processes(source_dir)
+        _has_any, running = self.check_running_processes()
+        if running and not leftovers:
+            print(
+                f"{Fore.CYAN}Note: {', '.join(running)} running for other work; Unpackr leaves it alone.{Style.RESET_ALL}"
+            )
+            return True
+        if not leftovers:
+            return True
+        names = ", ".join(sorted({f"{p.info.get('name')} (pid {p.pid})" for p in leftovers}))
+        if dry_run:
+            print(f"{Fore.YELLOW}Leftover processes on this source (not stopped in dry-run): {names}{Style.RESET_ALL}")
+            return True
+        print(f"{Fore.YELLOW}Stopping leftover processes from a previous run on this source: {names}{Style.RESET_ALL}")
+        for proc in leftovers:
+            with contextlib.suppress(psutil.Error, OSError):
+                proc.terminate()
+        _gone, alive = psutil.wait_procs(leftovers, timeout=3)
+        for proc in alive:
+            with contextlib.suppress(psutil.Error, OSError):
+                proc.kill()
+        return True
+
     def warn_running_processes(self) -> bool:
         """
         Check for running processes and kill them automatically.
 
+        When ``source_dir`` is set on this object, only helpers working inside that
+        source are stopped (never during ``dry_run``); unrelated 7-Zip, par2 or
+        ffmpeg processes are left running.
+
         Returns:
             True if should continue, False if user wants to abort
         """
+        source_dir = getattr(self, "source_dir", None)
+        if source_dir is not None:
+            return self._handle_processes_for_source(Path(source_dir), bool(getattr(self, "dry_run", False)))
+
         has_conflicts, running = self.check_running_processes()
 
         if has_conflicts:

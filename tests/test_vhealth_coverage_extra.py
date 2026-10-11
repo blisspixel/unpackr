@@ -59,6 +59,7 @@ def test_prompt_delete_branches(monkeypatch, tmp_path):
         calls["count"] += len(videos)
 
     checker._delete_videos = fake_delete
+    monkeypatch.setattr(vhealth, "_stdin_is_tty", lambda: True)
 
     monkeypatch.setattr("builtins.input", lambda *_: "y")
     checker._prompt_delete([video])

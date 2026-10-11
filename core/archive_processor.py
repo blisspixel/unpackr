@@ -20,6 +20,7 @@ from utils.system_check import SystemCheck
 _SPLIT_7Z = re.compile(r"^(?P<base>.+\.7z)\.(?P<num>\d{3})$", re.IGNORECASE)
 _RAR_PART = re.compile(r"^(?P<base>.+)\.part(?P<num>\d+)\.rar$", re.IGNORECASE)
 _RAR_OLD_VOLUME = re.compile(r"^(?P<base>.+)\.r(?P<num>\d{2})$", re.IGNORECASE)
+_ZIP_VOLUME = re.compile(r"^(?P<base>.+)\.z(?P<num>\d{2})$", re.IGNORECASE)
 
 # Outcomes that leave the archive volumes in place so the user can fix and retry.
 HELD_STATUSES = ("held",)
@@ -75,6 +76,8 @@ def find_archive_sets(folder: Path) -> List[ArchiveSet]:
     rar_parts: Dict[str, Dict[int, Tuple[Path, int]]] = {}
     old_rar_volumes: Dict[str, Dict[int, Path]] = {}
     plain_rar: Dict[str, Path] = {}
+    zip_volumes: Dict[str, Dict[int, Path]] = {}
+    zip_heads: Dict[str, Path] = {}
     sets: List[ArchiveSet] = []
 
     for f in files:
@@ -91,6 +94,13 @@ def find_archive_sets(folder: Path) -> List[ArchiveSet]:
         m = _RAR_OLD_VOLUME.match(name)
         if m:
             old_rar_volumes.setdefault(m.group("base"), {})[int(m.group("num"))] = f
+            continue
+        m = _ZIP_VOLUME.match(name)
+        if m:
+            zip_volumes.setdefault(m.group("base"), {})[int(m.group("num"))] = f
+            continue
+        if lower.endswith(".zip"):
+            zip_heads[name[:-4]] = f
             continue
         if lower.endswith(".7z"):
             sets.append(ArchiveSet(name=name, kind="7z", volumes=[f], first=f))
@@ -137,6 +147,27 @@ def find_archive_sets(folder: Path) -> List[ArchiveSet]:
                 first=head,
                 missing=missing,
             )
+        )
+
+    # Spanned zip: data.z01, data.z02 ... with data.zip as the last volume (7-Zip opens the .zip).
+    for base, head in zip_heads.items():
+        vols = zip_volumes.pop(base, {})
+        nums = sorted(vols)
+        missing = [f"{base}.z{n:02d}" for n in _volume_gaps(nums, 1)]
+        sets.append(
+            ArchiveSet(
+                name=head.name,
+                kind="zip" if not vols else "zip-spanned",
+                volumes=[vols[n] for n in nums] + [head],
+                first=head,
+                missing=missing,
+            )
+        )
+    for base, vols in zip_volumes.items():
+        nums = sorted(vols)
+        missing = [f"{base}.z{n:02d}" for n in _volume_gaps(nums, 1)] + [f"{base}.zip"]
+        sets.append(
+            ArchiveSet(name=f"{base}.zip", kind="zip-spanned", volumes=[vols[n] for n in nums], missing=missing)
         )
 
     # .rNN volumes whose .rar head is missing

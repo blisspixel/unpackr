@@ -129,91 +129,50 @@ def test_prescan_no_terminal_spam(runner: IntegrationTestRunner):
 
 def test_countdown_shows_visual_feedback(runner: IntegrationTestRunner):
     """
-    Test that countdown shows actual numbers, not just static message.
-    This test would have caught Bug #2 (countdown appearing hung).
+    The countdown must show changing numbers, not a static message (Bug #2: it
+    appeared hung). It only runs for interactive live runs; a run without a
+    terminal skips it instead of waiting ten seconds.
     """
     print(f"\n{Fore.YELLOW}[Countdown Visual Feedback Tests]{Style.RESET_ALL}")
+
+    import io
+    from contextlib import redirect_stdout
+    from unittest.mock import patch
+
+    import utils.cli_prompts as cli_prompts
+
+    buffer = io.StringIO()
+    with patch.object(cli_prompts.time, "sleep", lambda *_: None), redirect_stdout(buffer):
+        assert cli_prompts.countdown_prompt(3, operation_label="processing") is True
+    text = buffer.getvalue()
+    runner.test(
+        "Countdown: shows each second",
+        all(f"Starting processing in {n} seconds" in text for n in (3, 2, 1)),
+        text[-300:],
+    )
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_source = Path(tmpdir) / "source"
         tmp_dest = Path(tmpdir) / "dest"
-        tmp_source.mkdir()
+        (tmp_source / "test_video").mkdir(parents=True)
         tmp_dest.mkdir()
-
-        # Create a test folder to process
-        test_folder = tmp_source / "test_video"
-        test_folder.mkdir()
-
-        # Run unpackr with short timeout to capture countdown output
-        # Kill it after countdown starts but before processing
-        stdout_file = tempfile.NamedTemporaryFile(mode="w+", delete=False, encoding="utf-8")
-        stderr_file = tempfile.NamedTemporaryFile(mode="w+", delete=False, encoding="utf-8")
-        stdout_path = Path(stdout_file.name)
-        stderr_path = Path(stderr_file.name)
-        stdout_file.close()
-        stderr_file.close()
-
-        try:
-            with stdout_path.open("w", encoding="utf-8") as out_fh, stderr_path.open("w", encoding="utf-8") as err_fh:
-                proc = subprocess.Popen(
-                    [sys.executable, "unpackr.py", "--source", str(tmp_source), "--destination", str(tmp_dest)],
-                    stdout=out_fh,
-                    stderr=err_fh,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    cwd=Path(__file__).parent.parent,
-                )
-
-            # Poll output until countdown appears (bounded wait for slow CI).
-            started_countdown = False
-            deadline = time.time() + 15
-            while time.time() < deadline:
-                current_out = stdout_path.read_text(encoding="utf-8", errors="replace")
-                if "Starting processing in" in current_out:
-                    started_countdown = True
-                    break
-                if proc.poll() is not None:
-                    break
-                time.sleep(0.25)
-
-            # Let a second countdown line appear when possible.
-            if started_countdown:
-                time.sleep(1.2)
-
-            stdout, stderr = _terminate_and_collect(proc, stdout_path, stderr_path)
-
-            # Check if countdown shows actual numbers
-            has_countdown_numbers = any(f"{i} seconds..." in stdout for i in range(1, 11))
-
-            runner.test(
-                "Countdown: Shows actual countdown numbers (10...9...8...)",
-                has_countdown_numbers,
-                "Countdown should print numbers, not just static message",
-            )
-
-            # Verify countdown doesn't just show static "Starting in X seconds"
-            countdown_lines = [
-                line
-                for line in stdout.split("\n")
-                if "seconds..." in line and any(f"{i} " in line for i in range(1, 11))
-            ]
-            runner.test(
-                "Countdown: Multiple countdown numbers visible",
-                len(countdown_lines) >= 2,
-                f"Only found {len(countdown_lines)} countdown lines (should be ≥2)",
-            )
-
-        except Exception as e:
-            runner.test("Countdown: Visual feedback test", False, f"Test failed with error: {e}")
-        finally:
-            try:
-                stdout_path.unlink(missing_ok=True)
-                stderr_path.unlink(missing_ok=True)
-            except OSError:
-                pass
-
-    assert runner.failed == 0
+        started = time.time()
+        result = subprocess.run(
+            [sys.executable, "unpackr.py", "--source", str(tmp_source), "--destination", str(tmp_dest)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+            cwd=Path(__file__).parent.parent,
+            stdin=subprocess.DEVNULL,
+        )
+        elapsed = time.time() - started
+        runner.test(
+            "Countdown: skipped without an interactive terminal",
+            "Starting processing in" not in result.stdout and elapsed < 9,
+            f"elapsed {elapsed:.1f}s",
+        )
 
 
 def test_windows_console_encoding(runner: IntegrationTestRunner):

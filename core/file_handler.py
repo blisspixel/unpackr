@@ -515,7 +515,9 @@ class FileHandler:
                 or (file_ext == ".par2" and par2_error)
                 or archive_error
                 and (
-                    file_ext == ".rar"
+                    file_ext == ".zip"
+                    or (file_ext.startswith(".z") and len(file_ext) == 4 and file_ext[2:].isdigit())
+                    or file_ext == ".rar"
                     or file_ext == ".7z"
                     or file_ext.startswith(".7z.")
                     or (file_ext.startswith(".r") and file_ext[2:].isdigit())

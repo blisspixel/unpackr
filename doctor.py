@@ -50,6 +50,10 @@ class UnpackrDoctor:
         """Return the explicit config path or the bundled default."""
         return self.config_path or Path(__file__).parent / "config_files" / "config.json"
 
+    def _step(self, number: int) -> str:
+        total = 11 + (1 if self.source is not None else 0)
+        return f"{Fore.YELLOW}[{number}/{total}]{Style.RESET_ALL}"
+
     def print_header(self):
         """Print diagnostic header."""
         print(f"\n{Fore.CYAN}{'=' * 60}{Style.RESET_ALL}")
@@ -66,11 +70,11 @@ class UnpackrDoctor:
         if "python version too old" in issue_text:
             actions.append("Install Python 3.11+ and run doctor again.")
         if "7-zip not found" in issue_text:
-            actions.append(tool_missing_hint("7z"))
+            actions.append(tool_missing_hint("7z", include_recipe=False))
         if "7-zip version too old" in issue_text:
             actions.append("Upgrade 7-Zip/p7zip to a supported version (22.0+).")
         if "par2cmdline not found" in issue_text or "par2cmdline not found" in warning_text:
-            actions.append(tool_missing_hint("par2"))
+            actions.append(tool_missing_hint("par2", include_recipe=False))
         if "par2cmdline version too old" in warning_text:
             actions.append("Upgrade par2cmdline to 0.8.1+ for stable repair behavior.")
         if "missing packages:" in issue_text:
@@ -82,7 +86,7 @@ class UnpackrDoctor:
         if "disk space" in issue_text or "gb free" in issue_text:
             actions.append("Free disk space before processing large archives.")
         if "ffmpeg not found" in warning_text:
-            actions.append(tool_missing_hint("ffmpeg"))
+            actions.append(tool_missing_hint("ffmpeg", include_recipe=False))
         if "ffmpeg version too old" in warning_text:
             actions.append("Upgrade ffmpeg to 4.4+ for expected validation support.")
 
@@ -99,7 +103,7 @@ class UnpackrDoctor:
 
     def check_python_version(self):
         """Check Python version."""
-        print(f"{Fore.YELLOW}[1/11]{Style.RESET_ALL} Checking Python version...", end=" ")
+        print(f"{self._step(1)} Checking Python version...", end=" ")
         version = sys.version_info
         if version.major == 3 and version.minor >= 11:
             print(f"{Fore.GREEN}✓ Python {version.major}.{version.minor}.{version.micro}{Style.RESET_ALL}")
@@ -110,7 +114,7 @@ class UnpackrDoctor:
 
     def check_dependencies(self):
         """Check required Python packages."""
-        print(f"{Fore.YELLOW}[2/11]{Style.RESET_ALL} Checking Python dependencies...", end=" ")
+        print(f"{self._step(2)} Checking Python dependencies...", end=" ")
         required = ["tqdm", "psutil", "colorama"]
         missing = []
 
@@ -130,7 +134,7 @@ class UnpackrDoctor:
 
     def check_config_file(self):
         """Check config file exists and is valid."""
-        print(f"{Fore.YELLOW}[3/11]{Style.RESET_ALL} Checking configuration file...", end=" ")
+        print(f"{self._step(3)} Checking configuration file...", end=" ")
         config_path = self._config_file()
 
         if not config_path.exists():
@@ -215,6 +219,9 @@ class UnpackrDoctor:
         command = [tool_path]
         if tool_name == "ffmpeg":
             command.append("-version")
+        elif tool_name == "par2":
+            # par2cmdline 1.x prints only usage without -V.
+            command.append("-V")
         try:
             result = subprocess.run(
                 command,
@@ -240,7 +247,9 @@ class UnpackrDoctor:
             return
 
         if self._is_version_at_least(found, minimum):
-            self.passed.append(f"{display_name} version {self._format_version(found)}")
+            # Fold the version into the tool's own entry so each check counts once.
+            label = f"{display_name} {self._format_version(found)}"
+            self.passed = [label if entry == display_name else entry for entry in self.passed]
             return
 
         found_text = self._format_version(found)
@@ -252,7 +261,7 @@ class UnpackrDoctor:
 
     def check_external_tools(self):
         """Check external tools (7z, par2, ffmpeg)."""
-        print(f"{Fore.YELLOW}[4/11]{Style.RESET_ALL} Checking external tools...")
+        print(f"{self._step(4)} Checking external tools...")
 
         # Load config to get tool paths
         config_path = self._config_file()
@@ -309,7 +318,7 @@ class UnpackrDoctor:
 
     def check_write_permissions(self):
         """Check write permissions in current directory."""
-        print(f"{Fore.YELLOW}[5/11]{Style.RESET_ALL} Checking write permissions...", end=" ")
+        print(f"{self._step(5)} Checking write permissions...", end=" ")
 
         try:
             with tempfile.NamedTemporaryFile(prefix=".unpackr-doctor-", dir=Path.cwd()):
@@ -322,7 +331,7 @@ class UnpackrDoctor:
 
     def check_filesystem_quirks(self):
         """Probe case sensitivity, symlink, and non-ASCII filename support."""
-        print(f"{Fore.YELLOW}[6/11]{Style.RESET_ALL} Checking filesystem quirks...", end=" ")
+        print(f"{self._step(6)} Checking filesystem quirks...", end=" ")
         try:
             probe = probe_filesystem(Path.cwd())
             bits = [
@@ -348,7 +357,7 @@ class UnpackrDoctor:
 
     def check_disk_space(self):
         """Check available disk space."""
-        print(f"{Fore.YELLOW}[7/11]{Style.RESET_ALL} Checking disk space...", end=" ")
+        print(f"{self._step(7)} Checking disk space...", end=" ")
         try:
             import shutil
 
@@ -369,7 +378,7 @@ class UnpackrDoctor:
 
     def check_comments_file(self):
         """Check easter egg comments file."""
-        print(f"{Fore.YELLOW}[8/11]{Style.RESET_ALL} Checking easter egg comments...", end=" ")
+        print(f"{self._step(8)} Checking easter egg comments...", end=" ")
         config_dir = self._config_file().parent
         bundled_dir = Path(__file__).parent / "config_files"
         candidates = [
@@ -401,7 +410,7 @@ class UnpackrDoctor:
 
     def check_core_modules(self):
         """Check core Python modules are present."""
-        print(f"{Fore.YELLOW}[9/11]{Style.RESET_ALL} Checking core modules...", end=" ")
+        print(f"{self._step(9)} Checking core modules...", end=" ")
         required_modules = [
             "core.config",
             "core.file_handler",
@@ -427,7 +436,7 @@ class UnpackrDoctor:
 
     def check_log_directory(self):
         """Check log directory can be created."""
-        print(f"{Fore.YELLOW}[10/11]{Style.RESET_ALL} Checking log directory...", end=" ")
+        print(f"{self._step(10)} Checking log directory...", end=" ")
         log_folder = "logs"
         try:
             with open(self._config_file(), "r", encoding="utf-8") as config_file:
@@ -442,12 +451,13 @@ class UnpackrDoctor:
         except (OSError, json.JSONDecodeError, AttributeError, TypeError):
             pass
 
-        log_dir = Path(log_folder).expanduser()
-        log_dir = (Path.cwd() / log_dir).resolve() if not log_dir.is_absolute() else log_dir.resolve()
+        from core.logger import resolve_log_dir
+
+        log_dir = resolve_log_dir(log_folder).resolve()
 
         try:
             log_dir.mkdir(parents=True, exist_ok=True)
-            print(f"{Fore.GREEN}✓ Log directory ready{Style.RESET_ALL}")
+            print(f"{Fore.GREEN}✓ Log directory ready: {log_dir}{Style.RESET_ALL}")
             self.passed.append("Log directory")
         except Exception as e:
             print(f"{Fore.RED}✗ Cannot create: {e}{Style.RESET_ALL}")
@@ -455,7 +465,7 @@ class UnpackrDoctor:
 
     def check_running_processes(self):
         """Check for conflicting helper processes on the current platform."""
-        print(f"{Fore.YELLOW}[11/11]{Style.RESET_ALL} Checking for process conflicts...", end=" ")
+        print(f"{self._step(11)} Checking for process conflicts...", end=" ")
 
         try:
             conflicts = detect_running_helpers(["7-Zip", "par2"])
@@ -480,7 +490,7 @@ class UnpackrDoctor:
         held_files = sum(r.quarantine_files for r in runs)
         held_mb = sum(r.quarantine_bytes for r in runs) / (1024 * 1024)
         limit_mb = config.quarantine_warn_mb
-        print(f"\n[Quarantine] {self.source}")
+        print(f"{self._step(12)} Checking quarantine in {self.source}...")
         print(
             f"  mode: {config.delete_mode}, retention: {config.quarantine_retention_days} days, "
             f"held: {held_files} files, {held_mb:.1f} MB in {sum(1 for r in runs if r.quarantine_files)} run(s)"
@@ -499,7 +509,11 @@ class UnpackrDoctor:
         print(f"{Fore.CYAN}Summary{Style.RESET_ALL}")
         print(f"{Fore.CYAN}{'=' * 60}{Style.RESET_ALL}\n")
 
-        print(f"{Fore.GREEN}✓ Passed:{Style.RESET_ALL} {len(self.passed)}")
+        steps = 11 + (1 if self.source is not None else 0)
+        print(
+            f"{Fore.GREEN}✓ Passed:{Style.RESET_ALL} {len(self.passed)} checks in {steps} steps "
+            f"{Style.DIM}(the tools step checks 7-Zip, par2 and ffmpeg separately){Style.RESET_ALL}"
+        )
         print(f"{Fore.YELLOW}⚠ Warnings:{Style.RESET_ALL} {len(self.warnings)}")
         print(f"{Fore.RED}✗ Issues:{Style.RESET_ALL} {len(self.issues)}")
         status = f"{Fore.GREEN}READY{Style.RESET_ALL}" if not self.issues else f"{Fore.RED}BLOCKED{Style.RESET_ALL}"

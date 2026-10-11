@@ -8,6 +8,19 @@ import logging
 import os
 from pathlib import Path
 
+from utils.platform_support import user_state_dir
+
+
+def resolve_log_dir(log_folder: str) -> Path:
+    """Absolute and ~ paths are used as given; relative ones live under the per-user state dir.
+
+    The default ``"logs"`` therefore resolves to ``~/.local/state/unpackr/logs`` on Linux,
+    ``~/Library/Logs/unpackr/logs`` on macOS and ``%LOCALAPPDATA%\\unpackr\\logs`` on Windows,
+    instead of whichever directory Unpackr was started from.
+    """
+    path = Path(log_folder).expanduser()
+    return path if path.is_absolute() else user_state_dir() / path
+
 
 def setup_logging(log_folder: str = "logs", max_log_files: int = 5) -> Path:
     """
@@ -20,7 +33,7 @@ def setup_logging(log_folder: str = "logs", max_log_files: int = 5) -> Path:
     Returns:
         Path to the current log file
     """
-    logs_folder = Path(log_folder)
+    logs_folder = resolve_log_dir(log_folder)
     os.makedirs(logs_folder, exist_ok=True)
 
     # Generate unique log file name

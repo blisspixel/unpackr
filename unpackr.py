@@ -121,6 +121,7 @@ class WorkPlan:
         self.video_folders = []
         self.content_folders = []
         self.junk_folders = []  # Folders with only junk files - to be deleted
+        self.junk_kept: set = set()  # Junk-classified folders the run will keep (non-removable files inside)
         self.loose_videos = []
         self.total_videos = 0
         self.total_rars = 0
@@ -171,7 +172,10 @@ class WorkPlan:
         for item in self.content_folders:
             entries.append({"path": rel(item["path"]), "role": "keep", "reason": item["reason"], "planned": True})
         for folder in self.junk_folders:
-            entries.append({"path": rel(folder), "role": "delete", "reason": "junk_folder", "planned": True})
+            if folder in self.junk_kept:
+                entries.append({"path": rel(folder), "role": "keep", "reason": "non_removable_files", "planned": True})
+            else:
+                entries.append({"path": rel(folder), "role": "delete", "reason": "junk_folder", "planned": True})
         for video in self.loose_videos:
             entries.append({"path": rel(video), "role": "validate_video", "planned": True})
         return sorted(entries, key=lambda e: e["path"])
@@ -218,7 +222,8 @@ class WorkPlan:
         if self.video_folders:
             print(f"{Fore.YELLOW}FOLDERS TO PROCESS ({len(self.video_folders)} folders):{Style.RESET_ALL}")
             print(
-                f"{Fore.WHITE}These will be processed: PAR2 verify -> RAR extract -> Video check -> Move good videos -> Delete folder{Style.RESET_ALL}\n"
+                f"{Fore.WHITE}Each is processed: PAR2 verify/repair (if present) -> extract archive sets -> "
+                f"validate videos -> move good videos -> remove what is left{Style.RESET_ALL}\n"
             )
             for item in self.video_folders:
                 folder = item["path"]
@@ -230,7 +235,7 @@ class WorkPlan:
                 if par2s > 0:
                     actions.append(f"{par2s} PAR2")
                 if rars > 0:
-                    actions.append(f"{rars} RAR")
+                    actions.append(f"{rars} archive file(s)")
                 if videos > 0:
                     actions.append(f"{videos} video(s)")
 
@@ -248,6 +253,28 @@ class WorkPlan:
                 print(f"  {Fore.BLUE}*{Style.RESET_ALL} {folder.name[:60]:<60} | {reason}")
             print()
 
+        removable_junk = [f for f in self.junk_folders if f not in self.junk_kept]
+        kept_junk = [f for f in self.junk_folders if f in self.junk_kept]
+        if removable_junk:
+            print(f"{Fore.RED}FOLDERS TO REMOVE ({len(removable_junk)} folders):{Style.RESET_ALL}")
+            print(f"{Fore.WHITE}Only junk was found (NFO, SFV, URL, small images and similar){Style.RESET_ALL}\n")
+            for folder in removable_junk:
+                print(f"  {Fore.RED}-{Style.RESET_ALL} {folder.name[:60]}")
+            print()
+        if kept_junk:
+            print(f"{Fore.GREEN}FOLDERS KEPT AS-IS ({len(kept_junk)} folders):{Style.RESET_ALL}")
+            print(f"{Fore.WHITE}No videos, but they hold files Unpackr does not remove{Style.RESET_ALL}\n")
+            for folder in kept_junk:
+                print(f"  {Fore.BLUE}*{Style.RESET_ALL} {folder.name[:60]}")
+            print()
+
+        if self.loose_videos:
+            print(f"{Fore.YELLOW}LOOSE VIDEOS ({len(self.loose_videos)}):{Style.RESET_ALL}")
+            print(f"{Fore.WHITE}Videos directly in the source folder are validated and moved{Style.RESET_ALL}\n")
+            for video in self.loose_videos:
+                print(f"  {Fore.GREEN}+{Style.RESET_ALL} {video.name[:60]}")
+            print()
+
         # Summary
         eta = timedelta(seconds=self.estimated_time)
         eta_str = str(eta).split(".")[0]
@@ -257,6 +284,10 @@ class WorkPlan:
             f"  Process: {len(self.video_folders)} folders -> {self.total_videos} videos -> Estimated time: {eta_str}"
         )
         print(f"  Preserve: {len(self.content_folders)} folders (will NOT be deleted)")
+        print(
+            f"  Remove: {len(self.junk_folders) - len(self.junk_kept)} junk-only folders  |  "
+            f"Keep as-is: {len(self.junk_kept)}  |  Loose videos: {len(self.loose_videos)}"
+        )
         print(f"{Fore.CYAN}{'=' * 80}{Style.RESET_ALL}\n")
 
 
@@ -430,10 +461,12 @@ class UnpackrApp:
             image_extensions = set(self.config.image_extensions)
             document_extensions = set(self.config.document_extensions)
             rar_pattern = re.compile(r"\.r\d{2}$")
+            zip_volume_pattern = re.compile(r"\.z\d{2}$")
 
             videos = []
             rars = []
             sevenz = []
+            zips = []
             par2s = []
             music_files = 0
             image_files = 0
@@ -471,6 +504,8 @@ class UnpackrApp:
                     rars.append(file_path)
                 elif ext_lower == ".7z" or ".7z." in filename_lower:  # Catch .7z and .7z.001 etc
                     sevenz.append(file_path)
+                elif ext_lower == ".zip" or zip_volume_pattern.match(ext_lower):
+                    zips.append(file_path)
                 elif ext_lower == ".par2":
                     par2s.append(file_path)
                 elif ext_lower in music_extensions:
@@ -484,9 +519,9 @@ class UnpackrApp:
                     document_files += 1
 
             # Determine if this is a video folder or content folder to preserve
-            if videos or rars or sevenz:
+            if videos or rars or sevenz or zips:
                 # This is a video folder (has videos or archives that might contain videos)
-                plan.add_video_folder(folder, len(videos), len(rars), len(par2s))
+                plan.add_video_folder(folder, len(videos), len(rars) + len(sevenz) + len(zips), len(par2s))
             else:
                 # Check if this is a content folder worth preserving
                 # For images: must have both >10 files AND >10MB total (avoids thumbnail folders)
@@ -510,11 +545,15 @@ class UnpackrApp:
                     reason_str = ", ".join(reasons)
                     plan.add_content_folder(folder, reason_str)
                 else:
-                    # Not a video folder and not enough content - mark as junk to be deleted
+                    # Not a video folder and not enough content to preserve by threshold
                     plan.add_junk_folder(folder)
+                    file_handler = getattr(self, "file_handler", None)
+                    if file_handler is not None and not file_handler.is_folder_empty_or_removable(folder):
+                        # It still holds files Unpackr never removes (a few PDFs, MP3s); the run keeps it.
+                        plan.junk_kept.add(folder)
 
         # Check for loose video files (optimized single-pass)
-        video_extensions = {".mp4", ".avi", ".mkv", ".mov"}
+        video_extensions = set(self.config.video_extensions)
         for item in root_entries:
             try:
                 is_regular_file = item.is_file()
@@ -1782,6 +1821,14 @@ class UnpackrApp:
             )
 
 
+def _is_interactive() -> bool:
+    """True when a person can see the terminal and press Ctrl+C."""
+    try:
+        return sys.stdin.isatty() and sys.stdout.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
 def main():
     """Main entry point with defensive error handling."""
     init()  # Initialize colorama with default settings; may be refined after args/config.
@@ -1892,7 +1939,25 @@ def main():
                 dest_str = clean_path(args.destination)
 
                 source_dir = InputValidator.validate_path(source_str, must_exist=True, must_be_dir=True)
-                destination_dir = InputValidator.validate_path(dest_str, must_exist=True, must_be_dir=True)
+                dest_candidate = Path(os.path.expanduser(dest_str))
+                planning_only = bool(args.dry_run or args.show_plan)
+                if not dest_candidate.exists():
+                    if not dest_candidate.parent.is_dir():
+                        raise ValidationError(
+                            f"Destination does not exist and neither does its parent: {dest_candidate}"
+                        )
+                    if planning_only:
+                        print(
+                            f"{Fore.CYAN}Destination will be created on a live run: {dest_candidate}{Style.RESET_ALL}"
+                        )
+                    else:
+                        dest_candidate.mkdir()
+                        print(f"{Fore.CYAN}Created destination: {dest_candidate}{Style.RESET_ALL}")
+                        logging.info(f"Created destination directory {dest_candidate}")
+                if dest_candidate.exists():
+                    destination_dir = InputValidator.validate_path(dest_str, must_exist=True, must_be_dir=True)
+                else:
+                    destination_dir = dest_candidate.absolute()
 
             except ValidationError as e:
                 print(Fore.RED + f"Path validation failed: {e}" + Style.RESET_ALL)
@@ -1925,12 +1990,13 @@ def main():
         dest_for_summary = str(destination_dir)
 
         # Defensive: Additional checks on paths
-        if not StateValidator.check_dir_writable(destination_dir):
+        writable_target = destination_dir if destination_dir.exists() else destination_dir.parent
+        if not StateValidator.check_dir_writable(writable_target):
             print(Fore.RED + f"Destination directory is not writable: {destination_dir}" + Style.RESET_ALL)
             logging.error(f"Destination not writable: {destination_dir}")
             emit_json_and_exit(1, "failed", errors=[f"destination not writable: {destination_dir}"])
 
-        if not StateValidator.check_disk_space(destination_dir, required_mb=1000):
+        if not StateValidator.check_disk_space(writable_target, required_mb=1000):
             print(Fore.YELLOW + "Warning: Low disk space in destination directory" + Style.RESET_ALL)
             logging.warning("Low disk space warning")
 
@@ -1942,7 +2008,9 @@ def main():
             logging.error("Required tools missing")
             emit_json_and_exit(1, "failed", errors=["required tools missing"])
 
-        # Check for running processes from previous session
+        # Check for running processes from previous session (only ones working on this source)
+        system_check.source_dir = source_dir
+        system_check.dry_run = bool(args.dry_run)
         if not system_check.warn_running_processes():
             emit_json_and_exit(0, "cancelled", cancelled=True, warnings=["user aborted due to process conflicts"])
 
@@ -2032,9 +2100,14 @@ def main():
             logging.error("Pre-flight check failed")
             emit_json_and_exit(1, "failed", errors=["pre-flight check failed"])
 
-        # JSON/automation mode skips interactive countdown.
+        # The countdown is a chance to cancel a live run; dry runs change nothing and
+        # automation (--json, no terminal) cannot answer it.
         if json_mode:
             logging.info("JSON mode: skipping interactive countdown")
+        elif args.dry_run:
+            logging.info("Dry run: skipping countdown")
+        elif not _is_interactive():
+            logging.info("No interactive terminal: skipping countdown")
         elif not countdown_prompt(10, operation_label="processing"):
             logging.info("User cancelled operation")
             emit_json_and_exit(0, "cancelled", cancelled=True)

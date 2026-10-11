@@ -41,11 +41,20 @@ sudo apt install p7zip-full par2 ffmpeg
 # Fedora
 sudo dnf install p7zip par2cmdline ffmpeg
 
+# Arch / Manjaro / Omarchy
+sudo pacman -S 7zip par2cmdline ffmpeg
+
 # macOS (Homebrew)
 brew install p7zip par2 ffmpeg
 ```
 
 Windows: install [7-Zip](https://www.7-zip.org/), then put `par2` and `ffmpeg` on `PATH` (or set absolute paths in config `tool_paths`).
+
+No root access: the official static `7zz` from [7-zip.org](https://www.7-zip.org/download.html) runs from any folder; set `"tool_paths": {"7z": "/path/to/7zz"}` in your config.
+
+Archives: RAR (single, `.partNN.rar`, `.rar` + `.rNN`), 7z (single and `.7z.NNN`) and ZIP (single and spanned `.zNN` + `.zip`) are extracted.
+
+Logs go to a per-user folder (`~/.local/state/unpackr/logs` on Linux, `~/Library/Logs/unpackr/logs` on macOS, `%LOCALAPPDATA%\unpackr\logs` on Windows) unless `log_folder` is an absolute path. A missing destination folder is created on a live run when its parent exists.
 
 ## Install
 
@@ -131,7 +140,7 @@ This project is a technical tool, not legal advice, and is provided "as is." The
 
 - `unpackr`: processing pipeline
 - `unpackr-doctor`: environment and dependency checks
-- `vhealth`: post-run video health checks (Windows / Linux / macOS; prefers `ffmpeg`)
+- `vhealth`: post-run video health checks (Windows / Linux / macOS; prefers `ffmpeg`). Without a terminal it answers delete prompts with No; use `--yes` or `--no` to decide up front, `--json` for a machine summary, `--no-color` for plain output
 - Quality gate: `ruff`, `mypy`, `pyright`, `bandit`, `pytest`, `coverage`, `pre-commit`
 
 Exit semantics:
