@@ -114,6 +114,63 @@ def test_par2_unavailable_still_extracts(tmp_path):
     assert (tmp_path / "set.par2").exists()
 
 
+@pytest.mark.parametrize("status", ["unavailable", "error"])
+def test_unjudged_par2_release_keeps_unrecognised_files(tmp_path, status):
+    """par2 could not judge the data: possible renamed volumes are held, not cleaned up as junk."""
+    from types import SimpleNamespace
+
+    from conftest import bind_app_helpers
+
+    import unpackr
+    from core.archive_processor import Par2Outcome
+
+    folder = tmp_path / "Movie.2026"
+    folder.mkdir()
+    for name in ("Movie.2026.par2", "Movie.2026.vol00+01.par2", "0a30744ef547b49f", "1b27e21e42e11651"):
+        (folder / name).write_bytes(b"x")
+    (folder / "movie.nfo").write_text("nfo")
+    held: dict = {}
+    app = SimpleNamespace(
+        dry_run=False,
+        config=Config(),
+        file_handler=SimpleNamespace(hold_paths=lambda paths, reason: held.update({p.name: reason for p in paths})),
+        archive_processor=SimpleNamespace(remove_par2_files=Mock()),
+    )
+    bind_app_helpers(app)
+
+    reason = f"par2_{'unavailable' if status == 'unavailable' else 'tool_error'}"
+    keep = unpackr.UnpackrApp._finish_par2(app, folder, Par2Outcome(status, reason, "x"), False, False)
+
+    assert keep is True
+    assert set(held) == {"Movie.2026.par2", "Movie.2026.vol00+01.par2", "0a30744ef547b49f", "1b27e21e42e11651"}
+    assert not app.archive_processor.remove_par2_files.called
+    assert any(reason in e for e in app.run_errors)
+
+
+def test_par2_damage_without_archives_is_junk_for_redownload(tmp_path):
+    from types import SimpleNamespace
+
+    from conftest import bind_app_helpers
+
+    import unpackr
+    from core.archive_processor import Par2Outcome
+
+    folder = tmp_path / "Broken"
+    folder.mkdir()
+    app = SimpleNamespace(
+        dry_run=False, config=Config(), file_handler=SimpleNamespace(), archive_processor=SimpleNamespace()
+    )
+    bind_app_helpers(app)
+
+    keep = unpackr.UnpackrApp._finish_par2(
+        app, folder, Par2Outcome("damaged", "par2_damaged", "x.par2: damaged"), False, False
+    )
+
+    assert keep is True  # par2_error: the folder's leftovers are junk to the cleanup step
+    assert app.damaged and "Broken" in app.damaged[0]
+    assert not app.run_errors
+
+
 # ---------------------------------------------------------------------------
 # End to end with real tools
 # ---------------------------------------------------------------------------
@@ -210,7 +267,9 @@ def test_release_par2_cannot_repair_is_junk_and_reported(tmp_path):
 
 
 @needs_tools
-@pytest.mark.skipif(sys.platform == "win32", reason="builds a PATH without par2 from symlinks")
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="hides par2 by narrowing PATH; macOS also finds it in Homebrew's folders"
+)
 def test_obfuscated_release_without_par2_is_kept(tmp_path):
     """No par2 to match renamed volumes: the unrecognised files are kept, not cleaned as junk."""
     src, dst = tmp_path / "src", tmp_path / "dst"
