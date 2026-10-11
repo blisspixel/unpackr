@@ -15,7 +15,8 @@ Release dates are included where recorded.
 - Notifications count extracted archives again (they read a counter that did not exist).
 - `unpackr-doctor` explains what a missing par2 means: damaged or renamed volumes cannot be repaired, archives still extract.
 - Python 3.12 is now the minimum and 3.15 is supported; CI runs 3.12 through 3.15. **Migration:** Python 3.11 is no longer supported. Install a 3.12+ interpreter and reinstall (`python -m pip install .`); `unpackr-doctor` reports an older interpreter as a blocking issue.
-- Type checking is strict: `mypy --strict` and Pyright strict cover `core`, `utils`, `doctor.py` and `vhealth.py`, ruff applies the pyupgrade (`UP`) rules for 3.12, and the `dev` extra installs stubs for psutil, colorama and tqdm. `unpackr.py` and six modules being changed on another branch stay relaxed until that work lands (listed in `pyproject.toml`).
+- Type checking is strict: `mypy --strict` and Pyright strict cover `core`, `utils`, `doctor.py`, `unpackr.py` and `vhealth.py` with no per-module relaxations, ruff applies the pyupgrade (`UP`) rules for 3.12, and the `dev` extra installs stubs for psutil, colorama and tqdm.
+- Pressing Ctrl+C just after the app is created (before the run starts) exits cleanly as cancelled instead of crashing with `UnboundLocalError`.
 - Malformed state files no longer crash or stop a run: a run journal line, service manifest, event log record or cached environment profile that is valid JSON but not an object is skipped (an event log record with unknown fields no longer stops the rest of the log from loading), and a configured tool path that exists but cannot be executed is skipped instead of raising.
 - POSIX force-delete uses `shutil.rmtree(onexc=...)` instead of the deprecated `onerror`.
 

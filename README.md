@@ -80,7 +80,7 @@ pre-commit run --all-files
 Current engineering baseline:
 - full regression suite required to pass
 - `80%` minimum coverage enforced in CI
-- strict type checking (`mypy --strict` and Pyright strict) on `core`, `utils`, `doctor.py` and `vhealth.py`; `unpackr.py` and a few modules mid-change are temporarily relaxed (listed in `pyproject.toml`)
+- strict type checking (`mypy --strict` and Pyright strict) on `core`, `utils`, `doctor.py`, `unpackr.py` and `vhealth.py`
 - enforced local + CI gate via `ruff`, `mypy`, `pyright`, `bandit`, `pytest`, coverage, and `pre-commit`
 
 ## Quick Start

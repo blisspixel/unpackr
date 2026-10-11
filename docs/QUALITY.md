@@ -34,8 +34,7 @@ pre-commit run --all-files
 - `ruff`: blocks syntax, correctness, import hygiene, modernization (pyupgrade `UP` rules targeting Python 3.12), simplification, and common bug patterns.
 - `mypy`: runs with `strict = true` across `core`, `utils`, and the top-level entry points configured in `pyproject.toml`. Third-party packages are checked through their stubs (`types-psutil`, `types-colorama`, `types-tqdm` in the `dev` extra).
 - `pyright`: provides a second fast type-analysis pass aligned with editor feedback.
-- `pyright` strict: every module in `core` and `utils` plus `doctor.py` and `vhealth.py` runs in strict mode.
-- Temporarily relaxed: `unpackr.py`, `core/archive_processor.py`, `core/file_handler.py`, `core/run_report.py`, `core/safety_invariants.py`, `core/unattended.py` and `utils/cli_runtime.py` are being changed on another branch. Until that work lands they skip ruff `UP` and have a mypy override that drops the checks `strict` adds (`unpackr.py`, `core/run_report.py`, `core/unattended.py` and `utils/cli_runtime.py` also do not require annotations), and all but `core/file_handler.py` and `core/safety_invariants.py` use Pyright's standard mode.
+- `pyright` strict: `typeCheckingMode = "strict"` for every checked module (`core`, `utils`, `doctor.py`, `unpackr.py` and `vhealth.py`). No module is relaxed: there are no mypy overrides or per-file ruff `UP` ignores.
 - `bandit`: scans the runtime code paths for common Python security issues.
 - `pytest`: full regression suite must pass.
 - Coverage: CI enforces minimum `80%` on application modules via `.coveragerc`.

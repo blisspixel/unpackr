@@ -7,13 +7,16 @@ import logging
 import re
 import stat
 import time
+from collections.abc import Callable
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 import psutil
 
 from core.junk_rules import junk_name_reason
+from core.remover import Remover
+from core.run_report import RunReport
 from core.safety_invariants import InvariantEnforcer
 from utils.defensive import ErrorRecovery, InputValidator, StateValidator, ValidationError
 from utils.error_messages import log_error
@@ -48,16 +51,16 @@ class FileHandler:
         # Files kept on purpose for the user to fix and retry (for example the
         # remaining volumes of an incomplete archive set). A folder that holds any
         # of them is never removable.
-        self.held_paths: Dict[Path, str] = {}
+        self.held_paths: dict[Path, str] = {}
         # Optional run report; folder removals are recorded on it.
-        self.report: Any = None
+        self.report: RunReport | None = None
         # Final path of the most recent successful move_file call.
-        self.last_moved_to: Optional[Path] = None
+        self.last_moved_to: Path | None = None
         # Optional Remover: quarantine, trash or permanent delete, with a run journal.
-        self.remover: Any = None
+        self.remover: Remover | None = None
         # Dry run only: files the plan moves, deletes or extracts. Folder cleanup
         # decisions treat them as already gone so the plan matches a live run.
-        self.planned_gone: Set[Path] = set()
+        self.planned_gone: set[Path] = set()
 
         # Defensive: verify config has required attributes
         required_attrs = ["video_extensions", "removable_extensions"]
@@ -301,7 +304,7 @@ class FileHandler:
 
         return name + ext
 
-    def find_video_files(self, folder: str | Path) -> List[Path]:
+    def find_video_files(self, folder: str | Path) -> list[Path]:
         """
         Recursively find video files in the given folder.
 
@@ -416,12 +419,12 @@ class FileHandler:
         except OSError:
             return path.absolute()
 
-    def hold_paths(self, paths: List[Path], reason: str) -> None:
+    def hold_paths(self, paths: list[Path], reason: str) -> None:
         """Keep these files: their folder will not be cleaned up in this run."""
         for path in paths:
             self.held_paths[self._held_key(path)] = reason
 
-    def held_reason(self, path: Path) -> Optional[str]:
+    def held_reason(self, path: Path) -> str | None:
         return self.held_paths.get(self._held_key(path))
 
     def assume_gone(self, path: Path) -> None:
@@ -543,7 +546,7 @@ class FileHandler:
     def safe_delete_folder(
         self,
         folder: Path,
-        max_attempts: Optional[int] = None,
+        max_attempts: int | None = None,
         par2_error: bool = False,
         archive_error: bool = False,
         reason_code: str = "folder_cleanup",
@@ -622,7 +625,7 @@ class FileHandler:
     def delete_mode(self) -> str:
         return getattr(self.remover, "mode", "permanent")
 
-    def _remove(self, path: Path, reason_code: str, permanent: Any = None) -> None:
+    def _remove(self, path: Path, reason_code: str, permanent: Callable[[Path], None] | None = None) -> None:
         """Remove one file or folder through the remover (permanent delete without one)."""
         if self.remover is not None:
             self.remover.remove(path, reason_code, permanent=permanent)
@@ -657,7 +660,7 @@ class FileHandler:
         if self.report is not None:
             self.report.record_folder_removed(folder, reason_code)
 
-    def _build_powershell_delete_command(self, folder: Path) -> List[str]:
+    def _build_powershell_delete_command(self, folder: Path) -> list[str]:
         """Compatibility wrapper around the shared Windows force-delete command builder."""
         from utils.platform_support import build_powershell_delete_command
 
@@ -716,7 +719,7 @@ class FileHandler:
 
         folder.rmdir()
 
-    def _kill_processes_using_folder(self, folder: Path, allowed_processes: Optional[List[str]] = None) -> None:
+    def _kill_processes_using_folder(self, folder: Path, allowed_processes: list[str] | None = None) -> None:
         """
         Kill known helper processes that have files open in the given folder.
 
@@ -764,7 +767,7 @@ class FileHandler:
         except Exception as e:
             logging.warning(f"Error killing processes for {folder}: {e}")
 
-    def move_file(self, source: Path, destination_dir: Path, target_name: Optional[str] = None) -> bool:
+    def move_file(self, source: Path, destination_dir: Path, target_name: str | None = None) -> bool:
         """
         Move a file to the destination directory.
 
@@ -885,8 +888,8 @@ class FileHandler:
     def delete_video_file_with_retry(
         self,
         video_file: Path,
-        max_attempts: Optional[int] = None,
-        retry_delay: Optional[int] = None,
+        max_attempts: int | None = None,
+        retry_delay: int | None = None,
         reason_code: str = "video_removed",
     ) -> bool:
         """
@@ -947,9 +950,7 @@ class FileHandler:
         )
         return False
 
-    def wait_for_file_release(
-        self, file_path: str, max_attempts: Optional[int] = None, delay: Optional[int] = None
-    ) -> bool:
+    def wait_for_file_release(self, file_path: str, max_attempts: int | None = None, delay: int | None = None) -> bool:
         """
         Wait for a file to be released by other processes.
 
@@ -985,7 +986,7 @@ class FileHandler:
 
         return False
 
-    def _terminate_related_processes(self, file_name: str, allowed_processes: Optional[List[str]] = None) -> None:
+    def _terminate_related_processes(self, file_name: str, allowed_processes: list[str] | None = None) -> None:
         """
         Terminate processes that might be using the file.
 

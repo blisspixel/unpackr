@@ -160,7 +160,7 @@ def test_main_exits_when_quick_preflight_fails(monkeypatch, tmp_path):
             self.dry_run = False
             self.dry_run_plan = None
 
-        def _stop_spinner_thread(self):
+        def stop_spinner_thread(self):
             pass
 
         def scan_and_plan(self, source_dir):
@@ -221,7 +221,7 @@ def test_main_exits_zero_when_countdown_cancelled(monkeypatch, tmp_path):
             self.dry_run = False
             self.dry_run_plan = None
 
-        def _stop_spinner_thread(self):
+        def stop_spinner_thread(self):
             pass
 
         def scan_and_plan(self, source_dir):

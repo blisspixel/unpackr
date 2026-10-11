@@ -231,7 +231,7 @@ def test_unpackr_main_vhealth_uses_destination_dir(monkeypatch, tmp_path):
         def finish_issues(self):
             return [], []
 
-        def _stop_spinner_thread(self):
+        def stop_spinner_thread(self):
             pass
 
         def scan_and_plan(self, source_dir):
