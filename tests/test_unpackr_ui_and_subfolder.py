@@ -1,8 +1,9 @@
 import threading
 import types
 
-import unpackr
 from conftest import bind_app_helpers
+
+import unpackr
 
 
 def _base_stats():

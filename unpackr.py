@@ -198,7 +198,7 @@ class WorkPlan:
     def add_loose_video(self, video: Path) -> None:
         """Add a loose video file."""
         self.loose_videos.append(video)
-        self.total_videos += 1
+        # Counted already: the source root is a video folder whenever it holds loose videos.
 
     def as_plan_entries(self, source_dir: Path) -> list[dict[str, Any]]:
         """Folder-level plan for --show-plan --json (per-file items come from --dry-run --json)."""
@@ -590,7 +590,13 @@ class UnpackrApp:
                     # Skip folders we can't access
                     pass
 
-            for scanned in scan_recursive(folder):
+            # The source root's own files only: its subfolders are releases counted on their own.
+            scanned_entries = (
+                (e for e in os.scandir(folder) if e.is_file(follow_symlinks=False))
+                if folder == source_dir
+                else scan_recursive(folder)
+            )
+            for scanned in scanned_entries:
                 ext_lower = Path(scanned.name).suffix.lower()
                 filename_lower = scanned.name.lower()
                 file_path = Path(scanned.path)
@@ -612,9 +618,9 @@ class UnpackrApp:
                     with suppress(OSError, FileNotFoundError):
                         # PERFORMANCE: Use cached stat from DirEntry (no extra syscall)
                         image_total_bytes += scanned.stat(follow_symlinks=False).st_size
-                elif ext_lower in document_extensions:
+                elif ext_lower in document_extensions and ext_lower not in removable_exts:
                     document_files += 1
-                elif ext_lower not in removable_exts:
+                elif ext_lower not in removable_exts and ext_lower not in document_extensions:
                     unknown_files += 1
 
             # Determine if this is a video folder or content folder to preserve
@@ -623,24 +629,22 @@ class UnpackrApp:
                 # unrecognised files (an obfuscated post: .par2 files and randomly named volumes)
                 plan.add_video_folder(folder, len(videos), len(rars) + len(sevenz) + len(zips), len(par2s))
             else:
-                # Check if this is a content folder worth preserving
-                # For images: must have both >10 files AND >10MB total (avoids thumbnail folders)
+                # No videos or archives: music, photos and documents are what is worth keeping,
+                # however few (a 3-track single, a small photo folder). Thresholds default to 1.
                 image_total_mb = image_total_bytes / (1024 * 1024)
-                # Thresholds are inclusive (>=) to match deletion guards in file_handler.
-                has_significant_images = image_files >= self.config.min_image_files and image_total_mb > 10
+                has_images = image_files > 0 and image_files >= self.config.min_image_files
 
                 if (
-                    music_files >= self.config.min_music_files
-                    or has_significant_images
-                    or document_files >= self.config.min_documents
+                    (music_files > 0 and music_files >= self.config.min_music_files)
+                    or has_images
+                    or (document_files > 0 and document_files >= self.config.min_documents)
                 ):
-                    # This is a content folder with significant music/images/docs - preserve it
                     reasons: list[str] = []
-                    if music_files >= self.config.min_music_files:
+                    if music_files > 0 and music_files >= self.config.min_music_files:
                         reasons.append(f"{music_files} music files")
-                    if has_significant_images:
+                    if has_images:
                         reasons.append(f"{image_files} images ({image_total_mb:.1f}MB)")
-                    if document_files >= self.config.min_documents:
+                    if document_files > 0 and document_files >= self.config.min_documents:
                         reasons.append(f"{document_files} documents")
                     reason_str = ", ".join(reasons)
                     plan.add_content_folder(folder, reason_str)
@@ -972,6 +976,25 @@ class UnpackrApp:
         """
         if par2 is None:
             return False
+        if getattr(self, "dry_run", False) and not had_sets:
+            # PAR2 may rename unrecognised files back into archive volumes during the live run;
+            # a dry run cannot know, so it keeps them in the plan instead of calling them junk.
+            suspects = UnpackrApp._unrecognised_files(self, folder)
+            if suspects:
+                try:
+                    par2_files = [f for f in folder.iterdir() if f.is_file() and f.suffix.lower() == ".par2"]
+                except OSError:
+                    par2_files = []
+                hold = getattr(getattr(self, "file_handler", None), "hold_paths", None)
+                if callable(hold):
+                    hold(par2_files + suspects, "par2_rename_pending")
+                detail = "PAR2 will try to match renamed volumes; decided during the live run"
+                for path in par2_files + suspects:
+                    self._record(path, "kept", "par2_rename_pending", detail)
+                self._note(
+                    "warning", folder, "", "par2_rename_pending", f"{len(suspects)} unrecognised file(s): {detail}"
+                )
+                return True
         if had_sets:
             content_ok = not archive_error
         elif par2.ok:
@@ -1948,17 +1971,7 @@ class UnpackrApp:
                 # Mark progress for stuck detection
                 self.stuck_detector.mark_progress()
 
-            # Process loose videos (skip if cancelled)
-            if self.work_plan.loose_videos and not self.cancellation_requested:
-                for video in self.work_plan.loose_videos:
-                    if self.cancellation_requested:
-                        break
-                    if source_dir in self.failed_releases:
-                        break
-                    try:
-                        self._handle_video(video, destination_dir)
-                    except Exception as e:
-                        logging.error(f"Error processing loose video {video}: {e}")
+            # Loose videos in the source root were handled when the root itself was processed.
 
             # Delete junk folders identified in pre-scan (skip if cancelled)
             if self.work_plan.junk_folders and not self.cancellation_requested:
@@ -1968,9 +1981,15 @@ class UnpackrApp:
                         break
                     try:
                         if self.dry_run:
-                            self._record_folder_removed(junk_folder, "junk_folder")
-                            logging.info(f"[DRY-RUN] Would delete junk folder: {junk_folder}")
-                            self.stats["folders_deleted"] += 1
+                            # Same check as the live run, so the plan keeps what the run keeps.
+                            if self.file_handler.is_folder_empty_or_removable(
+                                junk_folder, par2_error=False, archive_error=False
+                            ):
+                                self._record_folder_removed(junk_folder, "junk_folder")
+                                if self.dry_run_plan:
+                                    self.dry_run_plan.add_folder_delete(junk_folder)
+                                logging.info(f"[DRY-RUN] Would delete junk folder: {junk_folder}")
+                                self.stats["folders_deleted"] += 1
                         else:
                             # Check if folder is still removable (contents might have changed)
                             if self.file_handler.is_folder_empty_or_removable(

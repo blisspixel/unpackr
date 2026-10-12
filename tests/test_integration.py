@@ -11,19 +11,22 @@ Tests the complete pipeline:
 This verifies that all components work together correctly.
 """
 
-import pytest
-import tempfile
-import shutil
 import logging
-from pathlib import Path
+import shutil
 import sys
+import tempfile
+from pathlib import Path
+
+import pytest
+
+from core.file_handler import RELEASE_IMAGE_COLLECTION_FILES
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.archive_processor import ArchiveProcessor
-from core.video_processor import VideoProcessor
-from core.file_handler import FileHandler
 from core.config import Config
+from core.file_handler import FileHandler
+from core.video_processor import VideoProcessor
 
 
 class TestEndToEndIntegration:
@@ -208,8 +211,7 @@ class TestEndToEndIntegration:
         photo_folder = source / "photos"
         photo_folder.mkdir()
 
-        min_images = config.min_image_files
-        for i in range(min_images + 2):
+        for i in range(RELEASE_IMAGE_COLLECTION_FILES + 2):
             img = photo_folder / f"photo{i:03d}.jpg"
             img.write_bytes(b"\x00" * (2 * 1024 * 1024))  # 2MB each = >10MB total
 

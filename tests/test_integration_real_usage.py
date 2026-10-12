@@ -3,12 +3,13 @@ Integration tests that validate real user workflows.
 These tests would have caught the pre-scan spam and countdown hang bugs.
 """
 
-import sys
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
-from colorama import init, Fore, Style
+
+from colorama import Fore, Style, init
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -183,8 +184,8 @@ def test_windows_console_encoding(runner: IntegrationTestRunner):
     print(f"\n{Fore.YELLOW}[Windows Console Encoding Tests]{Style.RESET_ALL}")
 
     # Test that progress UI elements render without crashes
-    from unpackr import UnpackrApp
     from core import Config
+    from unpackr import UnpackrApp
 
     _ = Config()
     _ = UnpackrApp(Config())

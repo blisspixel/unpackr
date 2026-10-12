@@ -1,7 +1,7 @@
 """Coverage-focused tests for unpackr internals and main flow branches."""
 
-from pathlib import Path
 import types
+from pathlib import Path
 
 import pytest
 

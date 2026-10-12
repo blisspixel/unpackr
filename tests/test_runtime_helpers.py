@@ -7,8 +7,7 @@ from argparse import Namespace
 import pytest
 
 import unpackr
-from utils import cli_prompts
-from utils import cli_runtime
+from utils import cli_prompts, cli_runtime
 
 
 def test_quick_preflight_returns_true_when_no_warnings(monkeypatch, tmp_path):

@@ -1,7 +1,7 @@
 """Regression tests for installable command and data-file metadata."""
 
-from pathlib import Path
 import runpy
+from pathlib import Path
 
 import pytest
 
@@ -20,7 +20,7 @@ def test_setup_includes_cli_modules_and_bundled_config(monkeypatch):
     assert setup_kwargs["package_data"]["config_files"] == ["comments.sample.json", "config.json"]
     assert setup_kwargs["exclude_package_data"]["config_files"] == ["comments.json"]
     assert "build_py" in setup_kwargs["cmdclass"]
-    assert setup_kwargs["version"] == "1.6.0"
+    assert setup_kwargs["version"] == "1.6.1"
     assert setup_kwargs["url"] == "https://github.com/blisspixel/unpackr"
     assert "Programming Language :: Python :: 3.15" in setup_kwargs["classifiers"]
     assert "Programming Language :: Python :: 3.11" not in setup_kwargs["classifiers"]

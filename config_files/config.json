@@ -71,9 +71,9 @@
         ".torrent",
         ".magnet"
     ],
-    "min_music_files": 10,
-    "min_image_files": 10,
-    "min_documents": 10,
+    "min_music_files": 1,
+    "min_image_files": 1,
+    "min_documents": 1,
     "min_sample_size_mb": 50,
     "max_log_files": 3,
     "log_folder": "logs",

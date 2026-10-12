@@ -22,7 +22,6 @@ from core.video_processor import VideoProcessor
 from unpackr import UnpackrApp
 from utils import filesystem_policy as fsp
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -73,7 +72,7 @@ class TestPreScanArchiveVideoMatrix:
             ("pack.7z.001", "video"),
             ("only.par2", "junk"),  # PAR2 alone does not mark video work
             ("readme.nfo", "junk"),
-            ("track.mp3", "junk"),  # below music threshold
+            ("track.mp3", "content"),  # any music is worth keeping
         ],
     )
     def test_single_marker_classification(self, tmp_path, filename, expected):

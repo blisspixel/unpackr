@@ -15,7 +15,7 @@ from typing import Iterable
 import pytest
 
 from core.config import Config
-from core.file_handler import FileHandler
+from core.file_handler import RELEASE_IMAGE_COLLECTION_FILES, FileHandler
 from unpackr import UnpackrApp
 
 
@@ -109,58 +109,47 @@ class TestPreScanDocumentThresholds:
         assert "few_docs" not in _content_names(plan)
 
 
-class TestPreScanImageDualThreshold:
-    def test_count_and_size_both_met_is_preserved(self, app, default_config, tmp_path):
+class TestPreScanKeepsAnyPhotosMusicOrDocuments:
+    """A folder without videos or archives is kept if it holds any photos, music or documents."""
+
+    @pytest.mark.parametrize(
+        ("names", "size"),
+        [
+            ([f"img{i:02d}.jpg" for i in range(15)], 200 * 1024),  # small photo folder, ~3MB
+            (["only.png"], 50 * 1024),  # a single picture
+            (["01.mp3", "02.mp3", "03.mp3"], 10 * 1024),  # a 3-track single
+            (["paper.pdf"], 10 * 1024),
+        ],
+    )
+    def test_any_content_is_preserved(self, app, default_config, tmp_path, names, size):
         source = tmp_path / "source"
         source.mkdir()
-        folder = source / "gallery"
-        n = default_config.min_image_files
-        # Each ~1.1 MB so total > 10 MB at min count
-        _write_files(folder, [f"img{i:02d}.jpg" for i in range(n)], size=1100 * 1024)
+        _write_files(source / "stuff", names, size=size)
 
         plan = UnpackrApp.scan_and_plan(_wire_app(app, default_config), source)
 
-        assert "gallery" in _content_names(plan)
-        assert any("image" in item["reason"] for item in plan.content_folders if Path(item["path"]).name == "gallery")
+        assert "stuff" in _content_names(plan)
+        assert "stuff" not in _junk_names(plan)
 
-    def test_enough_count_but_size_not_over_10mb_is_junk(self, app, default_config, tmp_path):
+    def test_junk_text_does_not_count_as_a_document(self, app, default_config, tmp_path):
         source = tmp_path / "source"
         source.mkdir()
-        folder = source / "thumbs"
-        n = default_config.min_image_files
-        # 10 * 500 KB = 5 MB total — fails the >10 MB size rule
-        _write_files(folder, [f"thumb{i:02d}.jpg" for i in range(n)], size=500 * 1024)
+        _write_files(source / "junk", ["readme.txt", "site.url", "info.nfo"])
 
         plan = UnpackrApp.scan_and_plan(_wire_app(app, default_config), source)
+
+        assert "junk" in _junk_names(plan)
+
+    def test_thresholds_can_be_raised(self, app, tmp_path):
+        config = Config()
+        config.set("min_image_files", 10)
+        source = tmp_path / "source"
+        source.mkdir()
+        _write_files(source / "thumbs", [f"t{i}.jpg" for i in range(3)])
+
+        plan = UnpackrApp.scan_and_plan(_wire_app(app, config), source)
 
         assert "thumbs" in _junk_names(plan)
-        assert "thumbs" not in _content_names(plan)
-
-    def test_size_over_10mb_but_count_below_min_is_junk(self, app, default_config, tmp_path):
-        source = tmp_path / "source"
-        source.mkdir()
-        folder = source / "big_covers"
-        # 3 large images > 10 MB total but below min count
-        _write_files(folder, [f"cover{i}.jpg" for i in range(3)], size=4 * 1024 * 1024)
-
-        plan = UnpackrApp.scan_and_plan(_wire_app(app, default_config), source)
-
-        assert "big_covers" in _junk_names(plan)
-        assert "big_covers" not in _content_names(plan)
-
-    def test_exactly_10mb_total_is_junk_size_must_be_strictly_greater(self, app, default_config, tmp_path):
-        """Size rule is > 10 MB, not >= (aligned with file_handler guard)."""
-        source = tmp_path / "source"
-        source.mkdir()
-        folder = source / "edge_size"
-        n = default_config.min_image_files
-        # Exactly 10 MB total: 10 * 1 MiB
-        _write_files(folder, [f"img{i:02d}.jpg" for i in range(n)], size=1024 * 1024)
-
-        plan = UnpackrApp.scan_and_plan(_wire_app(app, default_config), source)
-
-        assert "edge_size" in _junk_names(plan)
-        assert "edge_size" not in _content_names(plan)
 
 
 class TestPreScanPriorityAndMixed:
@@ -205,16 +194,16 @@ class TestPreScanPriorityAndMixed:
 class TestDeletionGuardAlignment:
     """Pre-scan image rule must match is_folder_empty_or_removable image guard."""
 
-    def test_handler_preserves_exact_min_image_collection(self, default_config, tmp_path):
+    def test_handler_preserves_release_image_collection(self, default_config, tmp_path):
         folder = tmp_path / "gallery"
-        n = default_config.min_image_files
+        n = RELEASE_IMAGE_COLLECTION_FILES
         _write_files(folder, [f"img{i:02d}.jpg" for i in range(n)], size=1100 * 1024)
         handler = FileHandler(default_config)
         assert handler.is_folder_empty_or_removable(folder) is False
 
     def test_handler_allows_delete_when_size_not_over_10mb(self, default_config, tmp_path):
         folder = tmp_path / "thumbs"
-        n = default_config.min_image_files
+        n = RELEASE_IMAGE_COLLECTION_FILES
         _write_files(folder, [f"thumb{i:02d}.jpg" for i in range(n)], size=500 * 1024)
         handler = FileHandler(default_config)
         assert handler.is_folder_empty_or_removable(folder) is True

@@ -4,24 +4,25 @@ Test suite for safety_invariants module.
 Tests cover all 10 safety invariants plus the enforcement wrapper.
 """
 
-import pytest
-import tempfile
 import shutil
+import sys
+import tempfile
 from pathlib import Path
 from unittest.mock import Mock
-import sys
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.safety_invariants import (
-    SafetyInvariants,
-    InvariantEnforcer,
-    SafetyViolationError,
     FileOperation,
+    InvariantEnforcer,
     OperationType,
+    SafetyInvariants,
+    SafetyViolationError,
+    ValidationCache,
     ValidationDecision,
     ValidationResult,
-    ValidationCache,
 )
 
 

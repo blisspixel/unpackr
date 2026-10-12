@@ -6,11 +6,12 @@ Tests input validation, state checks, and error recovery mechanisms.
 import sys
 import tempfile
 from pathlib import Path
-from colorama import init, Fore, Style
+
+from colorama import Fore, Style, init
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from utils.defensive import InputValidator, StateValidator, ErrorRecovery, ValidationError
+from utils.defensive import ErrorRecovery, InputValidator, StateValidator, ValidationError
 
 
 class DefensiveTestRunner:

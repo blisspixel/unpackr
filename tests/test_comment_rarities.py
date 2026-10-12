@@ -5,7 +5,8 @@ Run this to see examples of each rarity tier with proper colors.
 
 import json
 from pathlib import Path
-from colorama import init, Fore, Style
+
+from colorama import Fore, Style, init
 
 # Initialize colorama for Windows color support
 init()

@@ -52,7 +52,8 @@ Entries in `errors` and `warnings` start with a reason code in brackets, then `f
 | `security_executable`, `security_dangerous_ext`, `security_double_extension`, `security_bidi_name`, `security_suspicious_subtitle` | error | Bait file removed; its release fails |
 | `folder_failed_security` | error | Release contained bait; nothing was moved from it |
 | `security_rename_script`, `security_known_marker` | warning | Removed, but the release continues |
-| `download_incomplete` | warning | Manual run: unfinished download files (`.part`, `.!qB` ...) removed as junk |
+| `download_incomplete` | warning | Unfinished download files (`.part`, `.!qB` ...) removed as junk |
+| `par2_rename_pending` | warning | Dry run only: unrecognised files next to PAR2 may be renamed volumes; decided during the live run |
 | `disc_structure_kept` | warning | `VIDEO_TS`/`BDMV` release kept whole |
 | `run_locked` | error | Another run holds `<source>/.unpackr-lock` |
 | `layout_unparsed` | warning | Name did not fit `output_layout`; moved with the flat layout |
