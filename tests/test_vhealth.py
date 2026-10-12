@@ -10,17 +10,18 @@ Tests cover:
 - Deletion operations
 """
 
-import pytest
-import tempfile
 import shutil
+import sys
+import tempfile
 from pathlib import Path
 from unittest.mock import patch
-import sys
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from vhealth import VideoHealthChecker
 from core import Config
+from vhealth import VideoHealthChecker
 
 
 class TestVideoHealthChecker:

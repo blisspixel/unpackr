@@ -1,4 +1,5 @@
 import json
+
 from core.config import Config
 from utils.system_check import SystemCheck
 

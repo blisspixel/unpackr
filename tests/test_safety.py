@@ -6,19 +6,20 @@ Tests timeout protection, loop guards, recursion limits, and runaway detection.
 import sys
 import time
 from pathlib import Path
-from colorama import init, Fore, Style
+
+from colorama import Fore, Style, init
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.safety import (
-    SafetyLimits,
-    TimeoutGuard,
-    TimeoutException,
-    SubprocessSafety,
     LoopSafety,
-    RecursionSafety,
     OperationTimer,
+    RecursionSafety,
+    SafetyLimits,
     StuckDetector,
+    SubprocessSafety,
+    TimeoutException,
+    TimeoutGuard,
 )
 
 

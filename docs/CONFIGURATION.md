@@ -33,9 +33,9 @@ Invalid or unreadable configuration is blocking. The commands exit instead of co
   "delete_mode": "quarantine",
   "quarantine_retention_days": 14,
   "quarantine_warn_mb": 20480,
-  "min_music_files": 10,
-  "min_image_files": 10,
-  "min_documents": 10,
+  "min_music_files": 1,
+  "min_image_files": 1,
+  "min_documents": 1,
   "max_log_files": 3,
   "log_folder": "logs"
 }
@@ -72,9 +72,9 @@ Videos shorter than this many seconds are previews, samples or trailers rather t
 
 ### `min_music_files`, `min_image_files`, `min_documents`
 
-Folders meeting these file-count thresholds are preserved. Default: `10`.
+A folder with no videos or archives is kept when it holds at least this many music files, images or documents. Default: `1`, so any music, photos or documents are kept, however few. Raise them if you want small leftovers (a stray `poster.jpg`) cleaned up too. Junk extensions such as `.txt` and `.nfo` never count as documents.
 
-Image folders also require at least `10MB` total size to avoid preserving cover-art/thumbnail folders.
+Inside a video release, images are different: after the video is moved, fewer than 10 images (or 10 MB) are cover art or screenshots and go with the folder; a larger set keeps the folder.
 
 ### `removable_extensions`
 
@@ -182,12 +182,10 @@ All safety and retry values must be positive integers. Invalid values block CLI 
 { "min_sample_size_mb": 1 }
 ```
 
-**Preserve folders with fewer files:**
+**Also clean up folders with only a picture or two:**
 ```json
 {
-  "min_music_files": 3,
-  "min_image_files": 3,
-  "min_documents": 1
+  "min_image_files": 3
 }
 ```
 

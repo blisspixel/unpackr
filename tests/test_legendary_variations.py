@@ -2,8 +2,8 @@
 Test different legendary effect variations to find the coolest one.
 """
 
-import sys
 import os
+import sys
 
 # Set UTF-8 encoding for Windows console
 if sys.platform == "win32":
@@ -18,7 +18,7 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-from colorama import init, Fore, Back, Style
+from colorama import Back, Fore, Style, init
 
 # Initialize colorama for Windows color support
 init()

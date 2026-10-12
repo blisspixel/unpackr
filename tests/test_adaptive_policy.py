@@ -7,24 +7,26 @@ Tests cover:
 - Adaptive timeout calculation
 """
 
-import pytest
-import tempfile
 import shutil
-from pathlib import Path
 import sys
+import tempfile
+from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from datetime import datetime
+
 from core.adaptive_policy import (
-    EnvironmentProfiler,
-    DiskType,
     AdaptivePolicy,
     AdaptiveTimeoutCalculator,
+    DiskType,
+    EnvironmentProfile,
+    EnvironmentProfiler,
     OperationOutcome,
     OutcomeType,
-    EnvironmentProfile,
 )
-from datetime import datetime
 
 
 class TestEnvironmentProfiler:

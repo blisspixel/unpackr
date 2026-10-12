@@ -367,3 +367,59 @@ def test_manual_run_cleans_now(tmp_path):
     items = {i["path"]: i for i in summary["items"]}
     assert items["Fresh.Movie/Next.Episode.mkv.part"]["reason_code"] == "download_incomplete"
     assert not (src / "Fresh.Movie").exists()
+
+
+def test_dry_run_keeps_unrecognised_files_next_to_par2(tmp_path):
+    """The dry run cannot know what PAR2 will rename, so it does not plan those files as junk."""
+    from types import SimpleNamespace
+
+    from conftest import bind_app_helpers
+
+    import unpackr
+    from core.archive_processor import Par2Outcome
+
+    folder = tmp_path / "Show.S01E02"
+    folder.mkdir()
+    for name in ("a.par2", "a.vol00+01.par2", "1eae7cc1898a"):
+        (folder / name).write_bytes(b"x")
+    held: dict = {}
+    app = SimpleNamespace(
+        dry_run=True,
+        config=Config(),
+        file_handler=SimpleNamespace(hold_paths=lambda paths, reason: held.update({p.name: reason for p in paths})),
+        archive_processor=SimpleNamespace(remove_par2_files=Mock()),
+    )
+    bind_app_helpers(app)
+
+    keep = unpackr.UnpackrApp._finish_par2(app, folder, Par2Outcome("verified", "par2_verified", "dry run"), False, False)
+
+    assert keep is True
+    assert held == dict.fromkeys(("a.par2", "a.vol00+01.par2", "1eae7cc1898a"), "par2_rename_pending")
+    assert not app.run_errors
+
+
+@pytest.mark.skipif(not FFMPEG, reason="needs ffmpeg")
+def test_photos_and_music_are_kept_and_loose_videos_moved_once(tmp_path):
+    src, dst = tmp_path / "src", tmp_path / "dst"
+    dst.mkdir()
+    (src / "Holiday Photos").mkdir(parents=True)
+    for i in range(3):
+        (src / "Holiday Photos" / f"IMG_{i}.jpg").write_bytes(b"\xff\xd8" + b"\0" * 1000)
+    (src / "Single").mkdir()
+    for i in range(2):
+        (src / "Single" / f"0{i}.mp3").write_bytes(b"ID3" + b"\0" * 1000)
+    (src / "Junk.Only").mkdir()
+    (src / "Junk.Only" / "readme.txt").write_text("x")
+    _video(src / "loose.movie.2021.mkv")
+    _age(src)
+
+    _, planned = _run(src, dst, tmp_path, "--dry-run")
+    assert planned["counts"]["videos_found"] == 1
+    code, summary = _run(src, dst, tmp_path)
+
+    assert code == 0, summary
+    assert len(list((src / "Holiday Photos").iterdir())) == 3
+    assert len(list((src / "Single").iterdir())) == 2
+    assert not (src / "Junk.Only").exists()
+    assert [p.name for p in dst.rglob("*.mkv")] == ["loose.movie.2021.mkv"]
+    assert summary["counts"]["videos_moved"] == 1

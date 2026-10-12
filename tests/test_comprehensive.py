@@ -6,7 +6,8 @@ Tests edge cases, error conditions, and integration scenarios.
 import sys
 import tempfile
 from pathlib import Path
-from colorama import init, Fore, Style
+
+from colorama import Fore, Style, init
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -14,8 +15,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from core import Config
 from core.file_handler import FileHandler
 from core.video_processor import VideoProcessor
+from unpackr import UnpackrApp, WorkPlan, clean_path
 from utils.system_check import SystemCheck
-from unpackr import WorkPlan, clean_path, UnpackrApp
 
 
 class ComprehensiveRunner:
@@ -105,11 +106,12 @@ def test_work_plan(runner: ComprehensiveRunner):
     # Add loose video
     video_path = Path("G:/test/video.mp4")
     plan.add_loose_video(video_path)
-    runner.test("WorkPlan: Add loose video - count increment", len(plan.loose_videos) == 1 and plan.total_videos == 3)
+    # Listed for display; the source root's own video folder entry already counts it.
+    runner.test("WorkPlan: Add loose video - listed once", len(plan.loose_videos) == 1 and plan.total_videos == 2)
 
     # Time estimate calculation
     estimate = plan.calculate_time_estimate()
-    expected = (3 * 10) + (1 * 3) + (3 * 5) + (1 * 2)  # videos + rars + par2s + folders
+    expected = (2 * 10) + (1 * 3) + (3 * 5) + (1 * 2)  # videos + rars + par2s + folders
     runner.test("WorkPlan: Time estimate calculation", estimate == expected, f"Expected {expected}, got {estimate}")
 
 

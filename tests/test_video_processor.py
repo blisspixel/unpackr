@@ -9,17 +9,18 @@ Tests cover:
 - Error handling (missing ffmpeg, corrupted files)
 """
 
-import pytest
-import tempfile
 import shutil
+import sys
+import tempfile
 from pathlib import Path
 from unittest.mock import patch
-import sys
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.video_processor import VideoProcessor
 from core.config import Config
+from core.video_processor import VideoProcessor
 
 
 class TestVideoHealthBasics:

@@ -1,9 +1,10 @@
+import types
 from collections import deque
 from pathlib import Path
-import types
+
+from conftest import bind_app_helpers
 
 import unpackr
-from conftest import bind_app_helpers
 
 
 def test_run_handles_missing_or_empty_work_plan(capsys, tmp_path):
@@ -63,7 +64,10 @@ def test_run_dry_run_loose_and_junk_paths(tmp_path):
         cancellation_requested=False,
         dry_run=True,
         dry_run_plan=types.SimpleNamespace(
-            print_summary=lambda: None, add_video_move=lambda *_a, **_k: None, add_video_delete=lambda *_a, **_k: None
+            print_summary=lambda: None,
+            add_video_move=lambda *_a, **_k: None,
+            add_video_delete=lambda *_a, **_k: None,
+            add_folder_delete=lambda *_a, **_k: None,
         ),
         video_processor=types.SimpleNamespace(check_video_health=lambda *_: True),
         file_handler=types.SimpleNamespace(
@@ -77,7 +81,6 @@ def test_run_dry_run_loose_and_junk_paths(tmp_path):
     unpackr.UnpackrApp.run(app, tmp_path, tmp_path / "dest")
     assert app.stats["folders_preserved"] == 1
     assert app.stats["videos_found"] == 1
-    assert app.stats["videos_moved"] >= 1
     assert app.stats["folders_deleted"] >= 1
 
 

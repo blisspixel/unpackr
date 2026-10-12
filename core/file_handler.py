@@ -27,6 +27,12 @@ from utils.platform_support import force_delete_directory, is_windows
 _RAR_PART_IN_NAME = re.compile(r"\.part\d+\.rar")
 
 
+# Images left in a processed video release: fewer than this (or under this many MB) is
+# cover art or screenshots and is removed with the folder.
+RELEASE_IMAGE_COLLECTION_FILES = 10
+RELEASE_IMAGE_COLLECTION_MB = 10
+
+
 class FileHandler:
     """Handles file and folder operations."""
 
@@ -493,11 +499,10 @@ class FileHandler:
                 image_count += 1
                 with suppress(OSError, FileNotFoundError):
                     image_total_bytes += file.stat().st_size
-                # Match minimum-threshold semantics: collections at exactly
-                # min_image_files and >10MB are preserved.
+                # Inside a release, a few images are cover art or screenshots; 10+ images over
+                # 10MB look like a real collection and keep the folder.
                 image_total_mb = image_total_bytes / (1024 * 1024)
-                min_images = self.config.min_image_files
-                if image_count >= min_images and image_total_mb > 10:
+                if image_count >= RELEASE_IMAGE_COLLECTION_FILES and image_total_mb > RELEASE_IMAGE_COLLECTION_MB:
                     logging.info(
                         f"Folder '{folder}' not deleted: contains image collection ({image_count} images, {image_total_mb:.1f}MB)"
                     )

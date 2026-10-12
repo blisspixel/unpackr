@@ -9,17 +9,20 @@ Tests cover:
 - File classification (video, removable, unwanted)
 """
 
-import pytest
-import tempfile
 import shutil
+import sys
+import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
-import sys
+
+import pytest
+
+from core.file_handler import RELEASE_IMAGE_COLLECTION_FILES
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.file_handler import FileHandler
 from core.config import Config
+from core.file_handler import FileHandler
 
 
 class TestFilenameSanitization:
@@ -231,8 +234,8 @@ class TestFolderCleanup:
         assert not handler.is_folder_empty_or_removable(temp_dir)
 
     def test_folder_not_removable_exact_min_image_collection(self, handler, temp_dir):
-        """Test folder with exactly min_image_files and >10MB is preserved."""
-        for i in range(handler.config.min_image_files):
+        """A release folder with a real image collection (10+ images, >10MB) is preserved."""
+        for i in range(RELEASE_IMAGE_COLLECTION_FILES):
             img = temp_dir / f"image{i}.jpg"
             img.write_bytes(b"x" * (1100 * 1024))
 

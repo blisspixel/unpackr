@@ -77,9 +77,9 @@ class Config:
             ".torrent",
             ".magnet",
         ],
-        "min_music_files": 10,
-        "min_image_files": 10,
-        "min_documents": 10,
+        "min_music_files": 1,
+        "min_image_files": 1,
+        "min_documents": 1,
         "min_sample_size_mb": 50,
         "min_video_duration_seconds": 10,
         "max_sample_duration_seconds": 300,
@@ -197,9 +197,9 @@ class Config:
 
         # Validate numeric ranges
         numeric_fields = {
-            "min_music_files": (0, 1000, "Minimum music files", 10),
-            "min_image_files": (0, 1000, "Minimum image files", 10),
-            "min_documents": (0, 1000, "Minimum documents", 10),
+            "min_music_files": (0, 1000, "Music files that make a folder without videos worth keeping", 1),
+            "min_image_files": (0, 1000, "Images that make a folder without videos worth keeping", 1),
+            "min_documents": (0, 1000, "Documents that make a folder without videos worth keeping", 1),
             "min_sample_size_mb": (1, 10000, "Minimum sample size", 50),
             "min_video_duration_seconds": (0, 3600, "Minimum video duration", 10),
             "quarantine_retention_days": (0, 3650, "Quarantine retention days", 14),
@@ -405,17 +405,17 @@ class Config:
     @property
     def min_music_files(self) -> int:
         """Get minimum number of music files to preserve folder."""
-        return self._get_int("min_music_files", 10)
+        return self._get_int("min_music_files", 1)
 
     @property
     def min_image_files(self) -> int:
         """Get minimum number of image files to preserve folder."""
-        return self._get_int("min_image_files", 10)
+        return self._get_int("min_image_files", 1)
 
     @property
     def min_documents(self) -> int:
         """Get minimum number of documents to preserve folder."""
-        return self._get_int("min_documents", 10)
+        return self._get_int("min_documents", 1)
 
     @property
     def min_video_duration_seconds(self) -> int:

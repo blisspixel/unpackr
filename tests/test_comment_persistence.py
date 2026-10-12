@@ -2,14 +2,14 @@
 Test comment persistence logic - comments should persist for entire folder.
 """
 
-import sys
 import os
+import sys
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from unpackr import UnpackrApp
 from core import Config
+from unpackr import UnpackrApp
 
 
 def test_comment_persistence():

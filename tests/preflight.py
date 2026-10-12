@@ -4,7 +4,8 @@ Analyzes G:\test to predict what will happen
 """
 
 from pathlib import Path
-from colorama import init, Fore, Style
+
+from colorama import Fore, Style, init
 
 init()
 

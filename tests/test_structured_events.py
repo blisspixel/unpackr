@@ -8,17 +8,18 @@ Tests cover:
 - Event analysis
 """
 
-import pytest
-import tempfile
-import shutil
 import json
-from pathlib import Path
+import shutil
 import sys
+import tempfile
 from datetime import datetime, timedelta
+from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.structured_events import StructuredEvent, EventType, EventSeverity, EventEmitter, EventBuilder, EventAnalyzer
+from core.structured_events import EventAnalyzer, EventBuilder, EventEmitter, EventSeverity, EventType, StructuredEvent
 
 
 class TestStructuredEvent:

@@ -50,9 +50,10 @@ Usenet and torrent releases are mostly not the video you wanted. Each top-level 
 | Item | Configurable? |
 |------|---------------|
 | Videos that pass validation | Moved to destination |
-| Music folders (10+ files) | Yes: `min_music_files` |
-| Image folders (10+ files, 10MB+) | Yes: `min_image_files` |
-| Document folders (10+ files) | Yes: `min_documents` |
+| Folders with music, however few files | Yes: `min_music_files` (default 1) |
+| Folders with photos, however few | Yes: `min_image_files` (default 1) |
+| Folders with documents | Yes: `min_documents` (default 1) |
+| Loose music, photos and documents in the source folder | Always kept |
 | Folders with files of an unrecognized extension | Always preserved |
 | Archive sets held back by the machine: disk full, extraction timeout, 7-Zip missing or failing | Kept for retry; the run exits `3` |
 | A PAR2 release par2 could not judge (not installed, tool error) next to unrecognized files, which may be renamed volumes | Kept; the run exits `3` |

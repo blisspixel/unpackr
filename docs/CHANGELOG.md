@@ -2,6 +2,15 @@
 
 Release dates are included where recorded.
 
+## v1.6.1 (2026-10-11)
+
+Found by running Unpackr on a realistic messy downloads folder.
+
+- **Photos and music are kept, however few.** A folder without videos was only kept with 10+ music files, or 10+ images totalling over 10 MB, so a small photo folder or a 3-track single was deleted as junk. Any music, photos or documents now keep the folder (`min_music_files`, `min_image_files` and `min_documents` default to `1`; raise them to clean up stray pictures). Inside a video release, fewer than 10 images or 10 MB is still cover art and goes with the release.
+- The dry run lists the junk folders it will delete under CLEANUP (it used to show only processed folders, hiding exactly the ones worth checking) and applies the same "is it really removable" check as the live run.
+- The dry run no longer plans an obfuscated post's randomly named volumes as junk: PAR2 may rename them back during the live run, so they are shown as `par2_rename_pending`.
+- Loose videos in the source folder are processed once, not twice, and `videos_found` no longer counts every video in the tree twice.
+
 ## v1.6.0 (2026-10-11)
 
 Unpackr is a tool you run by hand when you are ready to clean, not something to schedule.

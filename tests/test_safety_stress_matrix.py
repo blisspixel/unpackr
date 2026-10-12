@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from core.config import Config
-from core.file_handler import FileHandler
+from core.file_handler import RELEASE_IMAGE_COLLECTION_FILES, FileHandler
 from core.safety_invariants import (
     FileOperation,
     OperationType,
@@ -49,7 +49,7 @@ class TestDeleteRaceMatrix:
         handler = FileHandler(Config())
         assert handler.is_folder_empty_or_removable(folder) is True
 
-        for i in range(handler.config.min_image_files):
+        for i in range(RELEASE_IMAGE_COLLECTION_FILES):
             (folder / f"img{i:02d}.jpg").write_bytes(b"x" * (1100 * 1024))
 
         assert handler.safe_delete_folder(folder) is False
