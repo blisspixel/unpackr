@@ -121,7 +121,7 @@ unpackr "~/Downloads" "~/Videos"
 
 Source and destination must be provided together. Incomplete or conflicting path arguments fail with a usage error instead of falling into interactive mode.
 
-If the installed launcher is unavailable, run the same command as `python -m unpackr ...` from the repository checkout, then reinstall with `uv tool install --reinstall .`.
+If the installed launcher is unavailable, run `./unpackr.sh` from the repository checkout. It puts `src` on `PYTHONPATH`. On Windows, run `unpackr.bat`. Then reinstall with `uv tool install --reinstall .`.
 
 ## Safety
 

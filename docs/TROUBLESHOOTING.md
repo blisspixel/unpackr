@@ -76,7 +76,7 @@ uv tool uninstall unpackr
 uv tool install .
 ```
 
-As a checkout-only fallback, use `python -m unpackr --help` or run `unpackr.bat` explicitly.
+As a checkout-only fallback, run `unpackr.sh` or `unpackr.bat`. Those wrappers put `src` on `PYTHONPATH`. A bare `python -m unpackr` from the checkout cannot see the package until unpackr is installed.
 
 From other directories, ensure the Scripts directory for the installation interpreter is in `PATH`. Locate it with `python -c "import sysconfig; print(sysconfig.get_path('scripts'))"`.
 

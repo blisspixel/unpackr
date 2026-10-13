@@ -63,6 +63,29 @@ class TestConfigValidation:
         assert "WARNING: Config key 'settle_minutes' is no longer used." in captured
         assert config.get("min_music_files") == 1
 
+    def test_tool_paths_is_a_known_key(self, temp_config_file, capsys):
+        temp_config_file.write_text(
+            '{"tool_paths": {"7z": ["7z"]}, "min_music_files": 1}',
+            encoding="utf-8",
+        )
+
+        config = Config(temp_config_file)
+        captured = capsys.readouterr().out
+
+        assert config.is_valid is True
+        assert config.get("tool_paths") == {"7z": ["7z"]}
+        assert "Unknown config key" not in captured
+
+    def test_bundled_config_does_not_warn_about_tool_paths(self, capsys):
+        bundled = Path(__file__).resolve().parents[1] / "src" / "unpackr" / "config_files" / "config.json"
+
+        config = Config(bundled)
+        captured = capsys.readouterr().out
+
+        assert config.is_valid is True
+        assert isinstance(config.get("tool_paths"), dict)
+        assert "Unknown config key" not in captured
+
     def test_invalid_type_shows_clear_error(self, temp_config_file, capsys):
         """Test that wrong type shows clear error with example."""
         invalid_config = {

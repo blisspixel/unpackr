@@ -336,7 +336,8 @@ class Config:
             "settle_minutes": "no longer used",
             "notify": "no longer used",
         }
-        known = set(self.DEFAULT_CONFIG)
+        # tool_paths is applied and validated, but it has no default value.
+        known = set(self.DEFAULT_CONFIG) | {"tool_paths"}
         for key in sorted(config):
             if key in known:
                 continue
