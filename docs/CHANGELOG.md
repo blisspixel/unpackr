@@ -4,9 +4,12 @@ Release dates are included where recorded.
 
 ## Unreleased
 
+## v1.6.2 (2026-10-13)
+
 - Install with `uv tool install .` or `pipx install .`. A system `python -m pip install .` is refused on externally managed Pythons (Arch, Debian, Ubuntu). Use `python -m pip install .` only inside a virtualenv.
 - The installable distribution is one `unpackr` package. Imports live under `unpackr` rather than top-level `core`, `utils`, `doctor`, or `vhealth`.
-- Unknown config keys print a warning and still load. `settle_minutes` and `notify` are reported as no longer used.
+- Unknown config keys print a warning and still load. `settle_minutes` and `notify` are reported as no longer used. `tool_paths` is a known key and does not warn.
+- From a checkout, run `./unpackr.sh` or `unpackr.bat`. A bare `python -m unpackr` cannot see the package until unpackr is installed.
 
 ## v1.6.1 (2026-10-11)
 
