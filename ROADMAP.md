@@ -4,7 +4,7 @@ Unpackr turns a messy downloads folder into a clean one: it keeps the good conte
 
 ## Version Focus
 
-- Current line: `1.6.x` (latest: `1.6.1`, October 2026) — first-class **Windows, Linux, and macOS**, Python `3.12` to `3.15`
+- Current line: `1.6.x` (latest: `1.6.2`, October 2026) — first-class **Windows, Linux, and macOS**, Python `3.12` to `3.15`
 - Primary objective: delete the junk decisively, never the good file, and make every removal reversible and explained
 
 ## Quality Baseline
