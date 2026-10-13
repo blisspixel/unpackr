@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-import unpackr
+import unpackr.cli as unpackr
 
 
 class _Cfg:
@@ -174,7 +174,7 @@ def test_main_cleanup_warning_and_vhealth_exception(monkeypatch, tmp_path):
 
     monkeypatch.setattr(unpackr, "UnpackrApp", App)
     monkeypatch.setattr(unpackr.sys, "argv", ["unpackr", str(source), str(dest), "--vhealth"])
-    monkeypatch.setitem(sys.modules, "vhealth", types.SimpleNamespace(VideoHealthChecker=BadChecker))
+    monkeypatch.setattr("unpackr.vhealth.VideoHealthChecker", BadChecker)
 
     # Completes with exit 0 despite cleanup warning + vhealth exception.
     with pytest.raises(SystemExit) as exc:

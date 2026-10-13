@@ -2,6 +2,12 @@
 
 Release dates are included where recorded.
 
+## Unreleased
+
+- Install with `uv tool install .` or `pipx install .`. A system `python -m pip install .` is refused on externally managed Pythons (Arch, Debian, Ubuntu). Use `python -m pip install .` only inside a virtualenv.
+- The installable distribution is one `unpackr` package. Imports live under `unpackr` rather than top-level `core`, `utils`, `doctor`, or `vhealth`.
+- Unknown config keys print a warning and still load. `settle_minutes` and `notify` are reported as no longer used.
+
 ## v1.6.1 (2026-10-11)
 
 Found by running Unpackr on a realistic messy downloads folder.
@@ -20,7 +26,7 @@ Unpackr is a tool you run by hand when you are ready to clean, not something to 
 
 **Upgrade notes**
 - If you installed the service, remove it first with 1.5.x (`unpackr service uninstall --all`), or delete `~/.config/systemd/user/unpackr-*` and run `systemctl --user daemon-reload`.
-- `settle_minutes` and `notify` in a config file are ignored.
+- `settle_minutes` and `notify` in a config file are no longer used. Current builds warn and keep loading the rest of the file.
 
 ## v1.5.1 (2026-10-11)
 
@@ -31,7 +37,7 @@ Unpackr is a tool you run by hand when you are ready to clean, not something to 
 Unpackr cleans a downloads folder decisively and never throws away the good file. Removals are reversible by default, every decision is reported, PAR2 repairs obfuscated posts, and the code base is strictly typed on Python 3.12 to 3.15.
 
 **Upgrade notes**
-- Python 3.12 or newer is required (3.11 is dropped). Reinstall with `python -m pip install .`.
+- Python 3.12 or newer is required (3.11 is dropped). Reinstall with `uv tool install .` (or `pipx install .`).
 - 7-Zip 22.0+ is required: on macOS use `brew install sevenzip`, on Debian/Ubuntu/Fedora the `7zip` package (the old `p7zip` 16.02 is too old).
 - Removals now go to `<source>/.unpackr-quarantine/` for 14 days by default; set `delete_mode` to `trash` or `permanent` for the old behavior.
 - A manual run removes unfinished downloads as junk; unattended runs wait for them.
@@ -48,7 +54,7 @@ Unpackr cleans a downloads folder decisively and never throws away the good file
 - The bundled `config_files/config.json` lists `.ts` and `.m2ts` as videos, matching the documented defaults (#21).
 - Notifications count extracted archives again (they read a counter that did not exist).
 - `unpackr-doctor` explains what a missing par2 means: damaged or renamed volumes cannot be repaired, archives still extract.
-- Python 3.12 is now the minimum and 3.15 is supported; CI runs 3.12 through 3.15. **Migration:** Python 3.11 is no longer supported. Install a 3.12+ interpreter and reinstall (`python -m pip install .`); `unpackr-doctor` reports an older interpreter as a blocking issue.
+- Python 3.12 is now the minimum and 3.15 is supported; CI runs 3.12 through 3.15. **Migration:** Python 3.11 is no longer supported. Install a 3.12+ interpreter and reinstall (`uv tool install .` or `pipx install .`); `unpackr-doctor` reports an older interpreter as a blocking issue.
 - Type checking is strict: `mypy --strict` and Pyright strict cover `core`, `utils`, `doctor.py`, `unpackr.py` and `vhealth.py` with no per-module relaxations, ruff applies the pyupgrade (`UP`) rules for 3.12, and the `dev` extra installs stubs for psutil, colorama and tqdm.
 - Pressing Ctrl+C just after the app is created (before the run starts) exits cleanly as cancelled instead of crashing with `UnboundLocalError`.
 - Malformed state files no longer crash or stop a run: a run journal line, service manifest, event log record or cached environment profile that is valid JSON but not an object is skipped (an event log record with unknown fields no longer stops the rest of the log from loading), and a configured tool path that exists but cannot be executed is skipped instead of raising.

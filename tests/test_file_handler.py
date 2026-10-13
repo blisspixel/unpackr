@@ -17,12 +17,12 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from core.file_handler import RELEASE_IMAGE_COLLECTION_FILES
+from unpackr.core.file_handler import RELEASE_IMAGE_COLLECTION_FILES
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.config import Config
-from core.file_handler import FileHandler
+from unpackr.core.config import Config
+from unpackr.core.file_handler import FileHandler
 
 
 class TestFilenameSanitization:
@@ -363,14 +363,14 @@ class TestEdgeCases:
 
     def test_init_with_none_config(self):
         """Test that initialization with None config raises error."""
-        from utils.defensive import ValidationError
+        from unpackr.utils.defensive import ValidationError
 
         with pytest.raises(ValidationError):
             FileHandler(None)
 
     def test_init_with_invalid_config(self):
         """Test that initialization with invalid config raises error."""
-        from utils.defensive import ValidationError
+        from unpackr.utils.defensive import ValidationError
 
         config = Mock(spec=[])  # Mock with no attributes
         # Config missing required attributes (video_extensions, removable_extensions)
@@ -485,8 +485,8 @@ class TestDeleteAndRetryBehavior:
         disallowed_inside.pid = 3
         disallowed_inside.open_files.return_value = [Mock(path=str(target / "script.py"))]
 
-        with patch("core.file_handler.psutil.process_iter", return_value=[allowed_inside, allowed_adjacent, disallowed_inside]):
-            with patch("core.file_handler.time.sleep"):
+        with patch("unpackr.core.file_handler.psutil.process_iter", return_value=[allowed_inside, allowed_adjacent, disallowed_inside]):
+            with patch("unpackr.core.file_handler.time.sleep"):
                 handler._kill_processes_using_folder(target)
 
         allowed_inside.kill.assert_called_once()
@@ -499,7 +499,7 @@ class TestDeleteAndRetryBehavior:
         video.write_text("test")
 
         with patch.object(handler, "_terminate_related_processes") as mock_terminate:
-            with patch("core.file_handler.time.sleep") as mock_sleep:
+            with patch("unpackr.core.file_handler.time.sleep") as mock_sleep:
                 with patch.object(Path, "unlink", side_effect=[PermissionError("locked"), None]) as mock_unlink:
                     assert handler.delete_video_file_with_retry(video, max_attempts=2, retry_delay=3) is True
 
@@ -512,8 +512,8 @@ class TestDeleteAndRetryBehavior:
         proc = Mock()
         proc.open_files.return_value = [Mock(path=locked_file)]
 
-        with patch("core.file_handler.psutil.process_iter", return_value=[proc]):
-            with patch("core.file_handler.time.sleep") as mock_sleep:
+        with patch("unpackr.core.file_handler.psutil.process_iter", return_value=[proc]):
+            with patch("unpackr.core.file_handler.time.sleep") as mock_sleep:
                 assert handler.wait_for_file_release(locked_file, max_attempts=2, delay=1) is False
 
         assert mock_sleep.call_count == 2
@@ -533,7 +533,7 @@ class TestDeleteAndRetryBehavior:
         other_proc.pid = 3
         other_proc.cmdline.return_value = ["python", target_name]
 
-        with patch("core.file_handler.psutil.process_iter", return_value=[ffmpeg_proc, sevenzip_proc, other_proc]):
+        with patch("unpackr.core.file_handler.psutil.process_iter", return_value=[ffmpeg_proc, sevenzip_proc, other_proc]):
             handler._terminate_related_processes(target_name)
 
         ffmpeg_proc.terminate.assert_called_once()
@@ -562,8 +562,8 @@ class TestMoveFileGuards:
         dest = temp_dir / "dest"
         dest.mkdir()
 
-        with patch("core.file_handler.StateValidator.check_file_accessible", return_value=True):
-            with patch("core.file_handler.StateValidator.check_dir_writable", return_value=False):
+        with patch("unpackr.core.file_handler.StateValidator.check_file_accessible", return_value=True):
+            with patch("unpackr.core.file_handler.StateValidator.check_dir_writable", return_value=False):
                 assert handler.move_file(source, dest) is False
 
     def test_move_file_uses_unique_name_when_destination_exists(self, handler, temp_dir):
@@ -573,10 +573,10 @@ class TestMoveFileGuards:
         dest.mkdir()
         (dest / "bad-name.mp4").write_text("existing")
 
-        with patch("core.file_handler.StateValidator.check_file_accessible", return_value=True):
-            with patch("core.file_handler.StateValidator.check_dir_writable", return_value=True):
-                with patch("core.file_handler.StateValidator.check_disk_space", return_value=True):
-                    with patch("core.file_handler.ErrorRecovery.safe_move", return_value=True) as mock_move:
+        with patch("unpackr.core.file_handler.StateValidator.check_file_accessible", return_value=True):
+            with patch("unpackr.core.file_handler.StateValidator.check_dir_writable", return_value=True):
+                with patch("unpackr.core.file_handler.StateValidator.check_disk_space", return_value=True):
+                    with patch("unpackr.core.file_handler.ErrorRecovery.safe_move", return_value=True) as mock_move:
                         assert handler.move_file(source, dest) is True
 
         assert mock_move.call_args[0][1].name == "bad-name_1.mp4"
@@ -588,10 +588,10 @@ class TestMoveFileGuards:
         dest = temp_dir / "dest"
         dest.mkdir()
 
-        with patch("core.file_handler.StateValidator.check_file_accessible", return_value=True):
-            with patch("core.file_handler.StateValidator.check_dir_writable", return_value=True):
-                with patch("core.file_handler.StateValidator.check_disk_space", return_value=True):
-                    with patch("core.file_handler.ErrorRecovery.safe_move", return_value=False):
+        with patch("unpackr.core.file_handler.StateValidator.check_file_accessible", return_value=True):
+            with patch("unpackr.core.file_handler.StateValidator.check_dir_writable", return_value=True):
+                with patch("unpackr.core.file_handler.StateValidator.check_disk_space", return_value=True):
+                    with patch("unpackr.core.file_handler.ErrorRecovery.safe_move", return_value=False):
                         assert handler.move_file(source, dest) is False
 
 

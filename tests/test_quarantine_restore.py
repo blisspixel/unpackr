@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from core.config import Config
-from core.file_handler import FileHandler
-from core.remover import (
+from unpackr.core.config import Config
+from unpackr.core.file_handler import FileHandler
+from unpackr.core.remover import (
     QUARANTINE_DIR,
     RUNS_DIR,
     Remover,
@@ -22,9 +22,9 @@ from core.remover import (
     purge_quarantine,
     restore_run,
 )
-from doctor import UnpackrDoctor
-from utils.cli_subcommands import run_subcommand
-from utils.trash import send_to_trash
+from unpackr.doctor import UnpackrDoctor
+from unpackr.utils.cli_subcommands import run_subcommand
+from unpackr.utils.trash import send_to_trash
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -262,7 +262,7 @@ def test_default_run_is_fully_restorable(tmp_path):
     config.write_text(json.dumps({"min_sample_size_mb": 1, "log_folder": str(tmp_path / "logs")}))
 
     result = subprocess.run(
-        [sys.executable, "unpackr.py", "--source", str(src), "--destination", str(dst), "--config", str(config),
+        [sys.executable, "-m", "unpackr", "--source", str(src), "--destination", str(dst), "--config", str(config),
          "--json", "--no-color"],
         capture_output=True, text=True, timeout=300, cwd=REPO,
     )  # fmt: skip
@@ -278,7 +278,7 @@ def test_default_run_is_fully_restorable(tmp_path):
 
     run_id = summary["removal"]["run_id"]
     restore = subprocess.run(
-        [sys.executable, "unpackr.py", "restore", run_id, "--source", str(src)],
+        [sys.executable, "-m", "unpackr", "restore", run_id, "--source", str(src)],
         capture_output=True, text=True, timeout=120, cwd=REPO,
     )  # fmt: skip
     assert restore.returncode == 0, restore.stdout

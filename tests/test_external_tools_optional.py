@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from utils.platform_support import resolve_first_available_tool
+from unpackr.utils.platform_support import resolve_first_available_tool
 
 
 def _require_tool(tool_key: str) -> str:
@@ -60,7 +60,7 @@ def test_ffmpeg_reports_version():
 
 def test_system_check_resolves_real_7z_when_present():
     seven = _require_tool("7z")
-    from utils.system_check import SystemCheck
+    from unpackr.utils.system_check import SystemCheck
 
     checker = SystemCheck(config={"tool_paths": {}})
     assert checker.check_tool("7z") is True

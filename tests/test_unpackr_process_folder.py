@@ -2,7 +2,7 @@ import types
 
 from conftest import bind_app_helpers
 
-import unpackr
+import unpackr.cli as unpackr
 
 
 class _DryRunPlan:

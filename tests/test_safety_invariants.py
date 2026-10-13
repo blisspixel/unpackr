@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.safety_invariants import (
+from unpackr.core.safety_invariants import (
     FileOperation,
     InvariantEnforcer,
     OperationType,

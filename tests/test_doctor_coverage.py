@@ -6,7 +6,7 @@ import types
 
 import pytest
 
-import doctor
+import unpackr.doctor as doctor
 
 
 @pytest.fixture
@@ -34,7 +34,7 @@ def test_check_config_file_missing_and_invalid_json(monkeypatch, doc, capsys, tm
     cfg_dir = base / "config_files"
     cfg_dir.mkdir(parents=True)
 
-    monkeypatch.setattr(doctor, "__file__", str(base / "doctor.py"))
+    monkeypatch.setattr(doctor, "bundled_config_dir", lambda: cfg_dir)
     doc.check_config_file()
     out = capsys.readouterr().out
     assert "Config file not found" in out
@@ -52,7 +52,7 @@ def test_check_config_file_valid_with_missing_keys_warns(monkeypatch, doc, capsy
     cfg_dir = base / "config_files"
     cfg_dir.mkdir(parents=True)
     (cfg_dir / "config.json").write_text(json.dumps({"tool_paths": {}}), encoding="utf-8")
-    monkeypatch.setattr(doctor, "__file__", str(base / "doctor.py"))
+    monkeypatch.setattr(doctor, "bundled_config_dir", lambda: cfg_dir)
 
     doc.check_config_file()
     out = capsys.readouterr().out
@@ -79,7 +79,7 @@ def test_check_external_tools_paths(monkeypatch, doc, capsys, tmp_path):
         json.dumps({"tool_paths": {"7z": ["7z"], "par2": ["par2"], "ffmpeg": ["ffmpeg"]}}),
         encoding="utf-8",
     )
-    monkeypatch.setattr(doctor, "__file__", str(base / "doctor.py"))
+    monkeypatch.setattr(doctor, "bundled_config_dir", lambda: cfg_dir)
 
     def fake_check_tool(tool_name, commands, critical=True):
         if tool_name == "7z":
@@ -129,7 +129,7 @@ def test_check_comments_file_variants(monkeypatch, doc, capsys, tmp_path):
     base = tmp_path / "repo"
     cfg_dir = base / "config_files"
     cfg_dir.mkdir(parents=True)
-    monkeypatch.setattr(doctor, "__file__", str(base / "doctor.py"))
+    monkeypatch.setattr(doctor, "bundled_config_dir", lambda: cfg_dir)
 
     doc.check_comments_file()
     assert any("No comments file" in w for w in doc.warnings)
@@ -152,7 +152,7 @@ def test_check_core_modules_missing(monkeypatch, doc, capsys):
     real_import = builtins.__import__
 
     def fake_import(name, *args, **kwargs):
-        if name == "core.video_processor":
+        if name == "unpackr.core.video_processor":
             raise ImportError("missing")
         return real_import(name, *args, **kwargs)
 

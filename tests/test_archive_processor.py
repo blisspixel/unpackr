@@ -19,9 +19,9 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.archive_processor import ArchiveProcessor
-from core.remover import Remover
-from core.config import Config
+from unpackr.core.archive_processor import ArchiveProcessor
+from unpackr.core.remover import Remover
+from unpackr.core.config import Config
 
 
 class TestArchiveDetection:
@@ -51,7 +51,7 @@ class TestArchiveDetection:
         # Processor should find RAR files
         # Note: This tests the glob logic indirectly through process_rar_files
         with patch.object(processor, "_validate_archive_paths", return_value=True):
-            with patch("core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, "", "", 0)):
+            with patch("unpackr.core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, "", "", 0)):
                 result = processor.process_rar_files(temp_dir)
                 assert result is True
 
@@ -64,7 +64,7 @@ class TestArchiveDetection:
         # Only part001 should be processed
         with patch.object(processor, "_validate_archive_paths", return_value=True):
             with patch(
-                "core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, "", "", 0)
+                "unpackr.core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, "", "", 0)
             ) as mock_run:
                 processor.process_rar_files(temp_dir)
                 # Should only call 7z once (for part001)
@@ -77,7 +77,7 @@ class TestArchiveDetection:
 
         with patch.object(processor, "_validate_archive_paths", return_value=True):
             with patch(
-                "core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, "", "", 0)
+                "unpackr.core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, "", "", 0)
             ) as mock_run:
                 processor.process_rar_files(temp_dir)
                 # Should process both 7z files
@@ -88,9 +88,9 @@ class TestArchiveDetection:
         # Create only .7z.100 without .7z.001 (incomplete download)
         (temp_dir / "archive.7z.100").write_text("test")
 
-        with patch("core.archive_processor.logging.warning") as mock_warn:
+        with patch("unpackr.core.archive_processor.logging.warning") as mock_warn:
             with patch.object(processor, "_validate_archive_paths", return_value=True):
-                with patch("core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, "", "", 0)):
+                with patch("unpackr.core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, "", "", 0)):
                     processor.process_rar_files(temp_dir)
                     # Should log warning about incomplete archive
                     assert any("Incomplete 7z archive" in str(call) for call in mock_warn.call_args_list)
@@ -122,7 +122,7 @@ class TestExtractionProcess:
         processor.system_check.get_tool_command = Mock(return_value=[r"C:\Program Files\7-Zip\7z.exe"])
         return processor
 
-    @patch("core.archive_processor.StateValidator.check_disk_space")
+    @patch("unpackr.core.archive_processor.StateValidator.check_disk_space")
     def test_extraction_fails_closed_when_no_safe_7z_command(self, mock_disk_space, processor, temp_dir):
         """Test extraction aborts if no safe 7-Zip command resolves."""
         (temp_dir / "archive.rar").write_bytes(b"fake rar data" * 1000)
@@ -130,14 +130,14 @@ class TestExtractionProcess:
         mock_disk_space.return_value = True
 
         with patch.object(processor, "_validate_archive_paths", return_value=True):
-            with patch("core.archive_processor.SubprocessSafety.run_with_timeout") as mock_run:
+            with patch("unpackr.core.archive_processor.SubprocessSafety.run_with_timeout") as mock_run:
                 result = processor.process_rar_files(temp_dir)
 
         assert result is False
         assert not mock_run.called
 
-    @patch("core.archive_processor.SubprocessSafety.run_with_timeout")
-    @patch("core.archive_processor.StateValidator.check_disk_space")
+    @patch("unpackr.core.archive_processor.SubprocessSafety.run_with_timeout")
+    @patch("unpackr.core.archive_processor.StateValidator.check_disk_space")
     def test_extraction_uses_temp_files_for_large_7z_output(
         self, mock_disk_space, mock_subprocess, processor, temp_dir
     ):
@@ -154,8 +154,8 @@ class TestExtractionProcess:
         assert result is True
         assert mock_subprocess.call_args.kwargs["use_temp_files"] is True
 
-    @patch("core.archive_processor.SubprocessSafety.run_with_timeout")
-    @patch("core.archive_processor.StateValidator.check_disk_space")
+    @patch("unpackr.core.archive_processor.SubprocessSafety.run_with_timeout")
+    @patch("unpackr.core.archive_processor.StateValidator.check_disk_space")
     def test_successful_extraction(self, mock_disk_space, mock_subprocess, processor, temp_dir):
         """Test successful RAR extraction."""
         (temp_dir / "archive.rar").write_bytes(b"fake rar data" * 1000)
@@ -170,8 +170,8 @@ class TestExtractionProcess:
         assert result is True
         assert mock_subprocess.called
 
-    @patch("core.archive_processor.SubprocessSafety.run_with_timeout")
-    @patch("core.archive_processor.StateValidator.check_disk_space")
+    @patch("unpackr.core.archive_processor.SubprocessSafety.run_with_timeout")
+    @patch("unpackr.core.archive_processor.StateValidator.check_disk_space")
     def test_extraction_failure(self, mock_disk_space, mock_subprocess, processor, temp_dir):
         """Test handling of extraction failure."""
         (temp_dir / "corrupt.rar").write_text("corrupt data")
@@ -186,14 +186,14 @@ class TestExtractionProcess:
         # Should return False when all extractions fail
         assert result is False
 
-    @patch("core.archive_processor.StateValidator.check_disk_space")
+    @patch("unpackr.core.archive_processor.StateValidator.check_disk_space")
     def test_insufficient_disk_space(self, mock_disk_space, processor, temp_dir):
         """Test skipping extraction when disk space insufficient."""
         (temp_dir / "large.rar").write_bytes(b"x" * (100 * 1024 * 1024))  # 100MB
 
         mock_disk_space.return_value = False  # Not enough space
 
-        with patch("core.archive_processor.logging.error") as mock_error, patch.object(
+        with patch("unpackr.core.archive_processor.logging.error") as mock_error, patch.object(
             processor, "_validate_archive_paths", return_value=True
         ):
             processor.process_rar_files(temp_dir)
@@ -202,8 +202,8 @@ class TestExtractionProcess:
             error_message = str(mock_error.call_args_list).lower()
             assert "disk" in error_message and ("space" in error_message or "full" in error_message)
 
-    @patch("core.archive_processor.SubprocessSafety.run_with_timeout")
-    @patch("core.archive_processor.StateValidator.check_disk_space")
+    @patch("unpackr.core.archive_processor.SubprocessSafety.run_with_timeout")
+    @patch("unpackr.core.archive_processor.StateValidator.check_disk_space")
     def test_progress_callback(self, mock_disk_space, mock_subprocess, processor, temp_dir):
         """Test progress callback is called during extraction."""
         (temp_dir / "archive1.rar").write_text("test")
@@ -239,8 +239,8 @@ class TestSecurityValidation:
         yield Path(temp)
         shutil.rmtree(temp, ignore_errors=True)
 
-    @patch("core.archive_processor.SubprocessSafety.run_with_timeout")
-    @patch("core.archive_processor.StateValidator.check_disk_space")
+    @patch("unpackr.core.archive_processor.SubprocessSafety.run_with_timeout")
+    @patch("unpackr.core.archive_processor.StateValidator.check_disk_space")
     def test_malicious_archive_skipped(self, mock_disk_space, mock_subprocess, processor, temp_dir):
         """Test that archives with path traversal are skipped."""
         (temp_dir / "malicious.rar").write_text("test")
@@ -249,7 +249,7 @@ class TestSecurityValidation:
 
         # Simulate _validate_archive_paths detecting malicious content
         with patch.object(processor, "_validate_archive_paths", return_value=False):
-            with patch("core.archive_processor.logging.error") as mock_error:
+            with patch("unpackr.core.archive_processor.logging.error") as mock_error:
                 processor.process_rar_files(temp_dir)
                 # Should log security error
                 assert any("SECURITY" in str(call) for call in mock_error.call_args_list)
@@ -285,7 +285,7 @@ class TestPAR2Processing:
         result = processor.process_par2_files(temp_dir)
         assert result is True
 
-    @patch("core.archive_processor.SubprocessSafety.run_with_timeout")
+    @patch("unpackr.core.archive_processor.SubprocessSafety.run_with_timeout")
     def test_successful_par2_verify(self, mock_subprocess, processor, temp_dir):
         """Test successful PAR2 verification (no repair needed)."""
         (temp_dir / "file.par2").write_text("test")
@@ -301,7 +301,7 @@ class TestPAR2Processing:
         assert result is True
         assert mock_subprocess.called
 
-    @patch("core.archive_processor.SubprocessSafety.run_with_timeout")
+    @patch("unpackr.core.archive_processor.SubprocessSafety.run_with_timeout")
     def test_successful_par2_repair(self, mock_subprocess, processor, temp_dir):
         """Test successful PAR2 repair."""
         (temp_dir / "file.par2").write_text("test")
@@ -315,7 +315,7 @@ class TestPAR2Processing:
 
         assert result is True
 
-    @patch("core.archive_processor.SubprocessSafety.run_with_timeout")
+    @patch("unpackr.core.archive_processor.SubprocessSafety.run_with_timeout")
     def test_par2_repair_failure(self, mock_subprocess, processor, temp_dir):
         """Test PAR2 repair failure (corrupted beyond repair)."""
         (temp_dir / "corrupt.par2").write_text("test")
@@ -348,10 +348,10 @@ class TestTimeoutHandling:
         yield Path(temp)
         shutil.rmtree(temp, ignore_errors=True)
 
-    @patch("core.archive_processor.logging.info")
-    @patch("core.archive_processor.SubprocessSafety.run_with_timeout")
-    @patch("core.archive_processor.StateValidator.check_disk_space")
-    @patch("core.archive_processor.SafetyLimits.calculate_rar_timeout")
+    @patch("unpackr.core.archive_processor.logging.info")
+    @patch("unpackr.core.archive_processor.SubprocessSafety.run_with_timeout")
+    @patch("unpackr.core.archive_processor.StateValidator.check_disk_space")
+    @patch("unpackr.core.archive_processor.SafetyLimits.calculate_rar_timeout")
     def test_dynamic_timeout_large_archive(
         self, mock_timeout_calc, mock_disk_space, mock_subprocess, mock_log, processor, temp_dir
     ):
@@ -389,8 +389,8 @@ class TestSafetyLimits:
         yield Path(temp)
         shutil.rmtree(temp, ignore_errors=True)
 
-    @patch("core.archive_processor.SubprocessSafety.run_with_timeout")
-    @patch("core.archive_processor.StateValidator.check_disk_space")
+    @patch("unpackr.core.archive_processor.SubprocessSafety.run_with_timeout")
+    @patch("unpackr.core.archive_processor.StateValidator.check_disk_space")
     def test_loop_safety_limit(self, mock_disk_space, mock_subprocess, processor, temp_dir):
         """Test loop safety guard triggers when limit exceeded."""
         # Create more archives than the limit
@@ -401,7 +401,7 @@ class TestSafetyLimits:
         mock_subprocess.return_value = (True, "", "", 0)
 
         with patch.object(processor, "_validate_archive_paths", return_value=True):
-            with patch("core.archive_processor.logging.error") as mock_error:
+            with patch("unpackr.core.archive_processor.logging.error") as mock_error:
                 with patch.object(processor, "_delete_volumes"):
                     processor.process_rar_files(temp_dir)
 
@@ -427,8 +427,8 @@ class TestCleanupOperations:
         yield Path(temp)
         shutil.rmtree(temp, ignore_errors=True)
 
-    @patch("core.archive_processor.SubprocessSafety.run_with_timeout")
-    @patch("core.archive_processor.StateValidator.check_disk_space")
+    @patch("unpackr.core.archive_processor.SubprocessSafety.run_with_timeout")
+    @patch("unpackr.core.archive_processor.StateValidator.check_disk_space")
     def test_archives_deleted_after_extraction(self, mock_disk_space, mock_subprocess, processor, temp_dir):
         """Test that archive files are deleted after extraction."""
         archive = temp_dir / "archive.rar"
@@ -451,7 +451,7 @@ class TestCleanupOperations:
 
         processor.remover = Mock(mode="permanent")
         processor.remover.remove.side_effect = PermissionError("locked")
-        with patch("core.archive_processor.time.sleep") as mock_sleep:
+        with patch("unpackr.core.archive_processor.time.sleep") as mock_sleep:
             processor._delete_path(archive, extraction_verified=True)
 
         assert processor.remover.remove.call_count == 3
@@ -529,7 +529,7 @@ class TestArchivePathValidation:
         archive.write_text("test")
 
         fake = self._fake_listing("", success=False, code=2)
-        with patch("core.archive_processor.SubprocessSafety.run_with_line_handler", side_effect=fake):
+        with patch("unpackr.core.archive_processor.SubprocessSafety.run_with_line_handler", side_effect=fake):
             assert processor._validate_archive_paths(archive, temp_dir, ["7z"]) is False
 
     def test_validate_archive_paths_rejects_absolute_paths(self, processor, temp_dir):
@@ -541,7 +541,7 @@ class TestArchivePathValidation:
             "2024-01-01 00:00:00 ....A 1 1 //server/share/evil.txt\n",
         ):
             with patch(
-                "core.archive_processor.SubprocessSafety.run_with_line_handler",
+                "unpackr.core.archive_processor.SubprocessSafety.run_with_line_handler",
                 side_effect=self._fake_listing(stdout),
             ):
                 assert processor._validate_archive_paths(archive, temp_dir, ["7z"]) is False
@@ -555,7 +555,7 @@ class TestArchivePathValidation:
             "2024-01-01 00:00:00 ....A 1 1 nested/../../evil.txt\n",
         ):
             with patch(
-                "core.archive_processor.SubprocessSafety.run_with_line_handler",
+                "unpackr.core.archive_processor.SubprocessSafety.run_with_line_handler",
                 side_effect=self._fake_listing(stdout),
             ):
                 assert processor._validate_archive_paths(archive, temp_dir, ["7z"]) is False
@@ -568,7 +568,7 @@ class TestArchivePathValidation:
             "2024-01-01 00:00:00 ....A 1 1 subdir/video.mkv\n",
         ):
             with patch(
-                "core.archive_processor.SubprocessSafety.run_with_line_handler",
+                "unpackr.core.archive_processor.SubprocessSafety.run_with_line_handler",
                 side_effect=self._fake_listing(stdout),
             ):
                 assert processor._validate_archive_paths(archive, temp_dir, ["7z"]) is True
@@ -579,7 +579,7 @@ class TestArchivePathValidation:
         stdout = "2024-01-01 00:00:00 ....A 1 1 safe.txt\n"
 
         with patch(
-            "core.archive_processor.SubprocessSafety.run_with_line_handler",
+            "unpackr.core.archive_processor.SubprocessSafety.run_with_line_handler",
             side_effect=self._fake_listing(stdout),
         ):
             with patch.object(Path, "resolve", side_effect=RuntimeError("boom")):
@@ -606,7 +606,7 @@ class TestArchivePathValidation:
         full_listing = "\n".join(head_lines + [unsafe_line] + tail_lines) + "\n"
 
         with patch(
-            "core.archive_processor.SubprocessSafety.run_with_line_handler",
+            "unpackr.core.archive_processor.SubprocessSafety.run_with_line_handler",
             side_effect=self._fake_listing(full_listing),
         ):
             assert processor._validate_archive_paths(archive, temp_dir, ["7z"]) is False
@@ -620,7 +620,7 @@ class TestArchivePathValidation:
         full_listing = "\n".join(safe_line.format(i=i) for i in range(20000)) + "\n"
 
         with patch(
-            "core.archive_processor.SubprocessSafety.run_with_line_handler",
+            "unpackr.core.archive_processor.SubprocessSafety.run_with_line_handler",
             side_effect=self._fake_listing(full_listing),
         ):
             assert processor._validate_archive_paths(archive, temp_dir, ["7z"]) is True
@@ -645,7 +645,7 @@ class TestPar2ErrorHandling:
     def test_par2_success_with_unclear_output_still_returns_true(self, processor, temp_dir):
         (temp_dir / "file.par2").write_text("test")
 
-        with patch("core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, "done", "", 0)):
+        with patch("unpackr.core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, "done", "", 0)):
             assert processor.process_par2_files(temp_dir) is True
 
         assert processor.last_par2.status == "verified"
@@ -656,7 +656,7 @@ class TestPar2ErrorHandling:
         (temp_dir / "file.par2").write_text("test")
 
         with patch(
-            "core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, "", "", 0)
+            "unpackr.core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, "", "", 0)
         ) as mock_run:
             processor.process_par2_files(temp_dir)
 
@@ -671,7 +671,7 @@ class TestPar2ErrorHandling:
         processor.remover = Mock(mode="permanent")
 
         with patch(
-            "core.archive_processor.SubprocessSafety.run_with_timeout",
+            "unpackr.core.archive_processor.SubprocessSafety.run_with_timeout",
             return_value=(False, "", "Repair is not possible." if code == 2 else "", code),
         ):
             assert processor.process_par2_files(temp_dir) is False
@@ -686,7 +686,7 @@ class TestPar2ErrorHandling:
             (temp_dir / name).write_text("test")
 
         with patch(
-            "core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, "", "", 0)
+            "unpackr.core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, "", "", 0)
         ) as mock_run:
             assert processor.process_par2_files(temp_dir) is True
 
@@ -723,8 +723,8 @@ class TestEdgeCases:
         result = processor.process_rar_files(temp_dir)
         assert result is True
 
-    @patch("core.archive_processor.SubprocessSafety.run_with_timeout")
-    @patch("core.archive_processor.StateValidator.check_disk_space")
+    @patch("unpackr.core.archive_processor.SubprocessSafety.run_with_timeout")
+    @patch("unpackr.core.archive_processor.StateValidator.check_disk_space")
     def test_archive_stat_failure(self, mock_disk_space, mock_subprocess, processor, temp_dir):
         """Test graceful handling when file stat fails."""
         archive = temp_dir / "archive.rar"

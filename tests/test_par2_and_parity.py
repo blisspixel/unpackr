@@ -15,15 +15,15 @@ from unittest.mock import Mock
 
 import pytest
 
-from core.archive_processor import (
+from unpackr.core.archive_processor import (
     ArchiveProcessor,
     classify_par2_result,
     is_archive_related,
     par2_set_heads,
     par2_set_name,
 )
-from core.config import Config
-from core.safety_invariants import FileOperation, OperationType, SafetyInvariants, is_archive_volume
+from unpackr.core.config import Config
+from unpackr.core.safety_invariants import FileOperation, OperationType, SafetyInvariants, is_archive_volume
 
 REPO = Path(__file__).resolve().parent.parent
 SEVENZ = shutil.which("7zz") or shutil.which("7z")
@@ -78,7 +78,7 @@ class TestArchiveInvariantI3:
 
 
 def test_bundled_config_treats_ts_and_m2ts_as_video():
-    config = Config(REPO / "config_files" / "config.json")
+    config = Config(REPO / "src" / "unpackr" / "config_files" / "config.json")
     assert {".ts", ".m2ts"} <= set(config.video_extensions)
 
 
@@ -100,7 +100,7 @@ def test_unjudged_par2_release_keeps_unrecognised_files(tmp_path, status):
     from conftest import bind_app_helpers
 
     import unpackr
-    from core.archive_processor import Par2Outcome
+    from unpackr.core.archive_processor import Par2Outcome
 
     folder = tmp_path / "Movie.2026"
     folder.mkdir()
@@ -131,7 +131,7 @@ def test_par2_damage_without_archives_is_junk_for_redownload(tmp_path):
     from conftest import bind_app_helpers
 
     import unpackr
-    from core.archive_processor import Par2Outcome
+    from unpackr.core.archive_processor import Par2Outcome
 
     folder = tmp_path / "Broken"
     folder.mkdir()
@@ -176,7 +176,7 @@ def _run(src: Path, dst: Path, tmp_path: Path, *extra: str, config: dict | None 
     cfg = tmp_path / "config.json"
     cfg.write_text(json.dumps({"min_sample_size_mb": 1, "log_folder": str(tmp_path / "logs"), **(config or {})}))
     result = subprocess.run(
-        [sys.executable, "unpackr.py", "--source", str(src), "--destination", str(dst), "--config", str(cfg),
+        [sys.executable, "-m", "unpackr", "--source", str(src), "--destination", str(dst), "--config", str(cfg),
          "--json", "--no-color", *extra],
         capture_output=True, text=True, timeout=300, cwd=REPO, stdin=subprocess.DEVNULL,
     )  # fmt: skip
@@ -265,7 +265,7 @@ def test_obfuscated_release_without_par2_is_kept(tmp_path):
     cfg = tmp_path / "config.json"
     cfg.write_text(json.dumps({"log_folder": str(tmp_path / "logs")}))
     result = subprocess.run(
-        [sys.executable, "unpackr.py", "--source", str(src), "--destination", str(dst), "--config", str(cfg),
+        [sys.executable, "-m", "unpackr", "--source", str(src), "--destination", str(dst), "--config", str(cfg),
          "--json", "--no-color"],
         capture_output=True, text=True, timeout=300, cwd=REPO, stdin=subprocess.DEVNULL,
         env={**os.environ, "PATH": str(bin_dir)},
@@ -376,7 +376,7 @@ def test_dry_run_keeps_unrecognised_files_next_to_par2(tmp_path):
     from conftest import bind_app_helpers
 
     import unpackr
-    from core.archive_processor import Par2Outcome
+    from unpackr.core.archive_processor import Par2Outcome
 
     folder = tmp_path / "Show.S01E02"
     folder.mkdir()

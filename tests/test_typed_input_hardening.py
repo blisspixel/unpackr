@@ -7,11 +7,11 @@ from datetime import datetime
 
 import pytest
 
-from core.adaptive_policy import DiskType, EnvironmentProfile, EnvironmentProfiler
-from core.remover import RunJournal
-from core.structured_events import EventAnalyzer, EventEmitter, EventType
-from utils.defensive import InputValidator, ValidationError
-from utils.system_check import SystemCheck
+from unpackr.core.adaptive_policy import DiskType, EnvironmentProfile, EnvironmentProfiler
+from unpackr.core.remover import RunJournal
+from unpackr.core.structured_events import EventAnalyzer, EventEmitter, EventType
+from unpackr.utils.defensive import InputValidator, ValidationError
+from unpackr.utils.system_check import SystemCheck
 
 
 def test_run_journal_skips_json_lines_that_are_not_objects(tmp_path):

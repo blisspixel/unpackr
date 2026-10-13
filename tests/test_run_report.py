@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from core.run_report import RunReport
-from utils.run_summary import build_unpackr_run_summary
+from unpackr.core.run_report import RunReport
+from unpackr.utils.run_summary import build_unpackr_run_summary
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -100,7 +100,7 @@ FFMPEG = shutil.which("ffmpeg")
 
 def _run(src: Path, dst: Path, config: Path, *extra: str) -> tuple:
     result = subprocess.run(
-        [sys.executable, "unpackr.py", "--source", str(src), "--destination", str(dst), "--config", str(config),
+        [sys.executable, "-m", "unpackr", "--source", str(src), "--destination", str(dst), "--config", str(config),
          "--json", "--no-color", *extra],
         capture_output=True, text=True, timeout=300, cwd=REPO,
     )  # fmt: skip

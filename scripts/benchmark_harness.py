@@ -19,12 +19,13 @@ from typing import Any
 
 # Allow running from a source checkout without install.
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
-from core.adaptive_policy import EnvironmentProfiler  # noqa: E402
-from utils.filesystem_policy import probe_filesystem  # noqa: E402
-from utils.platform_support import platform_label  # noqa: E402
+from unpackr.core.adaptive_policy import EnvironmentProfiler  # noqa: E402
+from unpackr.utils.filesystem_policy import probe_filesystem  # noqa: E402
+from unpackr.utils.platform_support import platform_label  # noqa: E402
 
 SCHEMA_VERSION = 1
 

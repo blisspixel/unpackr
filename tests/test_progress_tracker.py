@@ -1,4 +1,4 @@
-from utils.progress import ProgressTracker
+from unpackr.utils.progress import ProgressTracker
 
 
 class DummyTqdm:
@@ -21,7 +21,7 @@ class DummyTqdm:
 
 
 def test_progress_tracker_start_update_close(monkeypatch):
-    monkeypatch.setattr("utils.progress.tqdm", DummyTqdm)
+    monkeypatch.setattr("unpackr.utils.progress.tqdm", DummyTqdm)
     tracker = ProgressTracker()
 
     tracker.start(total=10, desc="Processing", unit="item")
@@ -44,7 +44,7 @@ def test_progress_tracker_noop_when_not_started():
 
 
 def test_progress_tracker_context_manager_closes(monkeypatch):
-    monkeypatch.setattr("utils.progress.tqdm", DummyTqdm)
+    monkeypatch.setattr("unpackr.utils.progress.tqdm", DummyTqdm)
 
     with ProgressTracker() as tracker:
         tracker.start(total=2)

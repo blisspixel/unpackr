@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from core.config import Config
-from core.file_handler import FileHandler
-from core.junk_rules import (
+from unpackr.core.config import Config
+from unpackr.core.file_handler import FileHandler
+from unpackr.core.junk_rules import (
     classify_security,
     decide_release_samples,
     find_incomplete_markers,
@@ -196,7 +196,7 @@ def test_hostile_download_folder(tmp_path):
     config = tmp_path / "config.json"
     config.write_text(json.dumps({"min_sample_size_mb": 1, "log_folder": str(tmp_path / "logs")}))
     result = subprocess.run(
-        [sys.executable, "unpackr.py", "--source", str(src), "--destination", str(dst), "--config", str(config),
+        [sys.executable, "-m", "unpackr", "--source", str(src), "--destination", str(dst), "--config", str(config),
          "--json", "--no-color"],
         capture_output=True, text=True, timeout=300, cwd=REPO, stdin=subprocess.DEVNULL,
     )  # fmt: skip
@@ -231,7 +231,7 @@ def test_hostile_download_folder(tmp_path):
 
 class TestDuplicateEncodes:
     def test_keeps_largest_copy_of_same_title(self, tmp_path):
-        from core.junk_rules import decide_duplicate_encodes, normalized_title
+        from unpackr.core.junk_rules import decide_duplicate_encodes, normalized_title
 
         a = tmp_path / "Movie.2026.1080p.WEB-DL.x264-GRP.mkv"
         b = tmp_path / "Movie.2026.720p.HDTV.x265-OTHER.mkv"

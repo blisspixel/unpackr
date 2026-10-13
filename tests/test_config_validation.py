@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.config import Config
+from unpackr.core.config import Config
 
 
 class TestConfigValidation:
@@ -30,7 +30,7 @@ class TestConfigValidation:
         if temp_path.exists():
             temp_path.unlink(missing_ok=True)
 
-    def test_valid_config_loads_successfully(self, temp_config_file):
+    def test_valid_config_loads_successfully(self, temp_config_file, capsys):
         """Test that valid config loads without errors."""
         valid_config = {"min_sample_size_mb": 100, "min_music_files": 20}
 
@@ -41,6 +41,27 @@ class TestConfigValidation:
         assert config.get("min_sample_size_mb") == 100
         assert config.get("min_music_files") == 20
         assert config.is_valid is True
+        assert "WARNING" not in capsys.readouterr().out
+
+    def test_unknown_key_warns_with_closest_match(self, temp_config_file, capsys):
+        temp_config_file.write_text('{"min_sample_size_mbb": 10}', encoding="utf-8")
+
+        config = Config(temp_config_file)
+        captured = capsys.readouterr().out
+
+        assert config.is_valid is True
+        assert "WARNING: Unknown config key 'min_sample_size_mbb'." in captured
+        assert "Did you mean 'min_sample_size_mb'?" in captured
+
+    def test_removed_settle_minutes_key_is_reported(self, temp_config_file, capsys):
+        temp_config_file.write_text('{"settle_minutes": 15, "min_music_files": 1}', encoding="utf-8")
+
+        config = Config(temp_config_file)
+        captured = capsys.readouterr().out
+
+        assert config.is_valid is True
+        assert "WARNING: Config key 'settle_minutes' is no longer used." in captured
+        assert config.get("min_music_files") == 1
 
     def test_invalid_type_shows_clear_error(self, temp_config_file, capsys):
         """Test that wrong type shows clear error with example."""
@@ -253,7 +274,7 @@ class TestConfigValidation:
     def test_validate_tool_paths_reports_missing_command(self, monkeypatch):
         config = Config()
         config.set("tool_paths", {"ffmpeg": ["ffmpeg-custom"]})
-        monkeypatch.setattr("core.config.shutil.which", lambda *_: None)
+        monkeypatch.setattr("unpackr.core.config.shutil.which", lambda *_: None)
 
         valid, errors = config.validate_tool_paths()
 
@@ -271,7 +292,7 @@ class TestConfigValidation:
     def test_validate_tool_paths_accepts_path_command_lookup(self, monkeypatch):
         config = Config()
         config.set("tool_paths", {"ffmpeg": ["ffmpeg"]})
-        monkeypatch.setattr("core.config.shutil.which", lambda value: "/usr/bin/ffmpeg" if value == "ffmpeg" else None)
+        monkeypatch.setattr("unpackr.core.config.shutil.which", lambda value: "/usr/bin/ffmpeg" if value == "ffmpeg" else None)
 
         assert config.validate_tool_paths() == (True, [])
 

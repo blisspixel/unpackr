@@ -5,8 +5,8 @@ Implementation-oriented details for maintainers.
 ## Architecture
 
 ```text
-unpackr/
-|-- unpackr.py               # Main CLI orchestration
+src/unpackr/
+|-- cli.py                   # Main CLI orchestration
 |-- doctor.py                # Environment and dependency diagnostics
 |-- vhealth.py               # Destination video audit tool
 |-- core/
@@ -29,9 +29,9 @@ unpackr/
 |   |-- progress.py
 |   |-- safety.py
 |   `-- system_check.py
-|-- scripts/
+scripts/
 |   `-- benchmark_harness.py
-`-- tests/
+tests/
 ```
 
 ## External Tool Boundary
@@ -50,7 +50,7 @@ Why:
 ## Platform Support
 
 - Supported OS targets: Windows, Linux, macOS
-- Shared policy lives in `utils/platform_support.py`:
+- Shared policy lives in `src/unpackr/utils/platform_support.py`:
   - PATH-first tool candidate lists (plus Windows absolute fallbacks / Homebrew prefixes)
   - helper-process detection and termination
   - force-delete fallbacks (encoded PowerShell on Windows; guarded `rmtree` on POSIX)
@@ -76,7 +76,7 @@ Why:
 
 - Fail-closed behavior for uncertain destructive operations
 - Path and input validation before I/O operations
-- Recursion/loop/runtime guards (`utils/safety.py`)
+- Recursion/loop/runtime guards (`src/unpackr/utils/safety.py`)
 - Retry + backoff for transient lock/permission failures
 - Dry-run parity: decision logic is shared with live mode
 
@@ -87,12 +87,12 @@ Why:
   - `python -m ruff check .`
   - `python -m mypy`
   - `python -m pyright`
-  - `python -m bandit -c pyproject.toml -r core utils doctor.py unpackr.py vhealth.py`
+  - `python -m bandit -c pyproject.toml -r src/unpackr`
   - `python -m pytest -q --cov --cov-fail-under=80`
 - Tests are branch-focused on destructive-path safety and recovery behavior.
-- `mypy --strict` and Pyright strict cover `core`, `utils`, `doctor.py`, `unpackr.py` and `vhealth.py`, with no per-module relaxations.
+- `mypy --strict` and Pyright strict cover `src/unpackr`, with no per-module relaxations.
 - Production modules use package imports directly rather than runtime `sys.path` mutation.
-- `unpackr.py` keeps orchestration responsibilities; prompt/presentation helper functions were extracted into `utils/cli_prompts.py`.
+- `src/unpackr/cli.py` keeps orchestration responsibilities; prompt/presentation helper functions were extracted into `src/unpackr/utils/cli_prompts.py`.
 - The full regression suite passes above the enforced `80%` coverage gate.
 - CI matrix: Windows/Linux/macOS x Python `3.12`–`3.15`, with installed entry-point smoke checks on every lane.
 
@@ -103,6 +103,6 @@ python -m ruff format --check .
 python -m ruff check .
 python -m mypy
 python -m pyright
-python -m bandit -c pyproject.toml -r core utils doctor.py unpackr.py vhealth.py
+python -m bandit -c pyproject.toml -r src/unpackr
 python -m pytest -q --cov --cov-fail-under=80
 ```

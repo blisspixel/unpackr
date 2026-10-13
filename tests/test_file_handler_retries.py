@@ -2,8 +2,8 @@ import base64
 import tempfile
 from pathlib import Path
 
-from core.config import Config
-from core.file_handler import FileHandler
+from unpackr.core.config import Config
+from unpackr.core.file_handler import FileHandler
 
 
 def _handler():
@@ -48,8 +48,8 @@ def test_safe_delete_folder_powershell_fallback_encodes_literal_path(tmp_path, m
     monkeypatch.setattr(handler, "is_folder_empty_or_removable", lambda *args, **kwargs: True)
     monkeypatch.setattr(handler, "_delete_tree_safely", fake_rmtree)
     monkeypatch.setattr(handler, "_tree_contains_linklike_entries", lambda path: False)
-    monkeypatch.setattr("core.file_handler.force_delete_directory", fake_force_delete)
-    monkeypatch.setattr("core.file_handler.is_windows", lambda: True)
+    monkeypatch.setattr("unpackr.core.file_handler.force_delete_directory", fake_force_delete)
+    monkeypatch.setattr("unpackr.core.file_handler.is_windows", lambda: True)
 
     assert handler.safe_delete_folder(folder, max_attempts=1) is True
 
@@ -95,9 +95,9 @@ def test_delete_video_file_with_retry_failure_logs_error(tmp_path, monkeypatch):
 
     monkeypatch.setattr(handler, "_terminate_related_processes", lambda *_: None)
     monkeypatch.setattr(
-        "core.file_handler.Path.unlink", lambda *args, **kwargs: (_ for _ in ()).throw(PermissionError())
+        "unpackr.core.file_handler.Path.unlink", lambda *args, **kwargs: (_ for _ in ()).throw(PermissionError())
     )
-    monkeypatch.setattr("core.file_handler.time.sleep", lambda *_: None)
+    monkeypatch.setattr("unpackr.core.file_handler.time.sleep", lambda *_: None)
 
     assert handler.delete_video_file_with_retry(video, max_attempts=2, retry_delay=0) is False
 
@@ -122,8 +122,8 @@ def test_wait_for_file_release_unlocks_after_retry(monkeypatch):
             return [FakeProc(True)]
         return [FakeProc(False)]
 
-    monkeypatch.setattr("core.file_handler.psutil.process_iter", fake_iter)
-    monkeypatch.setattr("core.file_handler.time.sleep", lambda *_: None)
+    monkeypatch.setattr("unpackr.core.file_handler.psutil.process_iter", fake_iter)
+    monkeypatch.setattr("unpackr.core.file_handler.time.sleep", lambda *_: None)
     assert handler.wait_for_file_release("C:/video.mkv", max_attempts=3, delay=0) is True
 
 
@@ -151,7 +151,7 @@ def test_terminate_related_processes_kills_matching_process(monkeypatch):
 
     p1 = FakeProc("ffmpeg", ["ffmpeg", "C:/video.mkv"])
     p2 = FakeProc("other", ["other", "x"])
-    monkeypatch.setattr("core.file_handler.psutil.process_iter", lambda *args, **kwargs: [p1, p2])
+    monkeypatch.setattr("unpackr.core.file_handler.psutil.process_iter", lambda *args, **kwargs: [p1, p2])
     handler._terminate_related_processes("C:/video.mkv")
     assert p1.terminated is True
     assert p2.terminated is False
@@ -172,5 +172,5 @@ def test_kill_processes_using_folder_handles_errors(monkeypatch):
         def kill(self):
             raise RuntimeError("should not be called")
 
-    monkeypatch.setattr("core.file_handler.psutil.process_iter", lambda *_: [FakeProc()])
+    monkeypatch.setattr("unpackr.core.file_handler.psutil.process_iter", lambda *_: [FakeProc()])
     handler._kill_processes_using_folder(Path(tempfile.gettempdir()))

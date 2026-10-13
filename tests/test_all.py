@@ -137,7 +137,7 @@ def test_config():
     """Test configuration loading."""
     print_header("Testing Configuration")
 
-    from core import Config
+    from unpackr.core import Config
 
     tests_passed = 0
     tests_total = 0
@@ -185,14 +185,14 @@ def test_system_check():
     """Test system tool checking."""
     print_header("Testing System Tool Check")
 
-    from utils import SystemCheck
+    from unpackr.utils import SystemCheck
 
     tests_passed = 0
     tests_total = 0
 
     # Test checking all tools
     try:
-        from core import Config
+        from unpackr.core import Config
 
         config = Config()
         checker = SystemCheck(config)
@@ -218,7 +218,7 @@ def test_file_handler():
     """Test file handler functionality."""
     print_header("Testing File Handler")
 
-    from core import Config, FileHandler
+    from unpackr.core import Config, FileHandler
 
     tests_passed = 0
     tests_total = 0
@@ -270,7 +270,7 @@ def test_archive_processor():
     """Test archive processor."""
     print_header("Testing Archive Processor")
 
-    from core import ArchiveProcessor
+    from unpackr.core import ArchiveProcessor
 
     tests_passed = 0
     tests_total = 0
@@ -294,7 +294,7 @@ def test_video_processor():
     """Test video processor."""
     print_header("Testing Video Processor")
 
-    from core import VideoProcessor
+    from unpackr.core import VideoProcessor
 
     tests_passed = 0
     tests_total = 0

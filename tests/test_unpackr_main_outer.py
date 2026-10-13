@@ -1,6 +1,6 @@
 import pytest
 
-import unpackr
+import unpackr.cli as unpackr
 
 
 def test_main_outer_keyboard_interrupt(monkeypatch):

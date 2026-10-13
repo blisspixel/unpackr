@@ -149,12 +149,12 @@ $RECYCLE.BIN/
 # ============================================================================
 
 # Config backups (keep original config.json in repo)
-config_files/config.json.backup
-config_files/config.json.bak
-config_files/*.bak
+src/unpackr/config_files/config.json.backup
+src/unpackr/config_files/config.json.bak
+src/unpackr/config_files/*.bak
 
 # User's custom comments (keep comments.sample.json in repo)
-config_files/comments.json
+src/unpackr/config_files/comments.json
 
 # Temporary files
 *.tmp

@@ -12,7 +12,7 @@ import json
 import os
 from pathlib import Path
 
-from core.remover import list_runs, restore_run
+from unpackr.core.remover import list_runs, restore_run
 
 SUBCOMMANDS = ("runs", "restore")
 

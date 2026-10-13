@@ -3,7 +3,7 @@ import types
 
 import pytest
 
-from utils.safety import (
+from unpackr.utils.safety import (
     LoopSafety,
     OperationTimer,
     RecursionSafety,
@@ -45,7 +45,7 @@ def test_loop_recursion_timer_and_stuck_detector(monkeypatch):
     assert rec.current_depth == 0
 
     fake_now = {"t": 100.0}
-    monkeypatch.setattr("utils.safety.time.time", lambda: fake_now["t"])
+    monkeypatch.setattr("unpackr.utils.safety.time.time", lambda: fake_now["t"])
     op = OperationTimer(10, "op")
     assert op.check() is True
     fake_now["t"] = 120.0
@@ -71,7 +71,7 @@ def test_subprocess_safety_pipe_modes(monkeypatch):
         def kill(self):
             pass
 
-    monkeypatch.setattr("utils.safety.subprocess.Popen", ProcOK)
+    monkeypatch.setattr("unpackr.utils.safety.subprocess.Popen", ProcOK)
     tracker = types.SimpleNamespace(active_process=None)
     ok, out, err, code = SubprocessSafety.run_with_timeout(["echo"], timeout=1, process_tracker=tracker)
     assert ok is True
@@ -92,7 +92,7 @@ def test_subprocess_safety_pipe_modes(monkeypatch):
         def kill(self):
             pass
 
-    monkeypatch.setattr("utils.safety.subprocess.Popen", ProcTimeout)
+    monkeypatch.setattr("unpackr.utils.safety.subprocess.Popen", ProcTimeout)
     ok, out, err, code = SubprocessSafety.run_with_timeout(["x"], timeout=1)
     assert ok is False
     assert code == -1
@@ -113,7 +113,7 @@ def test_subprocess_safety_temp_file_modes(monkeypatch):
         def kill(self):
             pass
 
-    monkeypatch.setattr("utils.safety.subprocess.Popen", ProcTempOK)
+    monkeypatch.setattr("unpackr.utils.safety.subprocess.Popen", ProcTempOK)
     ok, out, err, code = SubprocessSafety.run_with_timeout(["x"], timeout=1, use_temp_files=True)
     assert ok is True
     assert code == 0
@@ -130,12 +130,12 @@ def test_subprocess_safety_temp_file_modes(monkeypatch):
         def kill(self):
             pass
 
-    monkeypatch.setattr("utils.safety.subprocess.Popen", ProcTempTimeout)
+    monkeypatch.setattr("unpackr.utils.safety.subprocess.Popen", ProcTempTimeout)
     ok, out, err, code = SubprocessSafety.run_with_timeout(["x"], timeout=1, use_temp_files=True)
     assert ok is False
     assert code == -1
 
-    monkeypatch.setattr("utils.safety.subprocess.Popen", lambda *a, **k: (_ for _ in ()).throw(OSError("boom")))
+    monkeypatch.setattr("unpackr.utils.safety.subprocess.Popen", lambda *a, **k: (_ for _ in ()).throw(OSError("boom")))
     ok, out, err, code = SubprocessSafety.run_with_timeout(["x"], timeout=1)
     assert ok is False
     assert code == -1
@@ -158,7 +158,7 @@ def test_subprocess_safety_temp_file_output_is_bounded(monkeypatch):
         def kill(self):
             pass
 
-    monkeypatch.setattr("utils.safety.subprocess.Popen", ProcHugeOutput)
+    monkeypatch.setattr("unpackr.utils.safety.subprocess.Popen", ProcHugeOutput)
     ok, out, err, code = SubprocessSafety.run_with_timeout(["x"], timeout=1, use_temp_files=True)
 
     assert ok is True
@@ -187,7 +187,7 @@ def test_subprocess_safety_temp_tracker_warning_and_partial_read_fallback(monkey
             pass
 
     tracker = types.SimpleNamespace(active_process=None)
-    monkeypatch.setattr("utils.safety.subprocess.Popen", ProcWarn)
+    monkeypatch.setattr("unpackr.utils.safety.subprocess.Popen", ProcWarn)
     ok, out, err, code = SubprocessSafety.run_with_timeout(
         ["x"], timeout=1, use_temp_files=True, expected_codes=[0], process_tracker=tracker
     )
@@ -205,7 +205,7 @@ def test_subprocess_safety_temp_tracker_warning_and_partial_read_fallback(monkey
         def kill(self):
             pass
 
-    monkeypatch.setattr("utils.safety.subprocess.Popen", ProcTimeout)
+    monkeypatch.setattr("unpackr.utils.safety.subprocess.Popen", ProcTimeout)
     monkeypatch.setattr("pathlib.Path.read_text", lambda *a, **k: (_ for _ in ()).throw(OSError("io")))
     ok, out, err, code = SubprocessSafety.run_with_timeout(["x"], timeout=1, use_temp_files=True)
     assert ok is False

@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from utils import run_summary
-from utils.cli_runtime import build_unpackr_arg_parser
+from unpackr.utils import run_summary
+from unpackr.utils.cli_runtime import build_unpackr_arg_parser
 
 
 def test_build_unpackr_run_summary_shape():
@@ -59,7 +59,7 @@ def test_exit_codes_doc_exists_and_covers_all_tools():
 
 
 def test_doctor_json_exit_matches_issue_counts(monkeypatch):
-    import doctor
+    import unpackr.doctor as doctor
 
     class Ready:
         def __init__(self, config_path=None):

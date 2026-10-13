@@ -4,7 +4,7 @@ from pathlib import Path
 
 from conftest import bind_app_helpers
 
-import unpackr
+import unpackr.cli as unpackr
 
 
 def test_run_handles_missing_or_empty_work_plan(capsys, tmp_path):

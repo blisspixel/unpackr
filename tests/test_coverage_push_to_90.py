@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-import doctor
-import vhealth
-from core.adaptive_policy import (
+import unpackr.doctor as doctor
+import unpackr.vhealth as vhealth
+from unpackr.core.adaptive_policy import (
     AdaptivePolicy,
     AdaptiveTimeoutCalculator,
     DiskType,
@@ -103,19 +103,19 @@ def test_environment_profiler_measurement_and_save_edges(tmp_path, monkeypatch):
     profiler = EnvironmentProfiler(cache_file=tmp_path / "env.json")
 
     seq_times = chain([10.0, 10.0], repeat(10.0))
-    monkeypatch.setattr("core.adaptive_policy.time.time", lambda: next(seq_times))
+    monkeypatch.setattr("unpackr.core.adaptive_policy.time.time", lambda: next(seq_times))
     assert profiler._measure_sequential_read(tmp_path) == 100.0
 
     rand_times = chain([20.0, 20.0], repeat(20.0))
-    monkeypatch.setattr("core.adaptive_policy.time.perf_counter", lambda: next(rand_times))
+    monkeypatch.setattr("unpackr.core.adaptive_policy.time.perf_counter", lambda: next(rand_times))
     assert profiler._measure_random_read(tmp_path) == 50.0
 
     cpu_times = chain([30.0, 30.0], repeat(30.0))
-    monkeypatch.setattr("core.adaptive_policy.time.time", lambda: next(cpu_times))
+    monkeypatch.setattr("unpackr.core.adaptive_policy.time.time", lambda: next(cpu_times))
     assert profiler._measure_cpu_speed() == 1.0
 
     profiler.profile = _profile()
-    monkeypatch.setattr("core.adaptive_policy.json.dump", lambda *a, **k: (_ for _ in ()).throw(OSError("nope")))
+    monkeypatch.setattr("unpackr.core.adaptive_policy.json.dump", lambda *a, **k: (_ for _ in ()).throw(OSError("nope")))
     profiler._save_profile()
 
     profiler.profile = None
@@ -141,7 +141,7 @@ def test_adaptive_policy_and_timeout_edges(tmp_path, monkeypatch):
     AdaptivePolicy("broken", 0.7, 0.5, 0.9, history_file=invalid_history)
 
     policy.history_file = tmp_path / "save-fail" / "policy.json"
-    monkeypatch.setattr("core.adaptive_policy.json.dump", lambda *a, **k: (_ for _ in ()).throw(OSError("deny")))
+    monkeypatch.setattr("unpackr.core.adaptive_policy.json.dump", lambda *a, **k: (_ for _ in ()).throw(OSError("deny")))
     policy._save_history()
 
     class FakeProfiler:
@@ -178,7 +178,7 @@ def test_doctor_additional_branches(tmp_path, monkeypatch, capsys):
     config_dir.mkdir()
     (config_dir / "config.json").write_text('{"tool_paths": {}, "video_extensions": [".mp4"]}', encoding="utf-8")
     (config_dir / "comments.json").write_text("[]", encoding="utf-8")
-    monkeypatch.setattr(doctor, "__file__", str(tmp_path / "doctor.py"))
+    monkeypatch.setattr(doctor, "bundled_config_dir", lambda: config_dir)
 
     real_import = __import__
 
@@ -212,7 +212,7 @@ def test_doctor_additional_branches(tmp_path, monkeypatch, capsys):
     doc.check_disk_space()
 
     def import_missing(name, *args, **kwargs):
-        if name == "core.video_processor":
+        if name == "unpackr.core.video_processor":
             raise ImportError(name)
         return real_import(name, *args, **kwargs)
 

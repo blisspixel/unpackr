@@ -62,18 +62,18 @@ Without ffmpeg, health-check reliability is reduced.
 
 ### Command Not Found Or `ModuleNotFoundError`
 
-From the project directory, reinstall with the same Python interpreter that will run the command:
+From a checkout, reinstall into an isolated environment (this works on externally managed Pythons):
 
 ```powershell
-python -m pip install .
+uv tool install --reinstall .
 unpackr --help
 ```
 
 If an old launcher is still being selected, remove and reinstall it:
 
 ```powershell
-python -m pip uninstall unpackr
-python -m pip install .
+uv tool uninstall unpackr
+uv tool install .
 ```
 
 As a checkout-only fallback, use `python -m unpackr --help` or run `unpackr.bat` explicitly.

@@ -10,15 +10,15 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from core.config import ConfigSource
-from core.junk_rules import dangerous_extensions
-from core.remover import Remover
-from core.safety_invariants import InvariantEnforcer
-from utils.defensive import StateValidator
-from utils.error_messages import log_error
-from utils.filesystem_policy import containment_violation
-from utils.safety import LoopSafety, ProcessTracker, SafetyLimits, SubprocessSafety
-from utils.system_check import SystemCheck
+from unpackr.core.config import ConfigSource
+from unpackr.core.junk_rules import dangerous_extensions
+from unpackr.core.remover import Remover
+from unpackr.core.safety_invariants import InvariantEnforcer
+from unpackr.utils.defensive import StateValidator
+from unpackr.utils.error_messages import log_error
+from unpackr.utils.filesystem_policy import containment_violation
+from unpackr.utils.safety import LoopSafety, ProcessTracker, SafetyLimits, SubprocessSafety
+from unpackr.utils.system_check import SystemCheck
 
 _SPLIT_7Z = re.compile(r"^(?P<base>.+\.7z)\.(?P<num>\d{3})$", re.IGNORECASE)
 _RAR_PART = re.compile(r"^(?P<base>.+)\.part(?P<num>\d+)\.rar$", re.IGNORECASE)

@@ -11,11 +11,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, cast, overload
 
-from core.config import ConfigSource
-from core.safety_invariants import ValidationCache, ValidationDecision, ValidationResult
-from utils.error_messages import log_error
-from utils.safety import ProcessTracker, SafetyLimits, SubprocessSafety
-from utils.system_check import SystemCheck
+from unpackr.core.config import ConfigSource
+from unpackr.core.safety_invariants import ValidationCache, ValidationDecision, ValidationResult
+from unpackr.utils.error_messages import log_error
+from unpackr.utils.safety import ProcessTracker, SafetyLimits, SubprocessSafety
+from unpackr.utils.system_check import SystemCheck
 
 type Resolution = tuple[int, int] | None
 # (is_healthy, is_low_quality, quality_reason, resolution)

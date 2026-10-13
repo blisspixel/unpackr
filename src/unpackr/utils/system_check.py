@@ -15,13 +15,13 @@ from typing import TYPE_CHECKING, ClassVar, TypedDict, cast
 
 from colorama import Fore, Style
 
-from utils.platform_support import detect_running_helpers, kill_helper_processes, merge_tool_candidates
+from unpackr.utils.platform_support import detect_running_helpers, kill_helper_processes, merge_tool_candidates
 
 if TYPE_CHECKING:
     import psutil
 
     # Type-only: importing core at runtime would cycle back through core/__init__.py.
-    from core.config import ConfigSource
+    from unpackr.core.config import ConfigSource
 
 
 type Version = tuple[int, ...]

@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from core.config import Config
-from core.file_handler import FileHandler
-from utils import filesystem_policy as fsp
+from unpackr.core.config import Config
+from unpackr.core.file_handler import FileHandler
+from unpackr.utils import filesystem_policy as fsp
 
 
 def test_normalize_member_path_unifies_separators():

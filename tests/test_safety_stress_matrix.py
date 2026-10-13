@@ -13,9 +13,9 @@ from pathlib import Path
 
 import pytest
 
-from core.config import Config
-from core.file_handler import RELEASE_IMAGE_COLLECTION_FILES, FileHandler
-from core.safety_invariants import (
+from unpackr.core.config import Config
+from unpackr.core.file_handler import RELEASE_IMAGE_COLLECTION_FILES, FileHandler
+from unpackr.core.safety_invariants import (
     FileOperation,
     OperationType,
     SafetyInvariants,
@@ -23,7 +23,7 @@ from core.safety_invariants import (
     ValidationDecision,
     ValidationResult,
 )
-from utils.run_state import RunState
+from unpackr.utils.run_state import RunState
 
 
 class TestDeleteRaceMatrix:

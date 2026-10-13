@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from utils.run_state import RunState, default_state_path
+from unpackr.utils.run_state import RunState, default_state_path
 
 
 def test_default_state_path_is_under_source(tmp_path):
@@ -51,7 +51,7 @@ def test_clear_removes_file(tmp_path):
 
 
 def test_parser_exposes_resume_flag():
-    from utils.cli_runtime import build_unpackr_arg_parser
+    from unpackr.utils.cli_runtime import build_unpackr_arg_parser
 
     args = build_unpackr_arg_parser().parse_args(["--source", "A", "--destination", "B", "--resume"])
     assert args.resume is True

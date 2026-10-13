@@ -5,8 +5,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core import Config
-from vhealth import VideoHealthChecker
+from unpackr.core import Config
+from unpackr.vhealth import VideoHealthChecker
 
 
 def test_find_videos_handles_unreadable_paths(monkeypatch, tmp_path):

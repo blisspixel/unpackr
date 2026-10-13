@@ -12,11 +12,11 @@ from colorama import Fore, Style, init
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core import Config
-from core.file_handler import FileHandler
-from core.video_processor import VideoProcessor
+from unpackr.core import Config
+from unpackr.core.file_handler import FileHandler
+from unpackr.core.video_processor import VideoProcessor
 from unpackr import UnpackrApp, WorkPlan, clean_path
-from utils.system_check import SystemCheck
+from unpackr.utils.system_check import SystemCheck
 
 
 class ComprehensiveRunner:

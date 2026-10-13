@@ -3,7 +3,7 @@ import types
 
 from conftest import bind_app_helpers
 
-import unpackr
+import unpackr.cli as unpackr
 
 
 def _base_stats():

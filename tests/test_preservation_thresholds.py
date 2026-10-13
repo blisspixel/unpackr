@@ -14,8 +14,8 @@ from typing import Iterable
 
 import pytest
 
-from core.config import Config
-from core.file_handler import RELEASE_IMAGE_COLLECTION_FILES, FileHandler
+from unpackr.core.config import Config
+from unpackr.core.file_handler import RELEASE_IMAGE_COLLECTION_FILES, FileHandler
 from unpackr import UnpackrApp
 
 

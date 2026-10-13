@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-import unpackr
+import unpackr.cli as unpackr
 
 
 def test_remove_sample_videos_deletes_matching_sample(tmp_path):
@@ -61,7 +61,7 @@ def test_load_comments_reads_sample_without_writing_package_files(monkeypatch, t
     sample = config_dir / "comments.sample.json"
     sample.write_text('{"comments": ["hello"]}', encoding="utf-8")
 
-    monkeypatch.setattr(unpackr, "__file__", str(base / "unpackr.py"))
+    monkeypatch.setattr("unpackr.cli.bundled_config_dir", lambda: config_dir)
     dummy = types.SimpleNamespace()
 
     loaded = unpackr.UnpackrApp._load_comments(dummy)
@@ -73,7 +73,7 @@ def test_load_comments_prefers_file_beside_explicit_config(monkeypatch, tmp_path
     bundled_dir = tmp_path / "package" / "config_files"
     bundled_dir.mkdir(parents=True)
     (bundled_dir / "comments.sample.json").write_text('{"comments": ["sample"]}', encoding="utf-8")
-    monkeypatch.setattr(unpackr, "__file__", str(bundled_dir.parent / "unpackr.py"))
+    monkeypatch.setattr("unpackr.cli.bundled_config_dir", lambda: bundled_dir)
 
     custom_dir = tmp_path / "custom"
     custom_dir.mkdir()

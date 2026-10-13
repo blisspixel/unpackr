@@ -15,17 +15,17 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-import unpackr
+import unpackr.cli as unpackr
 from conftest import bind_app_helpers
-from core.remover import Remover
-from core.archive_processor import (
+from unpackr.core.remover import Remover
+from unpackr.core.archive_processor import (
     ArchiveProcessor,
     classify_extract_failure,
     find_archive_sets,
 )
-from core.config import Config
-from core.file_handler import FileHandler
-from core.video_processor import (
+from unpackr.core.config import Config
+from unpackr.core.file_handler import FileHandler
+from unpackr.core.video_processor import (
     VideoProcessor,
     parse_ffmpeg_duration,
     parse_progress_seconds,
@@ -68,7 +68,7 @@ class TestVideoVerdicts:
     def test_short_video_is_a_preview_not_corrupt(self, tmp_path):
         vp = _processor()
         with patch(
-            "core.video_processor.SubprocessSafety.run_with_timeout",
+            "unpackr.core.video_processor.SubprocessSafety.run_with_timeout",
             return_value=(True, "", _meta("00:00:08.02"), 1),
         ) as run:
             assert vp.check_video_health(_video(tmp_path)) is False
@@ -81,10 +81,10 @@ class TestVideoVerdicts:
         meta = (True, "", _meta("00:00:08.02"), 1)
         stream = (True, "out_time_us=8020000\nprogress=end\n", "", 0)
         vp = _processor(min_video_duration_seconds=0)
-        with patch("core.video_processor.SubprocessSafety.run_with_timeout", side_effect=[meta, stream]):
+        with patch("unpackr.core.video_processor.SubprocessSafety.run_with_timeout", side_effect=[meta, stream]):
             assert vp.check_video_health(_video(tmp_path)) is True
         vp = _processor(min_video_duration_seconds=5)
-        with patch("core.video_processor.SubprocessSafety.run_with_timeout", side_effect=[meta, stream]):
+        with patch("unpackr.core.video_processor.SubprocessSafety.run_with_timeout", side_effect=[meta, stream]):
             assert vp.check_video_health(_video(tmp_path)) is True
 
     def test_config_object_threshold_is_used(self):
@@ -98,7 +98,7 @@ class TestVideoVerdicts:
 
     def test_missing_duration_is_corrupt(self, tmp_path):
         vp = _processor()
-        with patch("core.video_processor.SubprocessSafety.run_with_timeout", return_value=(True, "", "garbage", 1)):
+        with patch("unpackr.core.video_processor.SubprocessSafety.run_with_timeout", return_value=(True, "", "garbage", 1)):
             assert vp.check_video_health(_video(tmp_path)) is False
         assert vp.last_verdict.category == "corrupt"
         assert vp.last_verdict.reason_code == "video_duration_missing"
@@ -114,14 +114,14 @@ class TestVideoVerdicts:
     def test_ffmpeg_messages_reject_damaged_files(self, tmp_path, stderr, category):
         vp = _processor()
         side = [(True, "", _meta("00:00:15.00"), 1), (True, "out_time_us=15000000\n", stderr, 0)]
-        with patch("core.video_processor.SubprocessSafety.run_with_timeout", side_effect=side):
+        with patch("unpackr.core.video_processor.SubprocessSafety.run_with_timeout", side_effect=side):
             assert vp.check_video_health(_video(tmp_path)) is False
         assert vp.last_verdict.category == category
 
     def test_stream_ending_early_is_truncated_even_when_ffmpeg_is_quiet(self, tmp_path):
         vp = _processor()
         side = [(True, "", _meta("00:00:15.00"), 1), (True, "out_time_us=7400000\nprogress=end\n", "", 0)]
-        with patch("core.video_processor.SubprocessSafety.run_with_timeout", side_effect=side):
+        with patch("unpackr.core.video_processor.SubprocessSafety.run_with_timeout", side_effect=side):
             assert vp.check_video_health(_video(tmp_path)) is False
         assert vp.last_verdict.reason_code == "video_truncated"
         assert "7.4s" in vp.last_verdict.detail
@@ -129,14 +129,14 @@ class TestVideoVerdicts:
     def test_small_shortfall_is_tolerated(self, tmp_path):
         vp = _processor()
         side = [(True, "", _meta("00:00:15.00"), 1), (True, "out_time_us=14200000\nprogress=end\n", "", 0)]
-        with patch("core.video_processor.SubprocessSafety.run_with_timeout", side_effect=side):
+        with patch("unpackr.core.video_processor.SubprocessSafety.run_with_timeout", side_effect=side):
             assert vp.check_video_health(_video(tmp_path)) is True
         assert vp.last_verdict.category == "healthy"
 
     def test_stream_read_requests_progress(self, tmp_path):
         vp = _processor()
         side = [(True, "", _meta("00:00:15.00"), 1), (True, "out_time_us=15000000\n", "", 0)]
-        with patch("core.video_processor.SubprocessSafety.run_with_timeout", side_effect=side) as run:
+        with patch("unpackr.core.video_processor.SubprocessSafety.run_with_timeout", side_effect=side) as run:
             vp.check_video_health(_video(tmp_path))
         stream_cmd = run.call_args_list[1].args[0]
         assert "-progress" in stream_cmd and "pipe:1" in stream_cmd
@@ -214,7 +214,7 @@ class TestArchiveProcessing:
 
     def test_incomplete_set_is_held_and_never_extracted(self, processor, tmp_path):
         _touch(tmp_path, "clip.7z.001", "clip.7z.003")
-        with patch("core.archive_processor.SubprocessSafety.run_with_timeout") as run:
+        with patch("unpackr.core.archive_processor.SubprocessSafety.run_with_timeout") as run:
             assert processor.process_rar_files(tmp_path) is False
         run.assert_not_called()
         [o] = processor.last_outcomes
@@ -224,9 +224,9 @@ class TestArchiveProcessing:
     def test_unlistable_archive_is_held_not_called_malicious(self, processor, tmp_path):
         _touch(tmp_path, "pack.7z")
         with patch(
-            "core.archive_processor.SubprocessSafety.run_with_line_handler", return_value=(False, "", 2)
-        ), patch("core.archive_processor.StateValidator.check_disk_space", return_value=True), patch(
-            "core.archive_processor.log_error"
+            "unpackr.core.archive_processor.SubprocessSafety.run_with_line_handler", return_value=(False, "", 2)
+        ), patch("unpackr.core.archive_processor.StateValidator.check_disk_space", return_value=True), patch(
+            "unpackr.core.archive_processor.log_error"
         ) as log_error:
             processor.process_rar_files(tmp_path)
         [o] = processor.last_outcomes
@@ -237,9 +237,9 @@ class TestArchiveProcessing:
     def test_failed_extraction_keeps_volumes(self, processor, tmp_path):
         _touch(tmp_path, "pack.7z.001", "pack.7z.002")
         with patch.object(processor, "_validate_archive_paths", return_value=True), patch(
-            "core.archive_processor.StateValidator.check_disk_space", return_value=True
+            "unpackr.core.archive_processor.StateValidator.check_disk_space", return_value=True
         ), patch(
-            "core.archive_processor.SubprocessSafety.run_with_timeout",
+            "unpackr.core.archive_processor.SubprocessSafety.run_with_timeout",
             return_value=(False, "", "Unexpected end of archive", 2),
         ):
             processor.process_rar_files(tmp_path)
@@ -249,8 +249,8 @@ class TestArchiveProcessing:
     def test_only_the_extracted_set_is_removed(self, processor, tmp_path):
         _touch(tmp_path, "good.7z", "bad.7z.001", "bad.7z.003")
         with patch.object(processor, "_validate_archive_paths", return_value=True), patch(
-            "core.archive_processor.StateValidator.check_disk_space", return_value=True
-        ), patch("core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, "", "", 0)):
+            "unpackr.core.archive_processor.StateValidator.check_disk_space", return_value=True
+        ), patch("unpackr.core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, "", "", 0)):
             assert processor.process_rar_files(tmp_path) is True
         assert not (tmp_path / "good.7z").exists()
         assert (tmp_path / "bad.7z.001").exists() and (tmp_path / "bad.7z.003").exists()
@@ -304,7 +304,7 @@ class TestAppWiring:
             ),
         )
         with patch(
-            "core.video_processor.SubprocessSafety.run_with_timeout",
+            "unpackr.core.video_processor.SubprocessSafety.run_with_timeout",
             return_value=(True, "", _meta("00:00:05.00"), 1),
         ):
             assert app._handle_video(video, tmp_path / "dst") is False
@@ -318,7 +318,7 @@ class TestAppWiring:
         app = _fake_app(True, video_processor=vp)
         app.dry_run_plan = plan
         with patch(
-            "core.video_processor.SubprocessSafety.run_with_timeout",
+            "unpackr.core.video_processor.SubprocessSafety.run_with_timeout",
             return_value=(True, "", _meta("00:00:08.00"), 1),
         ):
             assert app._handle_video(video, tmp_path / "dst") is False
@@ -345,7 +345,7 @@ class TestAppWiring:
         assert app.damaged and "clip.7z" in app.damaged[0]
 
     def test_machine_problems_are_held(self, tmp_path):
-        from core.archive_processor import ArchiveOutcome
+        from unpackr.core.archive_processor import ArchiveOutcome
 
         held = []
         app = _fake_app(
@@ -423,7 +423,7 @@ def test_end_to_end_previews_truncation_and_incomplete_sets(tmp_path):
     config = tmp_path / "config.json"
     config.write_text(json.dumps({"min_sample_size_mb": 1, "log_folder": str(tmp_path / "logs")}))
     result = subprocess.run(
-        [sys.executable, "unpackr.py", "--source", str(src), "--destination", str(dst), "--config", str(config),
+        [sys.executable, "-m", "unpackr", "--source", str(src), "--destination", str(dst), "--config", str(config),
          "--json", "--no-color"],
         capture_output=True, text=True, timeout=300, cwd=REPO,
     )  # fmt: skip

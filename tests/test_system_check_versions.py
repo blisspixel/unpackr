@@ -1,4 +1,4 @@
-from utils.system_check import SystemCheck
+from unpackr.utils.system_check import SystemCheck
 
 
 def test_version_helpers_and_formatting():

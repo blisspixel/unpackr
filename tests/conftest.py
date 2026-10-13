@@ -2,12 +2,22 @@
 Pytest configuration and fixtures for Unpackr tests.
 """
 
-import pytest
-from pathlib import Path
+import os
 import sys
+from pathlib import Path
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+import pytest
+
+# The installable package lives in src/. Subprocesses inherit PYTHONPATH.
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+src_text = str(SRC)
+if src_text not in sys.path:
+    sys.path.insert(0, src_text)
+current_pythonpath = os.environ.get("PYTHONPATH", "")
+pythonpath_parts = current_pythonpath.split(os.pathsep) if current_pythonpath else []
+if src_text not in pythonpath_parts:
+    os.environ["PYTHONPATH"] = src_text + (os.pathsep + current_pythonpath if current_pythonpath else "")
 
 
 @pytest.fixture
@@ -115,7 +125,7 @@ def bind_app_helpers(app):
         if not hasattr(ap, "remove_par2_files"):
             ap.remove_par2_files = lambda *_a, **_k: None
         if not hasattr(ap, "last_par2"):
-            from core.archive_processor import Par2Outcome
+            from unpackr.core.archive_processor import Par2Outcome
 
             # Mirror what the fake's process_par2_files returns (True = verified).
             par2 = getattr(ap, "process_par2_files", None)

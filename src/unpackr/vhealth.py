@@ -19,18 +19,19 @@ from typing import NotRequired, TypedDict
 
 from colorama import Fore, Style, init
 
-from core import Config
-from core.video_processor import VideoProcessor, VideoVerdict
-from utils.cli_runtime import existing_file_path
-from utils.filesystem_policy import is_linklike
-from utils.platform_support import (
+from unpackr.bundled import config_file
+from unpackr.core import Config
+from unpackr.core.video_processor import VideoProcessor, VideoVerdict
+from unpackr.utils.cli_runtime import existing_file_path
+from unpackr.utils.filesystem_policy import is_linklike
+from unpackr.utils.platform_support import (
     example_destination_path,
     platform_label,
     resolve_first_available_tool,
     tool_missing_hint,
 )
-from utils.safety import SubprocessSafety
-from version import __version__
+from unpackr.utils.safety import SubprocessSafety
+from unpackr.version import __version__
 
 init(autoreset=True)
 
@@ -1098,7 +1099,7 @@ def _run(args: argparse.Namespace) -> VideoHealthChecker:
     print(f"{Style.DIM}Check videos for corruption, duplicates, samples · {platform_label()}{Style.RESET_ALL}\n")
 
     # Load config
-    config_path = Path(args.config) if args.config else Path(__file__).resolve().parent / "config_files" / "config.json"
+    config_path = Path(args.config) if args.config else config_file("config.json")
     config = Config(config_path)
     if not getattr(config, "is_valid", True):
         print(f"\n{Fore.RED}Error: Configuration file is invalid or unavailable: {config_path}{Style.RESET_ALL}")

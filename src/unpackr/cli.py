@@ -26,8 +26,9 @@ from typing import Any, NoReturn, TypedDict, cast
 
 from colorama import Fore, Style, init
 
-from core import Config, setup_logging
-from core.archive_processor import (
+from unpackr.bundled import config_dir as bundled_config_dir
+from unpackr.core import Config, setup_logging
+from unpackr.core.archive_processor import (
     BROKEN_SET_REASONS,
     ArchiveOutcome,
     ArchiveProcessor,
@@ -36,31 +37,37 @@ from core.archive_processor import (
     find_archive_sets,
     is_archive_related,
 )
-from core.file_handler import FileHandler
-from core.junk_rules import (
+from unpackr.core.file_handler import FileHandler
+from unpackr.core.junk_rules import (
     classify_security,
     decide_duplicate_encodes,
     decide_release_samples,
     has_disc_structure,
     is_incomplete_marker,
 )
-from core.naming import DEFAULT_LAYOUT, SUBTITLE_EXTENSIONS, pick_base_name, render_layout, subtitle_suffix
-from core.remover import Remover, is_internal, new_run_id, purge_quarantine
-from core.run_lock import RunLock
-from core.run_report import ReportItem, RunReport
-from core.safety_invariants import InvariantEnforcer
-from core.video_processor import VideoProcessor
-from utils.cli_prompts import clean_path, countdown_prompt, get_user_input, quick_preflight, resolve_cli_presentation
-from utils.cli_render import create_renderer
-from utils.cli_runtime import build_unpackr_arg_parser, configure_windows_console_utf8, resolve_unpackr_paths
-from utils.cli_subcommands import SUBCOMMANDS, run_subcommand
-from utils.defensive import InputValidator, StateValidator, ValidationError
-from utils.dry_run_summary import DryRunPlan
-from utils.run_state import RunState, default_state_path
-from utils.run_summary import build_unpackr_run_summary, dumps_run_summary
-from utils.safety import LoopSafety, OperationTimer, RecursionSafety, StuckDetector
-from utils.system_check import SystemCheck
-from version import __version__
+from unpackr.core.naming import DEFAULT_LAYOUT, SUBTITLE_EXTENSIONS, pick_base_name, render_layout, subtitle_suffix
+from unpackr.core.remover import Remover, is_internal, new_run_id, purge_quarantine
+from unpackr.core.run_lock import RunLock
+from unpackr.core.run_report import ReportItem, RunReport
+from unpackr.core.safety_invariants import InvariantEnforcer
+from unpackr.core.video_processor import VideoProcessor
+from unpackr.utils.cli_prompts import (
+    clean_path,
+    countdown_prompt,
+    get_user_input,
+    quick_preflight,
+    resolve_cli_presentation,
+)
+from unpackr.utils.cli_render import create_renderer
+from unpackr.utils.cli_runtime import build_unpackr_arg_parser, configure_windows_console_utf8, resolve_unpackr_paths
+from unpackr.utils.cli_subcommands import SUBCOMMANDS, run_subcommand
+from unpackr.utils.defensive import InputValidator, StateValidator, ValidationError
+from unpackr.utils.dry_run_summary import DryRunPlan
+from unpackr.utils.run_state import RunState, default_state_path
+from unpackr.utils.run_summary import build_unpackr_run_summary, dumps_run_summary
+from unpackr.utils.safety import LoopSafety, OperationTimer, RecursionSafety, StuckDetector
+from unpackr.utils.system_check import SystemCheck
+from unpackr.version import __version__
 
 # Set UTF-8 encoding for Windows console to handle special characters in easter eggs
 configure_windows_console_utf8()
@@ -1463,7 +1470,7 @@ class UnpackrApp:
         bundled sample is read directly so installed package files stay read-only.
         """
         try:
-            bundled_dir = Path(__file__).parent / "config_files"
+            bundled_dir = bundled_config_dir()
             config = getattr(self, "config", None)
             config_path = getattr(config, "config_path", None)
             custom_dir = Path(config_path).parent if config_path else bundled_dir
@@ -2343,9 +2350,7 @@ def main() -> None:
         args.source, args.destination = resolve_unpackr_paths(args, parser)
 
         # Load configuration defensively
-        config_path = (
-            Path(args.config) if args.config else Path(__file__).resolve().parent / "config_files" / "config.json"
-        )
+        config_path = Path(args.config) if args.config else bundled_config_dir() / "config.json"
 
         try:
             config = Config(config_path)
@@ -2607,7 +2612,7 @@ def main() -> None:
             if args.vhealth and destination_dir and not runtime_app.cancellation_requested:
                 print(f"\n{Fore.CYAN}Running video health check on destination...{Style.RESET_ALL}\n")
                 try:
-                    from vhealth import VideoHealthChecker
+                    from unpackr.vhealth import VideoHealthChecker
 
                     checker = VideoHealthChecker(config)
                     checker.check_path(

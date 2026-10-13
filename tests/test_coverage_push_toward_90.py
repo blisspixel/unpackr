@@ -8,10 +8,10 @@ from unittest.mock import Mock, patch
 import psutil
 import pytest
 
-import unpackr
-from core.config import Config
-from core.file_handler import FileHandler
-from utils.defensive import ValidationError
+import unpackr.cli as unpackr
+from unpackr.core.config import Config
+from unpackr.core.file_handler import FileHandler
+from unpackr.utils.defensive import ValidationError
 from conftest import bind_app_helpers
 
 
@@ -22,12 +22,12 @@ def handler(tmp_path):
 
 
 def test_find_video_files_returns_empty_on_validation_error(handler):
-    with patch("core.file_handler.InputValidator.validate_path", side_effect=ValidationError("bad path")):
+    with patch("unpackr.core.file_handler.InputValidator.validate_path", side_effect=ValidationError("bad path")):
         assert handler.find_video_files(Path("missing")) == []
 
 
 def test_find_video_files_returns_empty_when_validator_returns_none(handler):
-    with patch("core.file_handler.InputValidator.validate_path", return_value=None):
+    with patch("unpackr.core.file_handler.InputValidator.validate_path", return_value=None):
         assert handler.find_video_files(Path("missing")) == []
 
 
@@ -112,7 +112,7 @@ def test_safe_delete_folder_waits_on_generic_errors_then_falls_back(handler, tmp
         patch.object(handler, "is_folder_empty_or_removable", return_value=True),
         patch.object(handler, "_delete_tree_safely", side_effect=RuntimeError("boom")),
         patch.object(handler, "_tree_contains_linklike_entries", return_value=False),
-        patch("core.file_handler.time.sleep") as mock_sleep,
+        patch("unpackr.core.file_handler.time.sleep") as mock_sleep,
         patch("subprocess.run", return_value=Mock()),
         patch("pathlib.Path.exists", lambda self: self != target),
     ):
@@ -166,8 +166,8 @@ def test_kill_processes_using_folder_kills_once_and_waits(handler, tmp_path):
     proc.name.return_value = "ffmpeg"
     proc.open_files.return_value = [SimpleNamespace(path=str(folder / "video.mp4"))]
     with (
-        patch("core.file_handler.psutil.process_iter", return_value=[proc]),
-        patch("core.file_handler.time.sleep") as mock_sleep,
+        patch("unpackr.core.file_handler.psutil.process_iter", return_value=[proc]),
+        patch("unpackr.core.file_handler.time.sleep") as mock_sleep,
     ):
         handler._kill_processes_using_folder(folder)
 
@@ -180,7 +180,7 @@ def test_move_file_handles_none_validated_paths(handler, tmp_path):
     dest = tmp_path / "dest"
     source.write_text("x", encoding="utf-8")
     dest.mkdir()
-    with patch("core.file_handler.InputValidator.validate_path", side_effect=[None, dest]):
+    with patch("unpackr.core.file_handler.InputValidator.validate_path", side_effect=[None, dest]):
         assert handler.move_file(source, dest) is False
 
 
@@ -189,7 +189,7 @@ def test_move_file_fails_when_source_inaccessible(handler, tmp_path):
     dest = tmp_path / "dest"
     source.write_text("x", encoding="utf-8")
     dest.mkdir()
-    with patch("core.file_handler.StateValidator.check_file_accessible", return_value=False):
+    with patch("unpackr.core.file_handler.StateValidator.check_file_accessible", return_value=False):
         assert handler.move_file(source, dest) is False
 
 
@@ -199,9 +199,9 @@ def test_move_file_fails_when_disk_space_insufficient(handler, tmp_path):
     source.write_bytes(b"x" * (2 * 1024 * 1024))
     dest.mkdir()
     with (
-        patch("core.file_handler.StateValidator.check_file_accessible", return_value=True),
-        patch("core.file_handler.StateValidator.check_dir_writable", return_value=True),
-        patch("core.file_handler.StateValidator.check_disk_space", return_value=False),
+        patch("unpackr.core.file_handler.StateValidator.check_file_accessible", return_value=True),
+        patch("unpackr.core.file_handler.StateValidator.check_dir_writable", return_value=True),
+        patch("unpackr.core.file_handler.StateValidator.check_disk_space", return_value=False),
         patch("shutil.disk_usage", return_value=SimpleNamespace(free=1 * 1024 * 1024)),
     ):
         assert handler.move_file(source, dest) is False
@@ -213,10 +213,10 @@ def test_move_file_continues_when_disk_space_check_raises(handler, tmp_path):
     source.write_text("x", encoding="utf-8")
     dest.mkdir()
     with (
-        patch("core.file_handler.StateValidator.check_file_accessible", return_value=True),
-        patch("core.file_handler.StateValidator.check_dir_writable", return_value=True),
-        patch("core.file_handler.StateValidator.check_disk_space", side_effect=OSError("denied")),
-        patch("core.file_handler.ErrorRecovery.safe_move", return_value=True),
+        patch("unpackr.core.file_handler.StateValidator.check_file_accessible", return_value=True),
+        patch("unpackr.core.file_handler.StateValidator.check_dir_writable", return_value=True),
+        patch("unpackr.core.file_handler.StateValidator.check_disk_space", side_effect=OSError("denied")),
+        patch("unpackr.core.file_handler.ErrorRecovery.safe_move", return_value=True),
     ):
         assert handler.move_file(source, dest) is True
 
@@ -228,9 +228,9 @@ def test_move_file_respects_enforcer(handler, tmp_path):
     dest.mkdir()
     handler.enforcer = SimpleNamespace(enforce_move=Mock(side_effect=RuntimeError("blocked")))
     with (
-        patch("core.file_handler.StateValidator.check_file_accessible", return_value=True),
-        patch("core.file_handler.StateValidator.check_dir_writable", return_value=True),
-        patch("core.file_handler.StateValidator.check_disk_space", return_value=True),
+        patch("unpackr.core.file_handler.StateValidator.check_file_accessible", return_value=True),
+        patch("unpackr.core.file_handler.StateValidator.check_dir_writable", return_value=True),
+        patch("unpackr.core.file_handler.StateValidator.check_disk_space", return_value=True),
     ):
         assert handler.move_file(source, dest) is False
 
@@ -256,8 +256,8 @@ def test_wait_for_file_release_returns_true_after_access_denied_then_unlock(hand
     free_proc = Mock()
     free_proc.open_files.return_value = []
 
-    with patch("core.file_handler.psutil.process_iter", side_effect=[[denied_proc], [free_proc]]), patch(
-        "core.file_handler.time.sleep"
+    with patch("unpackr.core.file_handler.psutil.process_iter", side_effect=[[denied_proc], [free_proc]]), patch(
+        "unpackr.core.file_handler.time.sleep"
     ):
         assert handler.wait_for_file_release("video.mp4", max_attempts=2, delay=1) is True
 
@@ -265,7 +265,7 @@ def test_wait_for_file_release_returns_true_after_access_denied_then_unlock(hand
 def test_terminate_related_processes_ignores_access_denied(handler):
     proc = Mock()
     proc.name.side_effect = psutil.AccessDenied()
-    with patch("core.file_handler.psutil.process_iter", return_value=[proc]):
+    with patch("unpackr.core.file_handler.psutil.process_iter", return_value=[proc]):
         handler._terminate_related_processes("video.mp4")
 
 
@@ -274,7 +274,7 @@ def test_load_comments_returns_empty_for_invalid_json(monkeypatch, tmp_path):
     config_dir.mkdir()
     comments = config_dir / "comments.json"
     comments.write_text("{bad", encoding="utf-8")
-    monkeypatch.setattr(unpackr, "__file__", str(tmp_path / "unpackr.py"))
+    monkeypatch.setattr("unpackr.cli.bundled_config_dir", lambda: config_dir)
 
     assert unpackr.UnpackrApp._load_comments(SimpleNamespace()) == []
 
@@ -284,7 +284,7 @@ def test_load_comments_returns_rarity_format(monkeypatch, tmp_path):
     config_dir.mkdir()
     comments = config_dir / "comments.json"
     comments.write_text('{"comments":{"common":["hi"]},"rarities":{"common":{"weight":1}}}', encoding="utf-8")
-    monkeypatch.setattr(unpackr, "__file__", str(tmp_path / "unpackr.py"))
+    monkeypatch.setattr("unpackr.cli.bundled_config_dir", lambda: config_dir)
 
     loaded = unpackr.UnpackrApp._load_comments(SimpleNamespace())
     assert isinstance(loaded, dict)

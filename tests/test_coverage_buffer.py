@@ -1,5 +1,5 @@
-from core import logger as core_logger
-from utils.system_check import SystemCheck
+from unpackr.core import logger as core_logger
+from unpackr.utils.system_check import SystemCheck
 
 
 def test_logger_cleanup_warning_and_subprocess_no_output(monkeypatch, tmp_path):
