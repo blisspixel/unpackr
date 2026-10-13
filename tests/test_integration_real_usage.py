@@ -93,7 +93,7 @@ def test_prescan_no_terminal_spam(runner: IntegrationTestRunner):
         # Run unpackr with timeout (should complete quickly for empty folders)
         try:
             result = subprocess.run(
-                [sys.executable, "unpackr.py", "--source", str(tmp_source), "--destination", str(tmp_dest)],
+                [sys.executable, "-m", "unpackr", "--source", str(tmp_source), "--destination", str(tmp_dest)],
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -140,7 +140,7 @@ def test_countdown_shows_visual_feedback(runner: IntegrationTestRunner):
     from contextlib import redirect_stdout
     from unittest.mock import patch
 
-    import utils.cli_prompts as cli_prompts
+    import unpackr.utils.cli_prompts as cli_prompts
 
     buffer = io.StringIO()
     with patch.object(cli_prompts.time, "sleep", lambda *_: None), redirect_stdout(buffer):
@@ -159,7 +159,7 @@ def test_countdown_shows_visual_feedback(runner: IntegrationTestRunner):
         tmp_dest.mkdir()
         started = time.time()
         result = subprocess.run(
-            [sys.executable, "unpackr.py", "--source", str(tmp_source), "--destination", str(tmp_dest)],
+            [sys.executable, "-m", "unpackr", "--source", str(tmp_source), "--destination", str(tmp_dest)],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -184,7 +184,7 @@ def test_windows_console_encoding(runner: IntegrationTestRunner):
     print(f"\n{Fore.YELLOW}[Windows Console Encoding Tests]{Style.RESET_ALL}")
 
     # Test that progress UI elements render without crashes
-    from core import Config
+    from unpackr.core import Config
     from unpackr import UnpackrApp
 
     _ = Config()
@@ -193,7 +193,7 @@ def test_windows_console_encoding(runner: IntegrationTestRunner):
     # Test progress tracker with Unicode elements
     try:
         # This should not crash with UnicodeEncodeError
-        from utils.progress import ProgressTracker
+        from unpackr.utils.progress import ProgressTracker
 
         tracker = ProgressTracker()
 
@@ -231,7 +231,7 @@ def test_help_command_works(runner: IntegrationTestRunner):
 
     try:
         result = subprocess.run(
-            [sys.executable, "unpackr.py", "--help"],
+            [sys.executable, "-m", "unpackr", "--help"],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -289,7 +289,8 @@ def test_dry_run_makes_no_changes(runner: IntegrationTestRunner):
             _ = subprocess.run(
                 [
                     sys.executable,
-                    "unpackr.py",
+                    "-m",
+                    "unpackr",
                     "--source",
                     str(tmp_source),
                     "--destination",
@@ -344,7 +345,7 @@ def test_empty_source_directory(runner: IntegrationTestRunner):
 
         try:
             result = subprocess.run(
-                [sys.executable, "unpackr.py", "--source", str(tmp_source), "--destination", str(tmp_dest)],
+                [sys.executable, "-m", "unpackr", "--source", str(tmp_source), "--destination", str(tmp_dest)],
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -385,7 +386,7 @@ def test_invalid_source_path(runner: IntegrationTestRunner):
 
         try:
             result = subprocess.run(
-                [sys.executable, "unpackr.py", "--source", str(invalid_source), "--destination", str(tmp_dest)],
+                [sys.executable, "-m", "unpackr", "--source", str(invalid_source), "--destination", str(tmp_dest)],
                 capture_output=True,
                 text=True,
                 encoding="utf-8",

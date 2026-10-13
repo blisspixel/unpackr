@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from utils import platform_support
+from unpackr.utils import platform_support
 
 
 def test_default_tool_candidates_put_path_names_first():

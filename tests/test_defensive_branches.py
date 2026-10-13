@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from utils.defensive import ErrorRecovery, InputValidator, StateValidator, ValidationError, defensive_wrapper
+from unpackr.utils.defensive import ErrorRecovery, InputValidator, StateValidator, ValidationError, defensive_wrapper
 
 
 def test_validate_path_relative_and_null_byte(tmp_path):

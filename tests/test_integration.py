@@ -19,14 +19,14 @@ from pathlib import Path
 
 import pytest
 
-from core.file_handler import RELEASE_IMAGE_COLLECTION_FILES
+from unpackr.core.file_handler import RELEASE_IMAGE_COLLECTION_FILES
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.archive_processor import ArchiveProcessor
-from core.config import Config
-from core.file_handler import FileHandler
-from core.video_processor import VideoProcessor
+from unpackr.core.archive_processor import ArchiveProcessor
+from unpackr.core.config import Config
+from unpackr.core.file_handler import FileHandler
+from unpackr.core.video_processor import VideoProcessor
 
 
 class TestEndToEndIntegration:

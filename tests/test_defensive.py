@@ -11,7 +11,7 @@ from colorama import Fore, Style, init
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from utils.defensive import ErrorRecovery, InputValidator, StateValidator, ValidationError
+from unpackr.utils.defensive import ErrorRecovery, InputValidator, StateValidator, ValidationError
 
 
 class DefensiveTestRunner:

@@ -11,7 +11,7 @@ Use this index to find the right doc for operations, troubleshooting, and mainte
 ## Operations And Policy
 
 - `SAFETY.md` - destructive-operation safety contract
-- `CONFIGURATION.md` - `config_files/config.json` reference
+- `CONFIGURATION.md` - bundled `unpackr/config_files/config.json` reference
 - `PLATFORMS.md` - Windows / Linux / macOS install, launchers, filesystem/NAS/SELinux notes
 - `BENCHMARKS.md` - micro-benchmark harness and performance evidence rules
 - `TROUBLESHOOTING.md` - common failures and remediation
@@ -30,7 +30,7 @@ Use this index to find the right doc for operations, troubleshooting, and mainte
 Quality contract:
 - full suite required to pass
 - coverage required to remain at or above `80%`
-- strict type checking (`mypy --strict` and Pyright strict) on `core`, `utils`, `doctor.py`, `unpackr.py` and `vhealth.py`
+- strict type checking (`mypy --strict` and Pyright strict) on `src/unpackr`
 - supported OS targets: Windows, Linux, macOS (see `ROADMAP.md` for the cross-platform milestone)
 
 ## Archive

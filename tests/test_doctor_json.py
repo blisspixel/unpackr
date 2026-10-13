@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-import doctor
+import unpackr.doctor as doctor
 
 
 def test_doctor_json_mode_ready(monkeypatch, capsys):

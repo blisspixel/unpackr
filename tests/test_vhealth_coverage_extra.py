@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-import vhealth
+import unpackr.vhealth as vhealth
 
 
 def test_get_duration_parses_ffmpeg_output(monkeypatch, tmp_path):

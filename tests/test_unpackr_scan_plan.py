@@ -2,7 +2,7 @@ import threading
 import time
 import types
 
-import unpackr
+import unpackr.cli as unpackr
 
 
 class DummyConfig:

@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from core.run_lock import RunLock
+from unpackr.core.run_lock import RunLock
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -40,7 +40,7 @@ def test_second_run_on_the_same_source_exits_cleanly(tmp_path):
     assert lock.acquire()
     try:
         result = subprocess.run(
-            [sys.executable, "unpackr.py", "--source", str(src), "--destination", str(dst), "--config", str(config),
+            [sys.executable, "-m", "unpackr", "--source", str(src), "--destination", str(dst), "--config", str(config),
              "--json", "--no-color"],
             capture_output=True, text=True, timeout=300, cwd=REPO, stdin=subprocess.DEVNULL,
         )  # fmt: skip
@@ -55,7 +55,7 @@ def test_second_run_on_the_same_source_exits_cleanly(tmp_path):
 
 def test_removed_service_command_explains_itself():
     result = subprocess.run(
-        [sys.executable, "unpackr.py", "service", "install"], capture_output=True, text=True, timeout=60, cwd=REPO
+        [sys.executable, "-m", "unpackr", "service", "install"], capture_output=True, text=True, timeout=60, cwd=REPO
     )
     assert result.returncode == 2
     assert "removed in 1.6.0" in result.stderr

@@ -9,7 +9,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from utils.platform_support import user_state_dir
+from unpackr.utils.platform_support import user_state_dir
 
 
 def resolve_log_dir(log_folder: str) -> Path:

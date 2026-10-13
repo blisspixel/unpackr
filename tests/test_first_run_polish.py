@@ -9,14 +9,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import unpackr
-import vhealth
-from core.archive_processor import find_archive_sets
-from core.config import Config
-from core.logger import resolve_log_dir
-from doctor import UnpackrDoctor
-from utils import platform_support
-from utils.system_check import SystemCheck
+import unpackr.cli as unpackr
+import unpackr.vhealth as vhealth
+from unpackr.core.archive_processor import find_archive_sets
+from unpackr.core.config import Config
+from unpackr.core.logger import resolve_log_dir
+from unpackr.doctor import UnpackrDoctor
+from unpackr.utils import platform_support
+from unpackr.utils.system_check import SystemCheck
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -46,7 +46,7 @@ class TestLogsAndHints:
 
     def test_doctor_asks_par2_for_its_version(self):
         doctor = UnpackrDoctor()
-        with patch("doctor.subprocess.run") as run:
+        with patch("unpackr.doctor.subprocess.run") as run:
             run.return_value = types.SimpleNamespace(stdout="par2cmdline version 1.3.0", stderr="")
             assert doctor._get_tool_version("par2", "par2") == (1, 3, 0)
         assert run.call_args.args[0] == ["par2", "-V"]
@@ -114,7 +114,7 @@ class TestPlanAccuracy:
 class TestDestinationAndCountdown:
     def _run(self, *args, cwd=REPO):
         return subprocess.run(
-            [sys.executable, "unpackr.py", *args, "--no-color"],
+            [sys.executable, "-m", "unpackr", *args, "--no-color"],
             capture_output=True, text=True, timeout=120, cwd=cwd, stdin=subprocess.DEVNULL,
         )  # fmt: skip
 
@@ -206,7 +206,7 @@ class TestVhealthNonInteractive:
         checker.skip_samples = True
 
         def fake_health(path, check_quality=False):
-            from core.video_processor import VideoVerdict
+            from unpackr.core.video_processor import VideoVerdict
 
             checker.video_processor.last_verdict = VideoVerdict(False, "preview", "video_too_short", "8.0s is under")
             return (False, False, None, None)
@@ -219,7 +219,7 @@ class TestVhealthNonInteractive:
     def test_json_mode_prints_only_json(self, tmp_path):
         (tmp_path / "a.txt").write_text("x")
         result = subprocess.run(
-            [sys.executable, "vhealth.py", str(tmp_path), "--json"],
+            [sys.executable, "-m", "unpackr.vhealth", str(tmp_path), "--json"],
             capture_output=True, text=True, timeout=120, cwd=REPO, stdin=subprocess.DEVNULL,
         )  # fmt: skip
         payload = json.loads(result.stdout)

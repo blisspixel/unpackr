@@ -20,8 +20,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core import Config
-from vhealth import VideoHealthChecker
+from unpackr.core import Config
+from unpackr.vhealth import VideoHealthChecker
 
 
 class TestVideoHealthChecker:
@@ -166,7 +166,7 @@ class TestVideoHealthChecker:
         # 720p should meet 720p requirement (exact match)
         assert checker._meets_min_resolution((1280, 720), "720p")
 
-    @patch("vhealth.VideoHealthChecker._check_video_silent")
+    @patch("unpackr.vhealth.VideoHealthChecker._check_video_silent")
     def test_check_path_single_file(self, mock_check, checker, temp_dir):
         """Test checking a single video file."""
         video = temp_dir / "test.mp4"

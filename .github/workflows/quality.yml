@@ -74,7 +74,17 @@ jobs:
         if: runner.os == 'Linux' && matrix.python-version == '3.15'
         run: |
           python -m pip wheel --no-deps --wheel-dir dist .
-          python -c "import glob, zipfile; wheel = glob.glob('dist/unpackr-*.whl')[0]; names = set(zipfile.ZipFile(wheel).namelist()); required = {'unpackr.py', 'doctor.py', 'vhealth.py', 'config_files/config.json', 'config_files/comments.sample.json'}; assert required <= names, required - names; assert 'config_files/comments.json' not in names"
+          python -c "import glob, zipfile; from pathlib import PurePosixPath; wheel = glob.glob('dist/unpackr-*.whl')[0]; names = zipfile.ZipFile(wheel).namelist(); tops = {PurePosixPath(n).parts[0] for n in names}; assert tops and all(t == 'unpackr' or t.endswith('.dist-info') for t in tops), tops; assert any(n.endswith('unpackr/config_files/config.json') for n in names); assert any(n.endswith('unpackr/config_files/comments.sample.json') for n in names); assert not any(n.endswith('/comments.json') for n in names)"
+
+      - name: Documented install smoke
+        if: runner.os == 'Linux' && matrix.python-version == '3.12'
+        run: |
+          python -m pip install uv
+          mkdir -p "$RUNNER_TEMP/uv-tools" "$RUNNER_TEMP/uv-bin"
+          UV_TOOL_DIR="$RUNNER_TEMP/uv-tools" UV_TOOL_BIN_DIR="$RUNNER_TEMP/uv-bin" uv tool install --force .
+          "$RUNNER_TEMP/uv-bin/unpackr" --help
+          "$RUNNER_TEMP/uv-bin/unpackr-doctor" --help
+          "$RUNNER_TEMP/uv-bin/vhealth" --help
 
       - name: Pre-commit quality gate
         if: runner.os == 'Linux' && matrix.python-version == '3.12'

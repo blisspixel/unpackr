@@ -18,9 +18,10 @@ from typing import ClassVar, Literal, TypedDict, cast
 
 from colorama import Fore, Style, init
 
-from utils.cli_runtime import existing_file_path
-from utils.filesystem_policy import probe_filesystem
-from utils.platform_support import (
+from unpackr.bundled import config_dir as bundled_config_dir
+from unpackr.utils.cli_runtime import existing_file_path
+from unpackr.utils.filesystem_policy import probe_filesystem
+from unpackr.utils.platform_support import (
     detect_running_helpers,
     merge_tool_candidates,
     package_manager_install_hint,
@@ -70,7 +71,7 @@ class UnpackrDoctor:
 
     def _config_file(self) -> Path:
         """Return the explicit config path or the bundled default."""
-        return self.config_path or Path(__file__).parent / "config_files" / "config.json"
+        return self.config_path or bundled_config_dir() / "config.json"
 
     def _step(self, number: int) -> str:
         total = 11 + (1 if self.source is not None else 0)
@@ -100,7 +101,9 @@ class UnpackrDoctor:
         if "par2cmdline version too old" in warning_text:
             actions.append("Upgrade par2cmdline to 0.8.1+ for stable repair behavior.")
         if "missing packages:" in issue_text:
-            actions.append("Install required Python packages with `python -m pip install .`.")
+            actions.append(
+                "Install Unpackr with `uv tool install .` from a checkout, or `uv tool install git+https://github.com/blisspixel/unpackr`."
+            )
         if "config" in issue_text and "json" in issue_text:
             actions.append(f"Fix the active config file: `{self._config_file()}`.")
         if "write permissions" in issue_text:
@@ -409,7 +412,7 @@ class UnpackrDoctor:
         """Check easter egg comments file."""
         print(f"{self._step(8)} Checking easter egg comments...", end=" ")
         config_dir = self._config_file().parent
-        bundled_dir = Path(__file__).parent / "config_files"
+        bundled_dir = bundled_config_dir()
         candidates = [
             config_dir / "comments.json",
             config_dir / "comments.sample.json",
@@ -441,12 +444,12 @@ class UnpackrDoctor:
         """Check core Python modules are present."""
         print(f"{self._step(9)} Checking core modules...", end=" ")
         required_modules = [
-            "core.config",
-            "core.file_handler",
-            "core.archive_processor",
-            "core.video_processor",
-            "utils.system_check",
-            "utils.safety",
+            "unpackr.core.config",
+            "unpackr.core.file_handler",
+            "unpackr.core.archive_processor",
+            "unpackr.core.video_processor",
+            "unpackr.utils.system_check",
+            "unpackr.utils.safety",
         ]
 
         missing: list[str] = []
@@ -482,7 +485,7 @@ class UnpackrDoctor:
         except (OSError, json.JSONDecodeError, AttributeError, TypeError):
             pass
 
-        from core.logger import resolve_log_dir
+        from unpackr.core.logger import resolve_log_dir
 
         log_dir = resolve_log_dir(log_folder).resolve()
 
@@ -513,8 +516,8 @@ class UnpackrDoctor:
         """Report quarantine size for --source and warn when it passes quarantine_warn_mb."""
         if self.source is None:
             return
-        from core.config import Config
-        from core.remover import list_runs
+        from unpackr.core.config import Config
+        from unpackr.core.remover import list_runs
 
         config = Config(self.config_path) if self.config_path else Config()
         runs = list_runs(self.source)

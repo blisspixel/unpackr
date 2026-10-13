@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-import unpackr
+import unpackr.cli as unpackr
 
 
 def test_get_user_input_retries_until_valid(monkeypatch, tmp_path):

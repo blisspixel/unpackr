@@ -61,18 +61,24 @@ Logs go to a per-user folder (`~/.local/state/unpackr/logs` on Linux, `~/Library
 
 ## Install
 
+Arch, Debian, Ubuntu, and other systems mark Python as externally managed (PEP 668), so install Unpackr into its own environment:
+
 ```bash
-python -m pip install .
+uv tool install git+https://github.com/blisspixel/unpackr
+# or, from a checkout: uv tool install .
+# pipx install git+https://github.com/blisspixel/unpackr
 unpackr --help
 unpackr-doctor
 ```
 
 Run `unpackr-doctor` before live processing and resolve blocking issues first.
 
-Developer quality tooling:
+From a virtualenv, `python -m pip install .` still installs the same console scripts. Contributor tooling belongs in a virtualenv too:
 
 ```bash
-python -m pip install -e .[dev]
+python -m venv .venv
+. .venv/bin/activate
+python -m pip install -e ".[dev]"
 pre-commit install
 pre-commit run --all-files
 ```
@@ -80,7 +86,7 @@ pre-commit run --all-files
 Current engineering baseline:
 - full regression suite required to pass
 - `80%` minimum coverage enforced in CI
-- strict type checking (`mypy --strict` and Pyright strict) on `core`, `utils`, `doctor.py`, `unpackr.py` and `vhealth.py`
+- strict type checking (`mypy --strict` and Pyright strict) on `src/unpackr`
 - enforced local + CI gate via `ruff`, `mypy`, `pyright`, `bandit`, `pytest`, coverage, and `pre-commit`
 
 ## Quick Start
@@ -115,7 +121,7 @@ unpackr "~/Downloads" "~/Videos"
 
 Source and destination must be provided together. Incomplete or conflicting path arguments fail with a usage error instead of falling into interactive mode.
 
-If the installed launcher is unavailable, run the same command as `python -m unpackr ...` from the repository checkout, then reinstall with `python -m pip install .`.
+If the installed launcher is unavailable, run `./unpackr.sh` from the repository checkout. It puts `src` on `PYTHONPATH`. On Windows, run `unpackr.bat`. Then reinstall with `uv tool install --reinstall .`.
 
 ## Safety
 

@@ -14,13 +14,13 @@ from typing import Any
 
 import psutil
 
-from core.junk_rules import junk_name_reason
-from core.remover import Remover
-from core.run_report import RunReport
-from core.safety_invariants import InvariantEnforcer
-from utils.defensive import ErrorRecovery, InputValidator, StateValidator, ValidationError
-from utils.error_messages import log_error
-from utils.platform_support import force_delete_directory, is_windows
+from unpackr.core.junk_rules import junk_name_reason
+from unpackr.core.remover import Remover
+from unpackr.core.run_report import RunReport
+from unpackr.core.safety_invariants import InvariantEnforcer
+from unpackr.utils.defensive import ErrorRecovery, InputValidator, StateValidator, ValidationError
+from unpackr.utils.error_messages import log_error
+from unpackr.utils.platform_support import force_delete_directory, is_windows
 
 # Only real RAR part volumes (including leftovers such as .part033.rar.1); a bare
 # ".part" suffix is a partial download that is still being written.
@@ -667,7 +667,7 @@ class FileHandler:
 
     def _build_powershell_delete_command(self, folder: Path) -> list[str]:
         """Compatibility wrapper around the shared Windows force-delete command builder."""
-        from utils.platform_support import build_powershell_delete_command
+        from unpackr.utils.platform_support import build_powershell_delete_command
 
         return build_powershell_delete_command(folder)
 

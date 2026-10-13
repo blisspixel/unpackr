@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from datetime import datetime
 
-from core.adaptive_policy import (
+from unpackr.core.adaptive_policy import (
     AdaptivePolicy,
     AdaptiveTimeoutCalculator,
     DiskType,

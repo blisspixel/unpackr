@@ -8,8 +8,8 @@ from typing import Any, cast
 
 from colorama import Fore, Style
 
-from core.config import Config
-from utils.cli_render import AnimationMode
+from unpackr.core.config import Config
+from unpackr.utils.cli_render import AnimationMode
 
 
 def clean_path(path_str: str) -> str:

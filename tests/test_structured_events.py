@@ -19,7 +19,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.structured_events import EventAnalyzer, EventBuilder, EventEmitter, EventSeverity, EventType, StructuredEvent
+from unpackr.core.structured_events import EventAnalyzer, EventBuilder, EventEmitter, EventSeverity, EventType, StructuredEvent
 
 
 class TestStructuredEvent:

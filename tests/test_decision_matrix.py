@@ -16,11 +16,11 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from core.archive_processor import ArchiveProcessor
-from core.config import Config
-from core.video_processor import VideoProcessor
+from unpackr.core.archive_processor import ArchiveProcessor
+from unpackr.core.config import Config
+from unpackr.core.video_processor import VideoProcessor
 from unpackr import UnpackrApp
-from utils import filesystem_policy as fsp
+from unpackr.utils import filesystem_policy as fsp
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -129,7 +129,7 @@ class TestArchivePartSelectionMatrix:
         names: list[str] = []
         with patch.object(processor, "_validate_archive_paths", return_value=True):
             with patch(
-                "core.archive_processor.SubprocessSafety.run_with_timeout",
+                "unpackr.core.archive_processor.SubprocessSafety.run_with_timeout",
                 return_value=(True, "", "", 0),
             ) as mock_run:
                 processor.process_rar_files(folder)

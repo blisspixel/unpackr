@@ -1,13 +1,13 @@
 import types
 
-from utils.system_check import SystemCheck
+from unpackr.utils.system_check import SystemCheck
 
 
 def test_check_running_processes_windows_and_linux(monkeypatch):
     checker = SystemCheck()
 
     monkeypatch.setattr(
-        "utils.system_check.detect_running_helpers",
+        "unpackr.utils.system_check.detect_running_helpers",
         lambda labels=None: ["7-Zip", "par2"],
     )
     has_conflicts, running = checker.check_running_processes()
@@ -15,7 +15,7 @@ def test_check_running_processes_windows_and_linux(monkeypatch):
     assert "7-Zip" in running
     assert "par2" in running
 
-    monkeypatch.setattr("utils.system_check.detect_running_helpers", lambda labels=None: [])
+    monkeypatch.setattr("unpackr.utils.system_check.detect_running_helpers", lambda labels=None: [])
     has_conflicts, running = checker.check_running_processes()
     assert has_conflicts is False
     assert running == []

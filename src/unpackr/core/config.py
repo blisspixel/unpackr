@@ -3,13 +3,14 @@ Configuration management for Unpackr.
 Loads and validates configuration settings.
 """
 
+import difflib
 import json
 import shutil
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Protocol, TypeGuard, cast
 
-from core.junk_rules import (
+from unpackr.core.junk_rules import (
     DEFAULT_DANGEROUS_EXTENSIONS,
     DEFAULT_INCOMPLETE_MARKERS,
     DEFAULT_JUNK_NAME_PATTERNS,
@@ -326,7 +327,26 @@ class Config:
             elif "\x00" in log_folder:
                 errors.append("log_folder must not contain null bytes")
 
+        self._warn_unknown_keys(config)
         return (len(errors) == 0, errors)
+
+    def _warn_unknown_keys(self, config: dict[str, Any]) -> None:
+        """Warn about keys that are not in the defaults. Do not block loading."""
+        removed = {
+            "settle_minutes": "no longer used",
+            "notify": "no longer used",
+        }
+        # tool_paths is applied and validated, but it has no default value.
+        known = set(self.DEFAULT_CONFIG) | {"tool_paths"}
+        for key in sorted(config):
+            if key in known:
+                continue
+            if key in removed:
+                print(f"WARNING: Config key '{key}' is {removed[key]}.")
+                continue
+            matches = difflib.get_close_matches(key, sorted(known), n=1, cutoff=0.6)
+            hint = f" Did you mean '{matches[0]}'?" if matches else ""
+            print(f"WARNING: Unknown config key '{key}'.{hint}")
 
     def validate_tool_paths(self) -> tuple[bool, list[str]]:
         """

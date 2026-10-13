@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from core.naming import is_obfuscated, parse_release_name, pick_base_name, render_layout, subtitle_suffix
+from unpackr.core.naming import is_obfuscated, parse_release_name, pick_base_name, render_layout, subtitle_suffix
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -140,14 +140,14 @@ def test_end_to_end_deobfuscation_layout_and_subtitles(tmp_path, layout, expecte
     config.write_text(json.dumps({"min_sample_size_mb": 1, "log_folder": str(tmp_path / "logs"), "output_layout": layout}))
 
     dry = subprocess.run(
-        [sys.executable, "unpackr.py", "--source", str(src), "--destination", str(dst), "--config", str(config),
+        [sys.executable, "-m", "unpackr", "--source", str(src), "--destination", str(dst), "--config", str(config),
          "--dry-run", "--no-color"],
         capture_output=True, text=True, timeout=300, cwd=REPO, stdin=subprocess.DEVNULL,
     )  # fmt: skip
     assert expected_video.split("/")[-1] in dry.stdout  # the dry run shows the final destination
 
     result = subprocess.run(
-        [sys.executable, "unpackr.py", "--source", str(src), "--destination", str(dst), "--config", str(config),
+        [sys.executable, "-m", "unpackr", "--source", str(src), "--destination", str(dst), "--config", str(config),
          "--json", "--no-color"],
         capture_output=True, text=True, timeout=300, cwd=REPO, stdin=subprocess.DEVNULL,
     )  # fmt: skip

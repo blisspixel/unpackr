@@ -6,16 +6,16 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-import doctor
-from core.structured_events import EventAnalyzer, EventBuilder, EventEmitter, EventSeverity, EventType, StructuredEvent
-from utils.defensive import ErrorRecovery, InputValidator, StateValidator, ValidationError, defensive_wrapper
-from utils.system_check import SystemCheck
+import unpackr.doctor as doctor
+from unpackr.core.structured_events import EventAnalyzer, EventBuilder, EventEmitter, EventSeverity, EventType, StructuredEvent
+from unpackr.utils.defensive import ErrorRecovery, InputValidator, StateValidator, ValidationError, defensive_wrapper
+from unpackr.utils.system_check import SystemCheck
 
 
 def test_structured_event_emitter_console_and_file_error_paths(tmp_path):
     emitter = EventEmitter(log_file=tmp_path / "events.jsonl", enable_console=True, enable_file=False)
 
-    with patch("core.structured_events.logger.log") as mock_log:
+    with patch("unpackr.core.structured_events.logger.log") as mock_log:
         event = emitter.emit(
             EventType.VIDEO_DISCOVERED,
             "discovered",
@@ -29,7 +29,7 @@ def test_structured_event_emitter_console_and_file_error_paths(tmp_path):
     emitter = EventEmitter(log_file=tmp_path / "events.jsonl", enable_console=False, enable_file=True)
     with (
         patch("builtins.open", side_effect=OSError("boom")),
-        patch("core.structured_events.logger.error") as mock_error,
+        patch("unpackr.core.structured_events.logger.error") as mock_error,
     ):
         emitter.emit(EventType.VIDEO_DISCOVERED, "broken")
     assert "Failed to write event to file" in mock_error.call_args.args[0]
@@ -100,7 +100,7 @@ def test_event_analyzer_edge_paths(tmp_path):
 
     with (
         patch("builtins.open", side_effect=OSError("boom")),
-        patch("core.structured_events.logger.error") as mock_error,
+        patch("unpackr.core.structured_events.logger.error") as mock_error,
     ):
         analyzer.load_events()
     assert "Failed to load events" in mock_error.call_args.args[0]
@@ -108,8 +108,8 @@ def test_event_analyzer_edge_paths(tmp_path):
 
 def test_system_check_resolution_and_version_paths(monkeypatch, tmp_path):
     checker = SystemCheck(config={"tool_paths": {"7z": "7z-custom"}})
-    monkeypatch.setattr("utils.system_check.shutil.which", lambda cmd: f"/usr/bin/{cmd}" if cmd else None)
-    monkeypatch.setattr("utils.system_check.os.path.isfile", lambda path: path.endswith(".exe"))
+    monkeypatch.setattr("unpackr.utils.system_check.shutil.which", lambda cmd: f"/usr/bin/{cmd}" if cmd else None)
+    monkeypatch.setattr("unpackr.utils.system_check.os.path.isfile", lambda path: path.endswith(".exe"))
 
     assert checker.check_tool("unknown") is False
     assert checker._resolve_tool_path("") == ""
@@ -150,19 +150,19 @@ def test_system_check_process_kill_and_warn_paths(monkeypatch, capsys):
     checker = SystemCheck()
     calls = []
     monkeypatch.setattr(
-        "utils.platform_support.subprocess.run",
+        "unpackr.utils.platform_support.subprocess.run",
         lambda cmd, **kwargs: calls.append(cmd) or types.SimpleNamespace(stdout="", stderr=""),
     )
-    monkeypatch.setattr("utils.platform_support.is_windows", lambda: True)
+    monkeypatch.setattr("unpackr.utils.platform_support.is_windows", lambda: True)
     assert checker.kill_processes(["7-Zip", "par2"]) is True
     assert any("taskkill" in cmd[0] for cmd in calls)
 
-    monkeypatch.setattr("utils.platform_support.is_windows", lambda: False)
+    monkeypatch.setattr("unpackr.utils.platform_support.is_windows", lambda: False)
     calls.clear()
     assert checker.kill_processes(["7-Zip", "par2"]) is True
     assert any("pkill" in cmd[0] for cmd in calls)
 
-    monkeypatch.setattr("utils.system_check.kill_helper_processes", lambda _names: False)
+    monkeypatch.setattr("unpackr.utils.system_check.kill_helper_processes", lambda _names: False)
     assert checker.kill_processes(["7-Zip"]) is False
 
     checker = SystemCheck()

@@ -79,7 +79,7 @@ def resolve_unpackr_paths(
 
 def build_unpackr_arg_parser() -> argparse.ArgumentParser:
     """Create the unpackr CLI parser."""
-    from utils.platform_support import example_destination_path, example_source_path
+    from unpackr.utils.platform_support import example_destination_path, example_source_path
 
     source_example = example_source_path()
     destination_example = example_destination_path()

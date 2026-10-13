@@ -14,7 +14,7 @@ init()
 
 def load_comments():
     """Load comments.json from config_files."""
-    comments_file = Path(__file__).parent.parent / "config_files" / "comments.json"
+    comments_file = Path(__file__).parent.parent / "src" / "unpackr" / "config_files" / "comments.json"
 
     if not comments_file.exists():
         print(f"{Fore.RED}Error: comments.json not found at {comments_file}{Style.RESET_ALL}")

@@ -1,6 +1,6 @@
 # Configuration Reference
 
-The bundled `config_files/config.json` supplies the default runtime behavior.
+The bundled `src/unpackr/config_files/config.json` supplies the default runtime behavior.
 
 For custom settings, copy that file to a writable location and pass it explicitly to each command that should use it:
 

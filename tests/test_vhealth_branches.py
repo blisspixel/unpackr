@@ -1,6 +1,6 @@
 import types
 
-import vhealth
+import unpackr.vhealth as vhealth
 
 
 def _checker(tmp_path):

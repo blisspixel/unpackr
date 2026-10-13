@@ -23,7 +23,7 @@ repos:
         pass_filenames: false
       - id: bandit
         name: bandit
-        entry: python -m bandit -c pyproject.toml -r core utils doctor.py unpackr.py vhealth.py
+        entry: python -m bandit -c pyproject.toml -r src/unpackr
         language: system
         pass_filenames: false
       - id: pytest-smoke

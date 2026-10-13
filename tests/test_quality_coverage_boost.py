@@ -3,10 +3,10 @@
 import logging
 import types
 
-from core import logger as core_logger
-from doctor import UnpackrDoctor
-from utils.dry_run_summary import DryRunPlan
-from utils.system_check import SystemCheck
+from unpackr.core import logger as core_logger
+from unpackr.doctor import UnpackrDoctor
+from unpackr.utils.dry_run_summary import DryRunPlan
+from unpackr.utils.system_check import SystemCheck
 
 
 def test_dry_run_plan_format_size_boundaries():
@@ -56,7 +56,7 @@ def test_doctor_recommended_actions_and_to_dict():
     actions = doctor._build_recommended_actions()
     assert any("Python 3.12+" in a for a in actions)
     assert any("7-Zip" in a for a in actions)
-    assert any("python -m pip install ." in a for a in actions)
+    assert any("uv tool install ." in a for a in actions)
     assert any("ffmpeg" in a for a in actions)
     assert actions[-1].startswith("Re-run `unpackr-doctor`")
 
@@ -70,7 +70,7 @@ def test_system_check_tool_command_and_display(capsys, monkeypatch):
     checker = SystemCheck(config={"tool_paths": {"7z": ["C:/x/7z.exe"]}})
     checker._working_paths = {"7z": "7z"}
 
-    monkeypatch.setattr("utils.system_check.shutil.which", lambda cmd: f"C:/tools/{cmd}.exe")
+    monkeypatch.setattr("unpackr.utils.system_check.shutil.which", lambda cmd: f"C:/tools/{cmd}.exe")
 
     assert checker.get_tool_command("7z") == ["7z"]
     assert checker.get_tool_command("par2") == ["C:/tools/par2.exe"]
@@ -86,7 +86,7 @@ def test_system_check_tool_command_and_display(capsys, monkeypatch):
 def test_system_check_process_conflicts_linux(monkeypatch):
     checker = SystemCheck()
     monkeypatch.setattr(
-        "utils.system_check.detect_running_helpers",
+        "unpackr.utils.system_check.detect_running_helpers",
         lambda labels=None: ["7-Zip", "par2"],
     )
 
@@ -104,8 +104,8 @@ def test_system_check_kill_processes_windows(monkeypatch):
         calls.append(cmd)
         return types.SimpleNamespace(returncode=0)
 
-    monkeypatch.setattr("utils.platform_support.is_windows", lambda: True)
-    monkeypatch.setattr("utils.platform_support.subprocess.run", fake_run)
+    monkeypatch.setattr("unpackr.utils.platform_support.is_windows", lambda: True)
+    monkeypatch.setattr("unpackr.utils.platform_support.subprocess.run", fake_run)
     # kill_processes delegates into platform_support; ensure the shared helper is used.
     assert checker.kill_processes(["7-Zip", "par2"]) is True
     assert any("taskkill" in c[0].lower() for c in calls)

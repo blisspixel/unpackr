@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
-from utils.trash import send_to_trash
+from unpackr.utils.trash import send_to_trash
 
 DELETE_MODES = ("quarantine", "trash", "permanent")
 QUARANTINE_DIR = ".unpackr-quarantine"

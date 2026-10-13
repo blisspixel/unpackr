@@ -11,7 +11,7 @@ from colorama import Fore, Style, init
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from utils.safety import (
+from unpackr.utils.safety import (
     LoopSafety,
     OperationTimer,
     RecursionSafety,
@@ -221,7 +221,7 @@ def test_cancellation_flag(runner: SafetyTestRunner):
     """Test cancellation flag behavior in UnpackrApp."""
     print(f"\n{Fore.YELLOW}[Cancellation Flag Tests]{Style.RESET_ALL}")
 
-    from core import Config
+    from unpackr.core import Config
     from unpackr import UnpackrApp
 
     # Create app with default config

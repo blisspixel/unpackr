@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-import unpackr
-import vhealth
+import unpackr.cli as unpackr
+import unpackr.vhealth as vhealth
 
 
 def test_vhealth_main_default_is_not_auto_delete(monkeypatch, tmp_path):
@@ -96,7 +96,7 @@ def test_vhealth_version_flag():
 def test_vhealth_parser_uses_current_package_version():
     help_text = vhealth.build_vhealth_arg_parser().format_help()
     assert "Windows/Linux/macOS" in help_text
-    from version import __version__
+    from unpackr.version import __version__
 
     assert __version__ in f"vhealth {__version__}"
 
@@ -271,7 +271,7 @@ def test_unpackr_main_vhealth_uses_destination_dir(monkeypatch, tmp_path):
     monkeypatch.setattr(unpackr, "countdown_prompt", lambda *_, **__: True)
     monkeypatch.setattr(unpackr.signal, "signal", lambda *_: None)
     monkeypatch.setattr(unpackr.sys, "argv", ["unpackr", str(source), str(dest), "--vhealth"])
-    monkeypatch.setitem(sys.modules, "vhealth", types.SimpleNamespace(VideoHealthChecker=DummyChecker))
+    monkeypatch.setattr("unpackr.vhealth.VideoHealthChecker", DummyChecker)
 
     with pytest.raises(SystemExit) as exc:
         unpackr.main()

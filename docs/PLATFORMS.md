@@ -4,8 +4,8 @@ Unpackr targets **Windows, Linux, and macOS** with the same safety contract.
 
 Cross-platform policy helpers:
 
-- `utils/platform_support.py` — tools, processes, force-delete
-- `utils/filesystem_policy.py` — path containment, case collisions, symlink farms, Unicode
+- `src/unpackr/utils/platform_support.py` — tools, processes, force-delete
+- `src/unpackr/utils/filesystem_policy.py` — path containment, case collisions, symlink farms, Unicode
 
 ## Install External Tools
 
@@ -36,13 +36,14 @@ brew install sevenzip par2 ffmpeg   # provides 7zz; Homebrew's p7zip (16.02) is 
 Then install Unpackr:
 
 ```bash
-python -m pip install .
+uv tool install git+https://github.com/blisspixel/unpackr
+# pipx install git+https://github.com/blisspixel/unpackr
 unpackr-doctor
 ```
 
 ## Launchers
 
-After `python -m pip install .`, console scripts are available on every OS:
+After `uv tool install .` (or `pipx install .`), console scripts are available on every OS:
 
 - `unpackr`
 - `unpackr-doctor`

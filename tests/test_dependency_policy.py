@@ -1,5 +1,5 @@
-from doctor import UnpackrDoctor
-from utils.system_check import SystemCheck
+from unpackr.doctor import UnpackrDoctor
+from unpackr.utils.system_check import SystemCheck
 
 
 def test_system_check_marks_par2_as_non_critical():
