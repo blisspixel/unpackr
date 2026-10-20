@@ -17,7 +17,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeVar
+from typing import Any, TypeVar, cast
 
 T = TypeVar("T")
 
@@ -77,30 +77,38 @@ WRITER_SCAN_SECONDS = 0.35
 
 
 def _windows_sharing_conflict(path: Path) -> bool | None:
-    """True when CreateFile with no sharing fails because another handle exists."""
-    import ctypes
-    from ctypes import wintypes
+    """True when CreateFile with no sharing fails because another handle exists.
 
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    create = kernel32.CreateFileW
+    ``WinDLL`` and ``get_last_error`` exist only in the Windows stubs. Looking
+    them up by name keeps Linux type-checking from failing on this function.
+    """
+    import ctypes
+
+    windll_ctor = cast(Callable[..., Any] | None, getattr(ctypes, "WinDLL", None))
+    last_error = cast(Callable[[], int] | None, getattr(ctypes, "get_last_error", None))
+    types = cast(Any, getattr(ctypes, "wintypes", None))
+    if windll_ctor is None or last_error is None or types is None:
+        return None
+    kernel = windll_ctor("kernel32", use_last_error=True)
+    create = kernel.CreateFileW
     create.argtypes = [
-        wintypes.LPCWSTR,
-        wintypes.DWORD,
-        wintypes.DWORD,
-        wintypes.LPVOID,
-        wintypes.DWORD,
-        wintypes.DWORD,
-        wintypes.HANDLE,
+        types.LPCWSTR,
+        types.DWORD,
+        types.DWORD,
+        types.LPVOID,
+        types.DWORD,
+        types.DWORD,
+        types.HANDLE,
     ]
-    create.restype = wintypes.HANDLE
-    close = kernel32.CloseHandle
-    close.argtypes = [wintypes.HANDLE]
-    close.restype = wintypes.BOOL
+    create.restype = types.HANDLE
+    close = kernel.CloseHandle
+    close.argtypes = [types.HANDLE]
+    close.restype = types.BOOL
     handle = create(str(path), 0x80000000, 0, None, 3, 0x80, None)
-    invalid = wintypes.HANDLE(-1).value
+    invalid = types.HANDLE(-1).value
     # 32 is ERROR_SHARING_VIOLATION: someone already has the file.
     if invalid is not None and int(handle) == int(invalid):
-        if ctypes.get_last_error() == 32:
+        if last_error() == 32:
             return True
         return None
     close(handle)
