@@ -193,9 +193,31 @@ jobs:
 
           if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
             winget install --id Gyan.FFmpeg -e --accept-source-agreements --accept-package-agreements
+            # winget writes the new directory to the registry. This process
+            # does not see that until PATH is read back. Get-Command can also
+            # remember the earlier miss, so the lookup below uses where.exe.
+            $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+            $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+            if ($machinePath) { $env:Path = "$machinePath;$env:Path" }
+            if ($userPath) { $env:Path = "$userPath;$env:Path" }
           }
-          $ffmpegCmd = Get-Command ffmpeg -ErrorAction SilentlyContinue
-          if (-not $ffmpegCmd) { throw "ffmpeg is required and was not found after installing Gyan.FFmpeg" }
+          # where.exe is a new process, so it sees the refreshed PATH.
+          $ffmpegExe = @(where.exe ffmpeg 2>$null) | Select-Object -First 1
+          if (-not $ffmpegExe) {
+            $packageRoot = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
+            if (Test-Path -LiteralPath $packageRoot) {
+              $found = Get-ChildItem -LiteralPath $packageRoot -Filter ffmpeg.exe -Recurse -File -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+              if ($found) { $ffmpegExe = $found.FullName }
+            }
+          }
+          if (-not $ffmpegExe) {
+            throw "ffmpeg is required and was not found after installing Gyan.FFmpeg"
+          }
+          # Later steps only inherit GITHUB_PATH, not this process's PATH.
+          $ffmpegDir = Split-Path -Parent $ffmpegExe
+          Add-Content -Path $env:GITHUB_PATH -Value $ffmpegDir
+          $env:Path = "$ffmpegDir;$env:Path"
 
           $par2Dir = Join-Path $env:RUNNER_TEMP "par2"
           New-Item -ItemType Directory -Force -Path $par2Dir | Out-Null
@@ -211,13 +233,16 @@ jobs:
           $versions = @(
             "7z: $(& $seven | Select-Object -First 2)",
             "par2: $(& $par2.FullName --version 2>&1 | Select-Object -First 2)",
-            "ffmpeg: $(ffmpeg -version | Select-Object -First 1)",
+            "ffmpeg: $(& $ffmpegExe -version | Select-Object -First 1)",
             "par2-source: animetosho/par2cmdline-turbo v1.5.0 win-x64 ($url)"
           )
           $versions | Set-Content -Path tool-versions.txt -Encoding utf8
           Get-Content tool-versions.txt
+          # where.exe is a new process. Get-Command can still remember the miss
+          # from before winget installed ffmpeg.
           foreach ($name in @("7z", "par2", "ffmpeg")) {
-            if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {
+            $resolved = @(where.exe $name 2>$null) | Select-Object -First 1
+            if (-not $resolved) {
               throw "$name is required on PATH"
             }
           }
