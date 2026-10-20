@@ -88,7 +88,10 @@ def test_update_progress_renderer_path(monkeypatch):
             calls["update"] += 1
             assert kwargs["verb"] in {"extracting", "validating"}
             assert "speed:" in kwargs["time_line"]
-            assert "\x1b[" not in kwargs["stats_line"]
+            assert "eta:" in kwargs["time_line"]
+            assert "saved" not in kwargs["time_line"]
+            assert "\x1b[2J" not in kwargs["stats_line"]
+            assert "found" in kwargs["stats_line"]
 
         def stop(self):
             pass

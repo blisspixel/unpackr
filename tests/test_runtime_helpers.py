@@ -2,6 +2,7 @@
 
 import io
 import shutil
+import subprocess
 from argparse import Namespace
 
 import pytest
@@ -222,7 +223,7 @@ def test_resolve_cli_presentation_handles_missing_arg_fields(monkeypatch):
 
 
 def test_configure_windows_console_utf8_uses_reconfigure_branch(monkeypatch):
-    calls = {"stdout": None, "stderr": None, "system": None}
+    calls = {"stdout": None, "stderr": None, "argv": None}
 
     class DummyStream:
         def __init__(self, name):
@@ -232,16 +233,20 @@ def test_configure_windows_console_utf8_uses_reconfigure_branch(monkeypatch):
         def reconfigure(self, encoding=None):
             calls[self.name] = encoding
 
+    def fake_run(argv, **_kwargs):
+        calls["argv"] = list(argv)
+        return subprocess.CompletedProcess(argv, 0)
+
     monkeypatch.setattr(cli_runtime.sys, "platform", "win32")
     monkeypatch.setattr(cli_runtime.sys, "stdout", DummyStream("stdout"))
     monkeypatch.setattr(cli_runtime.sys, "stderr", DummyStream("stderr"))
-    monkeypatch.setattr(cli_runtime.os, "system", lambda cmd: calls.__setitem__("system", cmd) or 0)
+    monkeypatch.setattr(cli_runtime.subprocess, "run", fake_run)
 
     cli_runtime.configure_windows_console_utf8()
 
     assert calls["stdout"] == "utf-8"
     assert calls["stderr"] == "utf-8"
-    assert "chcp 65001" in calls["system"]
+    assert calls["argv"] == ["chcp", "65001"]
 
 
 def test_configure_windows_console_utf8_swallow_errors(monkeypatch):
@@ -267,13 +272,18 @@ def test_configure_windows_console_utf8_codecs_writer_fallback(monkeypatch):
         def __init__(self):
             self.buffer = io.BytesIO()
 
-    calls = {"cmd": None}
+    calls = {"argv": None}
     monkeypatch.setattr(cli_runtime.sys, "platform", "win32")
     monkeypatch.setattr(cli_runtime.sys, "stdout", StreamNoReconfigure())
     monkeypatch.setattr(cli_runtime.sys, "stderr", StreamNoReconfigure())
-    monkeypatch.setattr(cli_runtime.os, "system", lambda cmd: calls.__setitem__("cmd", cmd) or 0)
+
+    def fake_run(argv, **_kwargs):
+        calls["argv"] = list(argv)
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(cli_runtime.subprocess, "run", fake_run)
 
     cli_runtime.configure_windows_console_utf8()
 
-    assert calls["cmd"] is not None
+    assert calls["argv"] == ["chcp", "65001"]
     assert hasattr(cli_runtime.sys.stdout, "write")

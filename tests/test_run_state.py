@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 from unpackr.utils.run_state import RunState, default_state_path
 
 

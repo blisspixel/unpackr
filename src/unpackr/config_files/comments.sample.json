@@ -2,27 +2,27 @@
   "rarities": {
     "common": {
       "weight": 60,
-      "color": "white",
+      "color": "dim",
       "effect": "dim"
     },
     "uncommon": {
       "weight": 25,
-      "color": "green",
+      "color": "dim",
       "effect": "normal"
     },
     "rare": {
       "weight": 10,
-      "color": "cyan",
+      "color": "dim",
       "effect": "bright"
     },
     "epic": {
       "weight": 4,
-      "color": "magenta",
+      "color": "dim",
       "effect": "bright"
     },
     "legendary": {
       "weight": 1,
-      "color": "yellow",
+      "color": "dim",
       "effect": "legendary",
       "animation": "glow"
     }

@@ -14,7 +14,7 @@
     --green: #3dd68c;
     --cyan: #5ec8f0;
     --yellow: #f0c14a;
-    --magenta: #c792ea;
+    --blue: #7aa2f7;
     --white: #eef3f8;
   }
   * { box-sizing: border-box; }
@@ -73,11 +73,11 @@
   .terminal {
     background: var(--bg);
     color: var(--text);
-    font-family: "Cascadia Mono", "Cascadia Code", "Consolas", "Courier New", monospace;
-    font-size: 14.5px;
-    line-height: 1.45;
-    padding: 22px 26px 28px;
-    min-height: 430px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 14px;
+    line-height: 1.35;
+    padding: 22px 26px 26px;
+    min-height: 0;
     white-space: pre;
   }
   .cmd { color: var(--dim); }
@@ -91,11 +91,11 @@
   .dim { color: var(--dim); }
   .stat-label { color: var(--dim); }
   .stat-ok { color: var(--green); }
-  .stat-info { color: var(--cyan); }
+  .stat-info { color: var(--blue); }
   .stat-warn { color: var(--yellow); }
-  .stat-hi { color: var(--magenta); }
-  .target { color: var(--white); }
-  .comment { color: #e6c36a; }
+  .stat-neutral { color: var(--text); }
+  .target { color: var(--dim); }
+  .comment { color: var(--dim); }
   .spinner { color: var(--cyan); }
   .verb { color: #9fd3ff; }
   .caption {
@@ -116,19 +116,19 @@
       </div>
       <div class="terminal"><span class="prompt">PS G:\Media&gt;</span> <span class="cmd">unpackr</span> <span class="flag">--source</span> <span class="path">"G:\Downloads"</span> <span class="flag">--destination</span> <span class="path">"G:\Videos"</span>
 
-<span class="ascii">  _   _ _ __  _ __   __ _  ___| | ___ __
+<span class="ascii">                               _
+  _   _ _ __  _ __   __ _  ___| | ___ __
  | | | | '_ \| '_ \ / _` |/ __| |/ / '__|
  | |_| | | | | |_) | (_| | (__|   &lt;| |
   \__,_|_| |_| .__/ \__,_|\___|_|\_\_|
              |_|</span>
 
-  <span class="bar-bracket">[</span><span class="bar-fill">████████████████████░░░░░░░░░░░░░░░░</span><span class="bar-bracket">]</span> <span class="pct">54%</span> <span class="dim">│</span> <span class="pct">192</span><span class="dim">/354 folders</span>
-  <span class="stat-label">found:</span> <span class="stat-ok">1284</span>  <span class="stat-label">extracted:</span> <span class="stat-info">61</span>  <span class="stat-label">repaired:</span> <span class="stat-warn">9</span>  <span class="stat-label">processed:</span> <span class="stat-ok">190</span>
-  <span class="stat-label">speed:</span> <span class="stat-info">14.2</span> <span class="stat-label">folders/min  time left:</span> <span class="stat-info">0:11:24</span>  <span class="stat-label">saved:</span> <span class="stat-hi">6.1 hrs</span>
-
-  <span class="dim">&gt;</span> <span class="target">[Show.S02E07.1080p] Validate 3/8: Show.S02E07.mkv</span>
-  <span class="dim">│</span> <span class="comment">quietly doing the boring part so you don't have to</span>
-  <span class="spinner">⠹</span> <span class="verb">working</span></div>
+  <span class="spinner">-</span> <span class="verb">validating</span>  <span class="pct">192/354</span>  <span class="pct">54%</span>
+  <span class="bar-bracket">[</span><span class="bar-fill">####################</span><span class="dim">----------------</span><span class="bar-bracket">]</span>
+  <span class="stat-label">found</span> <span class="stat-neutral">1284</span>  <span class="stat-label">moved</span> <span class="stat-ok">190</span>  <span class="stat-label">extracted</span> <span class="stat-info">61</span>  <span class="stat-label">repaired</span> <span class="stat-ok">9</span>  <span class="stat-label">cleaned</span> <span class="stat-neutral">40</span>
+  <span class="stat-label">speed:</span> <span class="stat-neutral">14.2</span> <span class="stat-label">folders/min | eta:</span> <span class="stat-neutral">0:11:24</span>
+  <span class="comment">quietly doing the boring part so you don't have to</span>
+  <span class="target">[Show.S02E07.1080p] Validate 3/8: Show.S02E07.mkv</span></div>
     </div>
     <div class="caption">Example live dashboard while Unpackr validates, extracts, and cleans a downloads folder</div>
   </div>

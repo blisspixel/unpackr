@@ -17,13 +17,14 @@ With the default `delete_mode: "quarantine"`, nothing a live run removes is dest
 ## Operating Guidance
 
 - Point Unpackr at a downloads folder. A manual run means "clean now".
-- `--dry-run` shows every decision without changing anything; `unpackr restore latest` undoes the last run.
+- `--dry-run` shows every decision without changing anything. Undo the last run with `unpackr restore latest --source <dir>`.
 
 ## Junk, Bait And Unfinished Downloads
 
 Usenet and torrent releases are mostly not the video you wanted. Each top-level release folder is screened before anything else happens:
 
-- **Unfinished downloads.** Files ending in `.!qB`, `.!ut`, `.part`, `.crdownload`, `.partial`, `.download` or `.aria2` (`incomplete_download_markers`) are junk: they are removed (`download_incomplete`) and the finished files in the same release are processed as usual. A video still being written fails validation and is removed as damaged. Run Unpackr when your downloads are done.
+- **Unfinished downloads.** Files ending in `.!qB`, `.!ut`, `.part`, `.crdownload`, `.partial`, `.download` or `.aria2` (`incomplete_download_markers`) are junk: they are removed (`download_incomplete`) and the finished files in the same release are processed as usual.
+- **Still being written.** A final-name video whose size or modification time changes during the check, or that a process still has open, is kept (`video_still_writing`). The folder stays. A live run exits `3`. A dry run names the same reason and exits `0`. The check is point-in-time: a writer that stays quiet and does not show up in the open-file list can still be missed, and the file is checked again immediately before it is moved.
 - **Disc structures.** A release with `VIDEO_TS` or `BDMV` is kept whole (`disc_structure_kept`).
 - **Bait.** Executables, scripts, shortcuts and installers (`.exe`, `.lnk`, `.scr`, `.bat`, `.cmd`, `.js`, `.vbs`, `.hta`, `.ps1`, `.msi`, `.jar` and more, see `dangerous_extensions`), names that disguise their type (`Movie.mkv.exe`, Unicode direction controls) and subtitles that are oversized or binary are removed (to quarantine by default) and the **whole release fails**: no video from it is moved, the decoy stays for review, and the run exits `3` with `folder_failed_security`. Archives whose listing contains such files are never extracted (`archive_dangerous_member`). Two exceptions are removed and flagged without failing the release: `rename.bat`/`rename.sh` next to a real video, and RARBG's `RARBG_DO_NOT_MIRROR.exe` placeholder. Unpackr never runs or opens any of these files.
 - **Junk by name.** Tracker spam (`RARBG.txt`, `WWW.*.COM*`), OS cruft (`Thumbs.db`, `.DS_Store`, `desktop.ini`, `._*`, `@eaDir`), torrent padding files (verified all zeros) and empty files are removable whatever their extension (`junk_name_patterns`).
@@ -71,11 +72,24 @@ Details and resume semantics: [PRESERVATION.md](PRESERVATION.md).
 - Symlinks / junctions / reparse points are refused for destructive cleanup
 
 ### Fail-Closed Validation
-- When uncertain, reject rather than proceed
-- Archive volumes are grouped into sets; a set with a missing volume is not extracted, and its remaining volumes and folder are kept
-- An archive 7-Zip cannot list is not extracted and is kept (reported as `archive_unlistable`, not as a security block)
-- Only a set that extracted successfully has its volumes removed
+- When uncertain about a file that might be good, keep it and say why
+- Archive volumes are grouped into sets. A set with a missing volume, a set 7-Zip cannot list, a password-protected set, or a set that fails its CRC is removed and listed under DAMAGED, RE-DOWNLOAD (`archive_volume_missing`, `archive_unlistable`, `archive_password`, `archive_corrupt`). The run still exits `0`
+- Machine problems are different: disk full, an extraction timeout, or 7-Zip missing keeps the set and the run exits `3`
+- Only a set that extracted successfully has its volumes removed as a normal cleanup
 - Video validation requires ffmpeg for full reliability
+- A recovery record is written before any removal or move. If that record cannot be prepared, the original stays. If the move finishes and the completion record cannot be written, the prepared record remains and the run exits `3` (`recovery_unconfirmed`)
+
+## Decision matrix
+
+A manual run means "clean now". Human text and `--json` use the same reason. Dry-run wording uses the removal verb (Quarantine, Trash, or Delete), never "Skip" for something the live run removes.
+
+| Reason | Action | Live exit |
+|--------|--------|-----------|
+| `download_incomplete` | removed | 0 |
+| `video_still_writing` | kept | 3 |
+| `archive_volume_missing` | removed | 0 |
+| `archive_password` | removed | 0 |
+| `video_ok` | moved | 0 |
 
 ### Race Condition Prevention
 - Folder state re-verified immediately before deletion

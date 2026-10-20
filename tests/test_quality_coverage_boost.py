@@ -54,7 +54,7 @@ def test_doctor_recommended_actions_and_to_dict():
     doctor.passed = ["Config"]
 
     actions = doctor._build_recommended_actions()
-    assert any("Python 3.12+" in a for a in actions)
+    assert any("Python 3.11+" in a for a in actions)
     assert any("7-Zip" in a for a in actions)
     assert any("uv tool install ." in a for a in actions)
     assert any("ffmpeg" in a for a in actions)

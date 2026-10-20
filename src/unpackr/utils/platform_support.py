@@ -16,7 +16,7 @@ import subprocess
 import sys
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 
 def is_windows() -> bool:
@@ -336,7 +336,10 @@ def build_powershell_delete_command(folder: Path) -> list[str]:
     Build a PowerShell command that treats the folder path as data rather
     than command text. Windows-only force-delete helper.
     """
-    folder_literal = str(folder).replace("'", "''")
+    folder_text = str(folder)
+    if "\n" in folder_text or "\r" in folder_text or "\x00" in folder_text:
+        raise ValueError("refusing a force-delete path that contains a newline or NUL")
+    folder_literal = folder_text.replace("'", "''")
     script = (
         f"$target = '{folder_literal}'; "
         "$item = Get-Item -LiteralPath $target -Force -ErrorAction Stop; "
@@ -352,6 +355,9 @@ def build_powershell_delete_command(folder: Path) -> list[str]:
 
 def _force_delete_windows(folder: Path) -> bool:
     try:
+        if any(char in str(folder) for char in ("\n", "\r", "\x00")):
+            logging.error(f"Refusing force-delete of a path with a newline or NUL: {folder!r}")
+            return False
         subprocess.run(
             build_powershell_delete_command(folder),
             capture_output=True,
@@ -377,7 +383,11 @@ def _force_delete_posix(folder: Path) -> bool:
             pass
 
     try:
-        shutil.rmtree(folder, onexc=_onexc)
+        remover: Any = shutil.rmtree
+        if sys.version_info >= (3, 12):
+            remover(folder, onexc=_onexc)
+        else:
+            remover(folder, onerror=_onexc)
     except OSError as exc:
         logging.error(f"POSIX force delete failed for {folder}: {exc}")
         return False

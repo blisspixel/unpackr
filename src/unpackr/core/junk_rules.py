@@ -18,7 +18,7 @@ import re
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypeAlias, cast
 
 # Executables, scripts, shortcuts and installers that a video release never needs.
 DEFAULT_DANGEROUS_EXTENSIONS = (
@@ -57,7 +57,7 @@ MEDIA_EXTENSIONS = (".mkv", ".mp4", ".avi", ".mov", ".wmv", ".m4v", ".mpg", ".mp
 
 
 # (reason_code, human-readable detail) for a video picked for removal.
-type SampleDecision = tuple[str, str]
+SampleDecision: TypeAlias = tuple[str, str]
 
 
 @dataclass(frozen=True)

@@ -14,13 +14,23 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
+from typing import Any, cast
 from urllib.parse import quote
 
 
 class TrashError(OSError):
     """Raised when a path could not be moved to the trash."""
+
+
+def _posix_uid() -> int:
+    """User id for per-volume trash directories. Windows never reaches this."""
+    getuid = cast(Callable[[], int] | None, getattr(os, "getuid", None))
+    if getuid is None:
+        raise TrashError("a POSIX user id is required for this trash directory")
+    return getuid()
 
 
 def _mount_point(path: Path) -> Path:
@@ -52,7 +62,7 @@ def _freedesktop_trash(path: Path) -> Path:
         info_path_value = str(path)
     else:
         topdir = _mount_point(path.parent)
-        trash_root = topdir / f".Trash-{os.getuid()}"
+        trash_root = topdir / f".Trash-{_posix_uid()}"
         trash_root.mkdir(exist_ok=True, mode=0o700)
         info_path_value = str(path.relative_to(topdir))
     files_dir = trash_root / "files"
@@ -83,7 +93,7 @@ def _macos_trash(path: Path) -> Path:
     if home_trash.exists() and os.stat(path, follow_symlinks=False).st_dev == home_trash.stat().st_dev:
         trash_dir = home_trash
     else:
-        trash_dir = _mount_point(path.parent) / ".Trashes" / str(os.getuid())
+        trash_dir = _mount_point(path.parent) / ".Trashes" / str(_posix_uid())
         trash_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     target = trash_dir / path.name
     counter = 2
@@ -122,7 +132,10 @@ def _windows_recycle(path: Path) -> Path:
         hNameMappings=None,
         lpszProgressTitle=None,
     )
-    result = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(operation))  # type: ignore[attr-defined]
+    shell32 = cast(Any, getattr(getattr(ctypes, "windll", None), "shell32", None))
+    if shell32 is None:
+        raise TrashError("Recycle Bin is only available on Windows")
+    result = shell32.SHFileOperationW(ctypes.byref(operation))
     if result != 0 or operation.fAnyOperationsAborted or path.exists():
         raise TrashError(f"Recycle Bin refused {path} (code {result})")
     return Path("$Recycle.Bin") / path.name

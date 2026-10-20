@@ -79,7 +79,7 @@ The command exits with:
     "7-Zip not found - required for archive extraction"
   ],
   "recommended_actions": [
-    "Install Python 3.12+ and run doctor again.",
+    "Install Python 3.11+ and run doctor again.",
     "Install 7-Zip and ensure `7z` is on PATH (or set tool path in config).",
     "Re-run `unpackr-doctor` and confirm zero issues before live run."
   ]

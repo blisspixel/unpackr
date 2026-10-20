@@ -9,14 +9,14 @@ Contracts: docs/PRESERVATION.md
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 import pytest
 
+from unpackr import UnpackrApp
 from unpackr.core.config import Config
 from unpackr.core.file_handler import RELEASE_IMAGE_COLLECTION_FILES, FileHandler
-from unpackr import UnpackrApp
 
 
 @pytest.fixture

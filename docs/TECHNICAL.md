@@ -94,7 +94,7 @@ Why:
 - Production modules use package imports directly rather than runtime `sys.path` mutation.
 - `src/unpackr/cli.py` keeps orchestration responsibilities; prompt/presentation helper functions were extracted into `src/unpackr/utils/cli_prompts.py`.
 - The full regression suite passes above the enforced `80%` coverage gate.
-- CI matrix: Windows/Linux/macOS x Python `3.12`–`3.15`, with installed entry-point smoke checks on every lane.
+- CI matrix: Windows/Linux/macOS x Python `3.11`–`3.15`, with installed entry-point smoke checks on every lane.
 
 ## Developer Commands
 

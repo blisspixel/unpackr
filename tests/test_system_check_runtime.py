@@ -1,4 +1,3 @@
-import types
 
 from unpackr.utils.system_check import SystemCheck
 

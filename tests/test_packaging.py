@@ -31,12 +31,12 @@ def test_wheel_exposes_only_the_unpackr_package(tmp_path):
     assert not any(name.endswith("/comments.json") or name == "comments.json" for name in names)
     forbidden = ("core/", "utils/", "doctor.py", "vhealth.py", "unpackr.py", "version.py")
     assert not any(name.startswith(forbidden) for name in names)
-    assert "Version: 1.6.2" in metadata
-    assert "Requires-Python: >=3.12" in metadata
+    assert "Version: 1.7.0" in metadata
+    assert "Requires-Python: >=3.11" in metadata
     assert "https://github.com/blisspixel/unpackr" in metadata
     assert "Apache 2.0 with Commons Clause" in metadata
     assert "Programming Language :: Python :: 3.15" in metadata
-    assert "Programming Language :: Python :: 3.11" not in metadata
+    assert "Programming Language :: Python :: 3.11" in metadata
     assert "Operating System :: POSIX :: Linux" in metadata
     assert "Operating System :: MacOS" in metadata
     assert "setuptools>=68" in metadata

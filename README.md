@@ -6,7 +6,7 @@ Commercial/enterprise products require separate license from Nick Seal.
 
 # Unpackr
 
-**Version 1.6.2** · October 2026
+**Version 1.7.0** · October 2026
 
 Unpackr turns a messy downloads folder (Usenet, torrents, whatever landed there) into a clean one. It repairs and unpacks archives, checks every video, moves the good ones to your library, keeps the music, photos and documents it finds, and **deletes everything else**. Deleting the junk is the point. It runs on **Windows, Linux, and macOS**.
 
@@ -21,12 +21,12 @@ Point it at a downloads folder, not at folders you curate by hand, and run it yo
 - **Keeps** videos that play (moved to the destination, renamed sensibly), music, photo and document collections, and anything it does not recognise.
 - **Repairs and unpacks** RAR, 7z and zip sets, using PAR2 to fix damaged or obfuscated (renamed) volumes.
 - **Deletes** samples, previews, trailers, damaged or truncated videos, unfinished downloads, archive volumes after a clean extraction, `.par2`/`.nfo`/`.sfv` and tracker spam, bait executables, and the folders left empty.
-- **Undo is one command away**: removals go to a quarantine folder for 14 days by default (`unpackr restore latest`). Use `--dry-run` to see the plan first.
+- **Undo is one command away**: removals go to a quarantine folder for 14 days by default (`unpackr restore latest --source "~/Downloads"`). Use `--dry-run` to see the plan first.
 
 ## Requirements
 
 - **OS:** Windows, Linux, or macOS
-- Python `3.12+` (tested on `3.12` through `3.15`)
+- Python `3.11+` (tested on `3.11` through `3.15`)
 - Required: [7-Zip](https://www.7-zip.org/) 22.0+ (`7zz` or `7z` on PATH; the old `p7zip` 16.02 is too old)
 - Recommended: [par2cmdline](https://github.com/Parchive/par2cmdline), [ffmpeg](https://ffmpeg.org/)
 

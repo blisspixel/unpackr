@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -13,7 +14,10 @@ from unpackr.utils.platform_support import resolve_first_available_tool
 def _require_tool(tool_key: str) -> str:
     path = resolve_first_available_tool(tool_key)
     if not path:
-        pytest.skip(f"{tool_key} not available on PATH for this runner")
+        message = f"{tool_key} not available on PATH for this runner"
+        if os.environ.get("UNPACKR_REQUIRE_REAL_TOOLS") == "1":
+            pytest.fail(message)
+        pytest.skip(message)
     return path
 
 

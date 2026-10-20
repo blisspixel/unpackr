@@ -64,7 +64,7 @@ def test_run_dry_run_loose_and_junk_paths(tmp_path):
         cancellation_requested=False,
         dry_run=True,
         dry_run_plan=types.SimpleNamespace(
-            print_summary=lambda: None,
+            print_summary=lambda *_a, **_k: None,
             add_video_move=lambda *_a, **_k: None,
             add_video_delete=lambda *_a, **_k: None,
             add_folder_delete=lambda *_a, **_k: None,

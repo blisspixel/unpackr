@@ -17,7 +17,7 @@ Stable contracts for CI and automation. Prefer machine JSON when available.
 | `0` | Successful processing; dry-run finished; user cancelled countdown; process-conflict abort before work |
 | `1` | Invalid/missing config; path validation failure; logging setup failure; missing required tools; scan/preflight failure; initialization failure; force-cancel after first Ctrl+C |
 | `2` | Invalid CLI arguments (argparse) |
-| `3` | Live run completed, but some items need attention: an archive set was kept because of the machine (disk full, timeout, 7-Zip missing or failing), an archive was blocked for unsafe paths; a release contained bait; or par2 could not judge a release with unrecognized files (possibly renamed volumes). Details are in `errors`. Damaged downloads that were removed are listed in `damaged` and do not change the exit code. |
+| `3` | Live run completed, but some items need attention: an archive set was kept because of the machine (disk full, timeout, 7-Zip missing or failing), an archive was blocked for unsafe paths; a release contained bait; a video was still being written (`video_still_writing`); a move finished before its recovery record did (`recovery_unconfirmed`); or par2 could not judge a release with unrecognized files (possibly renamed volumes). Details are in `errors`. Damaged downloads that were removed are listed in `damaged` and do not change the exit code. A dry run that predicts `video_still_writing` still exits `0`. |
 
 ### Structured run summary (`--json`)
 
@@ -53,6 +53,8 @@ Entries in `errors` and `warnings` start with a reason code in brackets, then `f
 | `folder_failed_security` | error | Release contained bait; nothing was moved from it |
 | `security_rename_script`, `security_known_marker` | warning | Removed, but the release continues |
 | `download_incomplete` | warning | Unfinished download files (`.part`, `.!qB` ...) removed as junk |
+| `video_still_writing` | error | Final-name video kept because it changed during the check or a process still has it open. Live exit `3`. Dry run exits `0` |
+| `recovery_unconfirmed` | error | A move finished before its completion record was written. The prepared record can still be restored. Live exit `3` |
 | `par2_rename_pending` | warning | Dry run only: unrecognised files next to PAR2 may be renamed volumes; decided during the live run |
 | `disc_structure_kept` | warning | `VIDEO_TS`/`BDMV` release kept whole |
 | `run_locked` | error | Another run holds `<source>/.unpackr-lock` |

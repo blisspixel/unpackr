@@ -1,26 +1,24 @@
 from unpackr.utils import cli_render
 
 
-def test_create_renderer_prefers_plain_in_ci(monkeypatch):
+def test_create_renderer_prefers_none_in_ci(monkeypatch):
     monkeypatch.setenv("CI", "true")
-    renderer = cli_render.create_renderer()
-    assert renderer is None
+    assert cli_render.create_renderer() is None
 
 
 def test_create_renderer_respects_no_anim(monkeypatch):
     monkeypatch.setenv("UNPACKR_NO_ANIM", "1")
-    renderer = cli_render.create_renderer()
-    assert renderer is None
+    assert cli_render.create_renderer() is None
 
 
 def test_create_renderer_respects_no_anim_truthy_variants(monkeypatch):
     monkeypatch.setenv("UNPACKR_NO_ANIM", "true")
-    renderer = cli_render.create_renderer()
-    assert renderer is None
+    assert cli_render.create_renderer() is None
 
 
-def test_plain_renderer_update_and_stop():
-    renderer = cli_render.PlainRenderer()
+def test_dashboard_renderer_update_and_stop(capsys, monkeypatch):
+    monkeypatch.setattr(cli_render, "terminal_width", lambda: 60)
+    renderer = cli_render.DashboardRenderer()
     renderer.start(10)
     renderer.update(
         current=1,
@@ -28,11 +26,15 @@ def test_plain_renderer_update_and_stop():
         action="Scanning folder: demo",
         verb="scanning",
         target="demo",
-        stats_line="stats",
-        time_line="time",
+        stats_line="found 1",
+        time_line="speed: ---",
         comment_line="comment",
     )
     renderer.stop()
+    out = capsys.readouterr().out
+    assert "\x1b[2J" not in out
+    assert "scanning" in out
+    assert "demo" in out
 
 
 def test_create_renderer_off_mode():
@@ -46,11 +48,10 @@ def test_create_renderer_light_non_tty_returns_none(monkeypatch):
 
     monkeypatch.setattr(cli_render.sys, "stdout", DummyStdout())
     monkeypatch.delenv("CI", raising=False)
-    renderer = cli_render.create_renderer(mode="light")
-    assert renderer is None
+    assert cli_render.create_renderer(mode="light") is None
 
 
-def test_create_renderer_rich_failure_falls_back_plain(monkeypatch):
+def test_create_renderer_no_color_returns_none(monkeypatch):
     class DummyStdout:
         def isatty(self):
             return True
@@ -58,22 +59,18 @@ def test_create_renderer_rich_failure_falls_back_plain(monkeypatch):
     monkeypatch.setattr(cli_render.sys, "stdout", DummyStdout())
     monkeypatch.delenv("CI", raising=False)
     monkeypatch.delenv("UNPACKR_NO_ANIM", raising=False)
-    monkeypatch.setattr(cli_render, "RichRenderer", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("boom")))
-    renderer = cli_render.create_renderer(mode="full")
-    assert isinstance(renderer, cli_render.PlainRenderer)
+    assert cli_render.create_renderer(mode="full", no_color=True) is None
 
 
-def test_create_renderer_ci_zero_does_not_force_disable(monkeypatch):
+def test_create_renderer_tty_returns_dashboard(monkeypatch):
     class DummyStdout:
         def isatty(self):
             return True
 
-    class DummyRenderer:
-        pass
-
     monkeypatch.setattr(cli_render.sys, "stdout", DummyStdout())
     monkeypatch.setenv("CI", "0")
     monkeypatch.delenv("UNPACKR_NO_ANIM", raising=False)
-    monkeypatch.setattr(cli_render, "RichRenderer", lambda **_kwargs: DummyRenderer())
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("TERM", "xterm-256color")
     renderer = cli_render.create_renderer(mode="light")
-    assert isinstance(renderer, DummyRenderer)
+    assert isinstance(renderer, cli_render.DashboardRenderer)

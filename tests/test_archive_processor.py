@@ -10,18 +10,19 @@ Tests cover:
 - Cleanup operations
 """
 
-import pytest
-import tempfile
 import shutil
+import sys
+import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
-import sys
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from unpackr.core.archive_processor import ArchiveProcessor
-from unpackr.core.remover import Remover
 from unpackr.core.config import Config
+from unpackr.core.remover import Remover
 
 
 class TestArchiveDetection:
@@ -62,26 +63,24 @@ class TestArchiveDetection:
         (temp_dir / "archive.part003.rar").write_text("test")
 
         # Only part001 should be processed
-        with patch.object(processor, "_validate_archive_paths", return_value=True):
-            with patch(
-                "unpackr.core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, "", "", 0)
-            ) as mock_run:
-                processor.process_rar_files(temp_dir)
-                # Should only call 7z once (for part001)
-                assert mock_run.call_count == 1
+        with patch.object(processor, "_validate_archive_paths", return_value=True), patch(
+            "unpackr.core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, "", "", 0)
+        ) as mock_run:
+            processor.process_rar_files(temp_dir)
+            # Should only call 7z once (for part001)
+            assert mock_run.call_count == 1
 
     def test_finds_7z_files(self, processor, temp_dir):
         """Test detection of 7z archive files."""
         (temp_dir / "archive.7z").write_text("test")
         (temp_dir / "archive2.7z.001").write_text("test")
 
-        with patch.object(processor, "_validate_archive_paths", return_value=True):
-            with patch(
-                "unpackr.core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, "", "", 0)
-            ) as mock_run:
-                processor.process_rar_files(temp_dir)
-                # Should process both 7z files
-                assert mock_run.call_count == 2
+        with patch.object(processor, "_validate_archive_paths", return_value=True), patch(
+            "unpackr.core.archive_processor.SubprocessSafety.run_with_timeout", return_value=(True, "", "", 0)
+        ) as mock_run:
+            processor.process_rar_files(temp_dir)
+            # Should process both 7z files
+            assert mock_run.call_count == 2
 
     def test_warns_incomplete_7z_archive(self, processor, temp_dir):
         """Test warning for incomplete 7z archives (e.g., .7z.100 without .7z.001)."""
@@ -581,9 +580,8 @@ class TestArchivePathValidation:
         with patch(
             "unpackr.core.archive_processor.SubprocessSafety.run_with_line_handler",
             side_effect=self._fake_listing(stdout),
-        ):
-            with patch.object(Path, "resolve", side_effect=RuntimeError("boom")):
-                assert processor._validate_archive_paths(archive, temp_dir, ["7z"]) is False
+        ), patch.object(Path, "resolve", side_effect=RuntimeError("boom")):
+            assert processor._validate_archive_paths(archive, temp_dir, ["7z"]) is False
 
     def test_validate_archive_paths_streams_full_listing_no_truncation_bypass(self, processor, temp_dir):
         """
