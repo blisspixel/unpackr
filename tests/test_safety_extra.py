@@ -17,9 +17,8 @@ from unpackr.utils.safety import (
 
 
 def test_timeout_guard_and_decorator_paths():
-    with pytest.raises(TimeoutException):
-        with TimeoutGuard(10, "tiny-op") as guard:
-            guard._timeout_handler()
+    with pytest.raises(TimeoutException), TimeoutGuard(10, "tiny-op") as guard:
+        guard._timeout_handler()
 
     @timeout_decorator(1, "decorated")
     def ok():

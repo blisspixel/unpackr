@@ -4,6 +4,16 @@ Release dates are included where recorded.
 
 ## Unreleased
 
+## v1.7.0 (2026-10-20)
+
+- Python 3.11 through 3.15. 3.10 is retired and is not shimmed. **Migration:** a 3.11 interpreter is enough; 3.12 is no longer required.
+- A video that is still being written is kept (`video_still_writing`) and a live run exits 3. Marker files (`.part`, `.!qB`, ...) are still removed.
+- Recovery records are written before a file is moved or removed. A failed prepare leaves the original in place. A move that finishes before its completion record sets `recovery_unconfirmed` and can still be restored from the prepared record.
+- The progress view is a six-line dashboard. There is no Rich dependency, no screen clear, and no estimated time saved. Comment lines are dim. The end of a run is a three-line receipt with measured bytes and a restore command that includes `--source`.
+- Removal wording follows `delete_mode`: Quarantine, Trash, or Delete. Damaged archives are listed under DAMAGED, RE-DOWNLOAD.
+- Windows CI installs 7-Zip, PAR2 (animetosho par2cmdline-turbo 1.5.0) and ffmpeg and fails if those tests skip.
+- `chcp` is invoked as a list, and a force-delete path that contains a newline or NUL is refused. Quarantine and journal writes refuse a symlink that would leave the source tree.
+
 ## v1.6.2 (2026-10-13)
 
 - Install with `uv tool install .` or `pipx install .`. A system `python -m pip install .` is refused on externally managed Pythons (Arch, Debian, Ubuntu). Use `python -m pip install .` only inside a virtualenv.

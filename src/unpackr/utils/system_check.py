@@ -11,7 +11,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, TypedDict, cast
+from typing import TYPE_CHECKING, ClassVar, TypeAlias, TypedDict, cast
 
 from colorama import Fore, Style
 
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from unpackr.core.config import ConfigSource
 
 
-type Version = tuple[int, ...]
+Version: TypeAlias = tuple[int, ...]
 
 
 class ToolInfo(TypedDict):

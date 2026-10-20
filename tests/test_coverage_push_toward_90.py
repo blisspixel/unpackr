@@ -1,18 +1,18 @@
+import sys
 import threading
 from collections import deque
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import psutil
 import pytest
+from conftest import bind_app_helpers
 
 import unpackr.cli as unpackr
 from unpackr.core.config import Config
 from unpackr.core.file_handler import FileHandler
 from unpackr.utils.defensive import ValidationError
-from conftest import bind_app_helpers
 
 
 @pytest.fixture

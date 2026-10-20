@@ -6,6 +6,7 @@ Run this to verify everything is set up correctly before processing.
 import argparse
 import io
 import json
+import logging
 import re
 import subprocess
 import sys
@@ -14,7 +15,7 @@ from collections.abc import Sequence
 from contextlib import redirect_stdout
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import ClassVar, Literal, TypedDict, cast
+from typing import ClassVar, Literal, TypeAlias, TypedDict, cast
 
 from colorama import Fore, Style, init
 
@@ -23,15 +24,29 @@ from unpackr.utils.cli_runtime import existing_file_path
 from unpackr.utils.filesystem_policy import probe_filesystem
 from unpackr.utils.platform_support import (
     detect_running_helpers,
+    example_destination_path,
+    example_source_path,
     merge_tool_candidates,
     package_manager_install_hint,
     platform_label,
     tool_missing_hint,
 )
+from unpackr.utils.presentation import argument_parser_kwargs, ascii_marks, paint
+from unpackr.version import MIN_PYTHON
 
 init(autoreset=True)
 
-type Version = tuple[int, ...]
+Version: TypeAlias = tuple[int, ...]
+
+
+def _mark(kind: str, text: str) -> str:
+    """ok / warn / fail. Words, with no escapes, when the terminal cannot show glyphs."""
+    if ascii_marks():
+        label = {"ok": "ok", "warn": "warn", "fail": "fail"}.get(kind, "warn")
+        return f"{label} {text}"
+    role = {"ok": "success", "warn": "warning", "fail": "error"}.get(kind, "warning")
+    glyph = {"ok": "✓", "warn": "⚠", "fail": "✗"}.get(kind, "⚠")
+    return paint(role, f"{glyph} {text}")
 
 
 class DoctorCounts(TypedDict):
@@ -74,7 +89,7 @@ class UnpackrDoctor:
         return self.config_path or bundled_config_dir() / "config.json"
 
     def _step(self, number: int) -> str:
-        total = 11 + (1 if self.source is not None else 0)
+        total = 10 + (1 if self.source is not None else 0)
         return f"{Fore.YELLOW}[{number}/{total}]{Style.RESET_ALL}"
 
     def print_header(self) -> None:
@@ -91,7 +106,7 @@ class UnpackrDoctor:
         warning_text = " ".join(self.warnings).lower()
 
         if "python version too old" in issue_text:
-            actions.append("Install Python 3.12+ and run doctor again.")
+            actions.append(f"Install Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]}+ and run doctor again.")
         if "7-zip not found" in issue_text:
             actions.append(tool_missing_hint("7z", include_recipe=False))
         if "7-zip version too old" in issue_text:
@@ -122,19 +137,24 @@ class UnpackrDoctor:
         ):
             actions.append(f"{platform_label()} package hint: {package_manager_install_hint()}")
 
-        # Always include a deterministic final step
-        actions.append("Re-run `unpackr-doctor` and confirm zero issues before live run.")
+        if not self.issues:
+            source = example_source_path()
+            destination = example_destination_path()
+            actions.append(f"Preview a run: unpackr --dry-run --source {source} --destination {destination}")
+        else:
+            actions.append("Re-run `unpackr-doctor` and confirm zero issues before live run.")
         return actions
 
     def check_python_version(self) -> None:
         """Check Python version."""
         print(f"{self._step(1)} Checking Python version...", end=" ")
         version = sys.version_info
-        if (version.major, version.minor) >= (3, 12):
-            print(f"{Fore.GREEN}✓ Python {version.major}.{version.minor}.{version.micro}{Style.RESET_ALL}")
+        need = f"{MIN_PYTHON[0]}.{MIN_PYTHON[1]}+"
+        if (version.major, version.minor) >= MIN_PYTHON:
+            print(_mark("ok", f"Python {version.major}.{version.minor}.{version.micro}"))
             self.passed.append("Python version")
         else:
-            print(f"{Fore.RED}✗ Python {version.major}.{version.minor} (need 3.12+){Style.RESET_ALL}")
+            print(_mark("fail", f"Python {version.major}.{version.minor} (need {need})"))
             self.issues.append("Python version too old")
 
     def check_dependencies(self) -> None:
@@ -150,10 +170,10 @@ class UnpackrDoctor:
                 missing.append(package)
 
         if not missing:
-            print(f"{Fore.GREEN}✓ All packages installed{Style.RESET_ALL}")
+            print(_mark("ok", "All packages installed"))
             self.passed.append("Python dependencies")
         else:
-            print(f"{Fore.RED}✗ Missing: {', '.join(missing)}{Style.RESET_ALL}")
+            print(_mark("fail", f"Missing: {', '.join(missing)}"))
             self.issues.append(f"Missing packages: {', '.join(missing)}")
             print(f"  {Style.DIM}Fix: python -m pip install {' '.join(missing)}{Style.RESET_ALL}")
 
@@ -163,7 +183,7 @@ class UnpackrDoctor:
         config_path = self._config_file()
 
         if not config_path.exists():
-            print(f"{Fore.RED}✗ Config file not found{Style.RESET_ALL}")
+            print(_mark("fail", "Config file not found"))
             self.issues.append("Missing config.json")
             return
 
@@ -172,7 +192,7 @@ class UnpackrDoctor:
                 config = json.load(f)
 
             if not isinstance(config, dict):
-                print(f"{Fore.RED}✗ Config must contain a JSON object{Style.RESET_ALL}")
+                print(_mark("fail", "Config must contain a JSON object"))
                 self.issues.append("Config file must contain a JSON object")
                 return
 
@@ -181,17 +201,17 @@ class UnpackrDoctor:
             missing_keys = [k for k in required_keys if k not in config]
 
             if missing_keys:
-                print(f"{Fore.YELLOW}⚠ Missing keys: {', '.join(missing_keys)}{Style.RESET_ALL}")
+                print(_mark("warn", f"Missing keys: {', '.join(missing_keys)}"))
                 self.warnings.append(f"Config missing keys: {', '.join(missing_keys)}")
             else:
-                print(f"{Fore.GREEN}✓ Valid configuration{Style.RESET_ALL}")
+                print(_mark("ok", "Valid configuration"))
                 self.passed.append("Configuration file")
 
         except json.JSONDecodeError as e:
-            print(f"{Fore.RED}✗ Invalid JSON: {e}{Style.RESET_ALL}")
+            print(_mark("fail", f"Invalid JSON: {e}"))
             self.issues.append("Config file has invalid JSON")
         except OSError as e:
-            print(f"{Fore.RED}✗ Cannot read config: {e}{Style.RESET_ALL}")
+            print(_mark("fail", f"Cannot read config: {e}"))
             self.issues.append("Config file cannot be read")
 
     def check_tool(self, tool_name: str, commands: Sequence[str], critical: bool = True) -> tuple[bool, str | None]:
@@ -307,11 +327,11 @@ class UnpackrDoctor:
 
         found, path = self.check_tool("7z", commands, critical=True)
         if found and path:
-            print(f"{Fore.GREEN}✓ Found at: {path}{Style.RESET_ALL}")
+            print(_mark("ok", f"Found at: {path}"))
             self.passed.append("7-Zip")
             self._check_tool_min_version("7z", "7-Zip", path, critical=True)
         else:
-            print(f"{Fore.RED}✗ Not found (CRITICAL){Style.RESET_ALL}")
+            print(_mark("fail", "Not found (CRITICAL)"))
             self.issues.append("7-Zip not found - required for archive extraction")
             print(f"    {Style.DIM}{tool_missing_hint('7z')}{Style.RESET_ALL}")
 
@@ -321,13 +341,16 @@ class UnpackrDoctor:
 
         found, path = self.check_tool("par2", commands, critical=True)
         if found and path:
-            print(f"{Fore.GREEN}✓ Found at: {path}{Style.RESET_ALL}")
+            print(_mark("ok", f"Found at: {path}"))
             self.passed.append("par2cmdline")
             self._check_tool_min_version("par2", "par2cmdline", path, critical=False)
         else:
             print(
-                f"{Fore.YELLOW}⚠ Not found (recommended - damaged or renamed volumes cannot be repaired; "
-                f"archives still extract and 7-Zip checks every file's CRC){Style.RESET_ALL}"
+                _mark(
+                    "warn",
+                    "Not found (recommended - damaged or renamed volumes cannot be repaired; "
+                    "archives still extract and 7-Zip checks every file's CRC)",
+                )
             )
             self.warnings.append(
                 "par2cmdline not found - damaged or renamed volumes cannot be repaired (archives still extract)"
@@ -340,11 +363,11 @@ class UnpackrDoctor:
 
         found, path = self.check_tool("ffmpeg", commands, critical=False)
         if found and path:
-            print(f"{Fore.GREEN}✓ Found at: {path}{Style.RESET_ALL}")
+            print(_mark("ok", f"Found at: {path}"))
             self.passed.append("ffmpeg")
             self._check_tool_min_version("ffmpeg", "ffmpeg", path, critical=False)
         else:
-            print(f"{Fore.YELLOW}⚠ Not found (optional - video validation disabled){Style.RESET_ALL}")
+            print(_mark("warn", "Not found (optional - video validation disabled)"))
             self.warnings.append("ffmpeg not found - video validation will be skipped")
             print(f"    {Style.DIM}{tool_missing_hint('ffmpeg')}{Style.RESET_ALL}")
 
@@ -355,10 +378,10 @@ class UnpackrDoctor:
         try:
             with tempfile.NamedTemporaryFile(prefix=".unpackr-doctor-", dir=Path.cwd()):
                 pass
-            print(f"{Fore.GREEN}✓ Can write to current directory{Style.RESET_ALL}")
+            print(_mark("ok", "Can write to current directory"))
             self.passed.append("Write permissions")
         except Exception as e:
-            print(f"{Fore.RED}✗ Cannot write: {e}{Style.RESET_ALL}")
+            print(_mark("fail", f"Cannot write: {e}"))
             self.issues.append("No write permissions in current directory")
 
     def check_filesystem_quirks(self) -> None:
@@ -371,7 +394,7 @@ class UnpackrDoctor:
                 f"symlinks={probe.supports_symlinks}",
                 f"non_ascii={probe.supports_non_ascii_names}",
             ]
-            print(f"{Fore.GREEN}✓ {', '.join(bits)}{Style.RESET_ALL}")
+            print(_mark("ok", f"{', '.join(bits)}"))
             self.passed.append("Filesystem probe")
             if not probe.case_sensitive:
                 self.warnings.append(
@@ -384,7 +407,7 @@ class UnpackrDoctor:
             if not probe.supports_non_ascii_names:
                 self.warnings.append("Filesystem rejected non-ASCII test names; prefer ASCII-safe filenames")
         except Exception as e:
-            print(f"{Fore.YELLOW}⚠ Could not probe: {e}{Style.RESET_ALL}")
+            print(_mark("warn", f"Could not probe: {e}"))
             self.warnings.append("Filesystem quirk probe failed")
 
     def check_disk_space(self) -> None:
@@ -397,20 +420,19 @@ class UnpackrDoctor:
             free_gb = free // (2**30)
 
             if free_gb > 10:
-                print(f"{Fore.GREEN}✓ {free_gb}GB available{Style.RESET_ALL}")
+                print(_mark("ok", f"{free_gb}GB available"))
                 self.passed.append("Disk space")
             elif free_gb > 5:
-                print(f"{Fore.YELLOW}⚠ {free_gb}GB available (getting low){Style.RESET_ALL}")
+                print(_mark("warn", f"{free_gb}GB available (getting low)"))
                 self.warnings.append(f"Only {free_gb}GB free")
             else:
-                print(f"{Fore.RED}✗ {free_gb}GB available (very low!){Style.RESET_ALL}")
+                print(_mark("fail", f"{free_gb}GB available (very low!)"))
                 self.issues.append(f"Only {free_gb}GB free - may not be enough")
         except Exception:
-            print(f"{Fore.YELLOW}⚠ Could not check{Style.RESET_ALL}")
+            print(_mark("warn", "Could not check"))
 
     def check_comments_file(self) -> None:
-        """Check easter egg comments file."""
-        print(f"{self._step(8)} Checking easter egg comments...", end=" ")
+        """Comments are decoration. A missing or empty file is a log line, not a diagnostic step."""
         config_dir = self._config_file().parent
         bundled_dir = bundled_config_dir()
         candidates = [
@@ -419,30 +441,24 @@ class UnpackrDoctor:
             bundled_dir / "comments.sample.json",
         ]
         comments_path = next((path for path in candidates if path.is_file()), None)
-
         if comments_path is None:
-            print(f"{Fore.YELLOW}⚠ Comments file not found (easter eggs disabled){Style.RESET_ALL}")
-            self.warnings.append("No comments file - easter eggs disabled")
+            logging.info("No comments file; easter eggs disabled")
             return
-
         try:
-            with open(comments_path) as f:
-                data = json.load(f)
-
-            comments = data.get("comments", [])
-            if len(comments) > 0:
-                print(f"{Fore.GREEN}✓ {len(comments)} comments loaded{Style.RESET_ALL}")
-                self.passed.append("Easter egg comments")
-            else:
-                print(f"{Fore.YELLOW}⚠ Comments file empty{Style.RESET_ALL}")
-                self.warnings.append("Empty comments file")
-        except Exception as e:
-            print(f"{Fore.YELLOW}⚠ Invalid JSON: {e}{Style.RESET_ALL}")
-            self.warnings.append("Comments file has invalid JSON")
+            with open(comments_path, encoding="utf-8") as handle:
+                data = json.load(handle)
+            if not isinstance(data, dict):
+                logging.info("Comments file is not usable: expected an object")
+                return
+            comments = cast(dict[str, object], data).get("comments", [])
+            if not comments:
+                logging.info("Comments file is empty; easter eggs disabled")
+        except (OSError, json.JSONDecodeError, TypeError) as exc:
+            logging.info(f"Comments file is not usable: {exc}")
 
     def check_core_modules(self) -> None:
         """Check core Python modules are present."""
-        print(f"{self._step(9)} Checking core modules...", end=" ")
+        print(f"{self._step(8)} Checking core modules...", end=" ")
         required_modules = [
             "unpackr.core.config",
             "unpackr.core.file_handler",
@@ -460,15 +476,15 @@ class UnpackrDoctor:
                 missing.append(module)
 
         if not missing:
-            print(f"{Fore.GREEN}✓ All core modules found{Style.RESET_ALL}")
+            print(_mark("ok", "All core modules found"))
             self.passed.append("Core modules")
         else:
-            print(f"{Fore.RED}✗ Missing: {', '.join(missing)}{Style.RESET_ALL}")
+            print(_mark("fail", f"Missing: {', '.join(missing)}"))
             self.issues.append(f"Missing modules: {', '.join(missing)}")
 
     def check_log_directory(self) -> None:
         """Check log directory can be created."""
-        print(f"{self._step(10)} Checking log directory...", end=" ")
+        print(f"{self._step(9)} Checking log directory...", end=" ")
         log_folder = "logs"
         try:
             with open(self._config_file(), encoding="utf-8") as config_file:
@@ -491,26 +507,26 @@ class UnpackrDoctor:
 
         try:
             log_dir.mkdir(parents=True, exist_ok=True)
-            print(f"{Fore.GREEN}✓ Log directory ready: {log_dir}{Style.RESET_ALL}")
+            print(_mark("ok", f"Log directory ready: {log_dir}"))
             self.passed.append("Log directory")
         except Exception as e:
-            print(f"{Fore.RED}✗ Cannot create: {e}{Style.RESET_ALL}")
+            print(_mark("fail", f"Cannot create: {e}"))
             self.issues.append("Cannot create log directory")
 
     def check_running_processes(self) -> None:
         """Check for conflicting helper processes on the current platform."""
-        print(f"{self._step(11)} Checking for process conflicts...", end=" ")
+        print(f"{self._step(10)} Checking for process conflicts...", end=" ")
 
         try:
             conflicts = detect_running_helpers(["7-Zip", "par2"])
             if conflicts:
-                print(f"{Fore.YELLOW}⚠ Running on {platform_label()}: {', '.join(conflicts)}{Style.RESET_ALL}")
+                print(_mark("warn", f"Running on {platform_label()}: {', '.join(conflicts)}"))
                 self.warnings.append(f"Processes running: {', '.join(conflicts)} (will auto-kill)")
             else:
-                print(f"{Fore.GREEN}✓ No conflicts ({platform_label()}){Style.RESET_ALL}")
+                print(_mark("ok", f"No conflicts ({platform_label()})"))
                 self.passed.append("Process check")
         except Exception:
-            print(f"{Fore.YELLOW}⚠ Could not check{Style.RESET_ALL}")
+            print(_mark("warn", "Could not check"))
 
     def check_quarantine(self) -> None:
         """Report quarantine size for --source and warn when it passes quarantine_warn_mb."""
@@ -524,7 +540,7 @@ class UnpackrDoctor:
         held_files = sum(r.quarantine_files for r in runs)
         held_mb = sum(r.quarantine_bytes for r in runs) / (1024 * 1024)
         limit_mb = config.quarantine_warn_mb
-        print(f"{self._step(12)} Checking quarantine in {self.source}...")
+        print(f"{self._step(11)} Checking quarantine in {self.source}...")
         print(
             f"  mode: {config.delete_mode}, retention: {config.quarantine_retention_days} days, "
             f"held: {held_files} files, {held_mb:.1f} MB in {sum(1 for r in runs if r.quarantine_files)} run(s)"
@@ -539,18 +555,19 @@ class UnpackrDoctor:
 
     def print_summary(self) -> None:
         """Print diagnostic summary."""
-        print(f"\n{Fore.CYAN}{'=' * 60}{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}Summary{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}{'=' * 60}{Style.RESET_ALL}\n")
+        print(f"\n{paint('accent', '=' * 60)}")
+        print(paint("accent", "Summary"))
+        print(f"{paint('accent', '=' * 60)}\n")
 
-        steps = 11 + (1 if self.source is not None else 0)
+        steps = 10 + (1 if self.source is not None else 0)
         print(
-            f"{Fore.GREEN}✓ Passed:{Style.RESET_ALL} {len(self.passed)} checks in {steps} steps "
-            f"{Style.DIM}(the tools step checks 7-Zip, par2 and ffmpeg separately){Style.RESET_ALL}"
+            _mark("ok", f"Passed: {len(self.passed)} checks in {steps} steps")
+            + " "
+            + paint("muted", "(the tools step checks 7-Zip, par2 and ffmpeg separately)")
         )
-        print(f"{Fore.YELLOW}⚠ Warnings:{Style.RESET_ALL} {len(self.warnings)}")
-        print(f"{Fore.RED}✗ Issues:{Style.RESET_ALL} {len(self.issues)}")
-        status = f"{Fore.GREEN}READY{Style.RESET_ALL}" if not self.issues else f"{Fore.RED}BLOCKED{Style.RESET_ALL}"
+        print(_mark("warn", f"Warnings: {len(self.warnings)}"))
+        print(_mark("fail", f"Issues: {len(self.issues)}"))
+        status = paint("success", "READY") if not self.issues else paint("error", "BLOCKED")
         print(f"Status: {status}")
 
         if self.warnings:
@@ -564,9 +581,7 @@ class UnpackrDoctor:
                 print(f"  • {i}")
             print(f"\n{Fore.RED}Fix blocking issues before running Unpackr.{Style.RESET_ALL}")
         else:
-            print(f"\n{Fore.GREEN}{'=' * 60}{Style.RESET_ALL}")
-            print(f"{Fore.GREEN}All checks passed! Ready to run Unpackr.{Style.RESET_ALL}")
-            print(f"{Fore.GREEN}{'=' * 60}{Style.RESET_ALL}")
+            print(paint("success", "Ready."))
 
         actions = self._build_recommended_actions()
         if actions:
@@ -622,6 +637,7 @@ class UnpackrDoctor:
 def main() -> None:
     """Main entry point for unpackr-doctor command."""
     parser = argparse.ArgumentParser(
+        **argument_parser_kwargs(),
         description="Diagnose unpackr runtime requirements and setup.",
     )
     parser.add_argument("--json", action="store_true", help="Output machine-readable JSON results")

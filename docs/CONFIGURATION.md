@@ -122,7 +122,7 @@ Extensions that mark a release as bait. Default: executables, scripts, shortcuts
 
 ### `incomplete_download_markers`
 
-File endings that mean a download is still running. Default: `[".!qB", ".!ut", ".part", ".crdownload", ".partial", ".download", ".aria2"]`. Such releases are skipped until a later run.
+File endings that mean a download is still running. Default: `[".!qB", ".!ut", ".part", ".crdownload", ".partial", ".download", ".aria2"]`. Those files are removed as junk (`download_incomplete`). Finished files in the same folder are still processed. A final-name video that is still growing is kept (`video_still_writing`) until a later run.
 
 ### `sample_folder_names`
 

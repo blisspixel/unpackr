@@ -17,7 +17,7 @@ jobs:
       fail-fast: false
       matrix:
         os: ["windows-latest", "ubuntu-latest", "macos-latest"]
-        python-version: ["3.12", "3.13", "3.14", "3.15"]
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -57,7 +57,7 @@ jobs:
           python -c "import json,sys; d=json.load(open('doctor-report.json', encoding='utf-8')); required={'timestamp_utc','exit_code','status','counts','passed','warnings','issues','recommended_actions'}; missing=required-d.keys(); assert not missing, missing; assert d['exit_code'] in (0,1); assert d['status'] in ('ready','blocked'); assert d['counts']['issues']==len(d['issues']); assert (d['exit_code']==0)==(d['counts']['issues']==0); print('doctor-json-ok', d['status'], d['counts'])"
 
       - name: Benchmark harness smoke
-        if: runner.os == 'Linux' && matrix.python-version == '3.12'
+        if: runner.os == 'Linux' && matrix.python-version == '3.11'
         run: |
           python scripts/benchmark_harness.py -o benchmarks/ci-smoke.json
           python -c "import json; d=json.load(open('benchmarks/ci-smoke.json', encoding='utf-8')); assert d.get('schema_version')==1; assert 'hardware' in d and 'metrics' in d; assert d['metrics']['sequential_read_mbps']>=0; assert d['metrics']['cpu_score']>0; print('benchmark-smoke-ok', d['hardware'].get('platform'), d['metrics'].get('disk_type'))"
@@ -77,7 +77,7 @@ jobs:
           python -c "import glob, zipfile; from pathlib import PurePosixPath; wheel = glob.glob('dist/unpackr-*.whl')[0]; names = zipfile.ZipFile(wheel).namelist(); tops = {PurePosixPath(n).parts[0] for n in names}; assert tops and all(t == 'unpackr' or t.endswith('.dist-info') for t in tops), tops; assert any(n.endswith('unpackr/config_files/config.json') for n in names); assert any(n.endswith('unpackr/config_files/comments.sample.json') for n in names); assert not any(n.endswith('/comments.json') for n in names)"
 
       - name: Documented install smoke
-        if: runner.os == 'Linux' && matrix.python-version == '3.12'
+        if: runner.os == 'Linux' && matrix.python-version == '3.11'
         run: |
           python -m pip install uv
           mkdir -p "$RUNNER_TEMP/uv-tools" "$RUNNER_TEMP/uv-bin"
@@ -87,23 +87,23 @@ jobs:
           "$RUNNER_TEMP/uv-bin/vhealth" --help
 
       - name: Pre-commit quality gate
-        if: runner.os == 'Linux' && matrix.python-version == '3.12'
+        if: runner.os == 'Linux' && matrix.python-version == '3.11'
         run: python -m pre_commit run --all-files --show-diff-on-failure
 
       - name: Pytest (Windows Full Suite + Coverage Gate)
-        if: runner.os == 'Windows' && matrix.python-version == '3.12'
+        if: runner.os == 'Windows' && matrix.python-version == '3.11'
         run: python -m pytest -q --cov --cov-fail-under=80 --cov-report=term-missing
 
       - name: Pytest (Windows Full Suite)
-        if: runner.os == 'Windows' && matrix.python-version != '3.12'
+        if: runner.os == 'Windows' && matrix.python-version != '3.11'
         run: python -m pytest -q
 
       - name: Pytest (Linux Full Suite + Coverage Gate)
-        if: runner.os == 'Linux' && matrix.python-version == '3.12'
+        if: runner.os == 'Linux' && matrix.python-version == '3.11'
         run: python -m pytest -q --cov --cov-fail-under=80 --cov-report=term-missing
 
       - name: Pytest (Linux Full Suite)
-        if: runner.os == 'Linux' && matrix.python-version != '3.12'
+        if: runner.os == 'Linux' && matrix.python-version != '3.11'
         run: python -m pytest -q
 
       - name: Pytest (macOS Expanded Suite)
@@ -140,3 +140,122 @@ jobs:
           tests/test_decision_matrix.py
           tests/test_run_state.py
           tests/test_run_summary.py
+          tests/test_write_activity.py
+          tests/test_journal_durability.py
+          tests/test_presentation_contract.py
+          tests/test_policy_matrix.py
+
+  windows-real-tools:
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
+      UNPACKR_REQUIRE_REAL_TOOLS: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.15"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+
+      - name: Install 7-Zip, PAR2 and ffmpeg
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          function Find-SevenZip {
+            $candidates = @(
+              "$env:ProgramFiles\7-Zip\7z.exe",
+              "${env:ProgramFiles(x86)}\7-Zip\7z.exe"
+            )
+            foreach ($candidate in $candidates) {
+              if (Test-Path $candidate) { return $candidate }
+            }
+            $cmd = Get-Command 7z -ErrorAction SilentlyContinue
+            if ($cmd) { return $cmd.Source }
+            return $null
+          }
+          $seven = Find-SevenZip
+          if (-not $seven) {
+            winget install --id 7zip.7zip -e --accept-source-agreements --accept-package-agreements
+            $seven = Find-SevenZip
+          }
+          if (-not $seven) { throw "7-Zip is required and was not found" }
+          $env:Path = "$(Split-Path $seven);$env:Path"
+          Add-Content -Path $env:GITHUB_PATH -Value (Split-Path $seven)
+
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+            winget install --id Gyan.FFmpeg -e --accept-source-agreements --accept-package-agreements
+            # winget writes the new directory to the registry. This process
+            # does not see that until PATH is read back. Get-Command can also
+            # remember the earlier miss, so the lookup below uses where.exe.
+            $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+            $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+            if ($machinePath) { $env:Path = "$machinePath;$env:Path" }
+            if ($userPath) { $env:Path = "$userPath;$env:Path" }
+          }
+          # where.exe is a new process, so it sees the refreshed PATH.
+          $ffmpegExe = @(where.exe ffmpeg 2>$null) | Select-Object -First 1
+          if (-not $ffmpegExe) {
+            $packageRoot = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
+            if (Test-Path -LiteralPath $packageRoot) {
+              $found = Get-ChildItem -LiteralPath $packageRoot -Filter ffmpeg.exe -Recurse -File -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+              if ($found) { $ffmpegExe = $found.FullName }
+            }
+          }
+          if (-not $ffmpegExe) {
+            throw "ffmpeg is required and was not found after installing Gyan.FFmpeg"
+          }
+          # Later steps only inherit GITHUB_PATH, not this process's PATH.
+          $ffmpegDir = Split-Path -Parent $ffmpegExe
+          Add-Content -Path $env:GITHUB_PATH -Value $ffmpegDir
+          $env:Path = "$ffmpegDir;$env:Path"
+
+          $par2Dir = Join-Path $env:RUNNER_TEMP "par2"
+          New-Item -ItemType Directory -Force -Path $par2Dir | Out-Null
+          $zip = Join-Path $env:RUNNER_TEMP "par2.zip"
+          $url = "https://github.com/animetosho/par2cmdline-turbo/releases/download/v1.5.0/par2cmdline-turbo-1.5.0-win-x64.zip"
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath $par2Dir -Force
+          $par2 = Get-ChildItem $par2Dir -Recurse -Filter par2.exe | Select-Object -First 1
+          if (-not $par2) { throw "par2.exe was not in $url" }
+          Add-Content -Path $env:GITHUB_PATH -Value $par2.DirectoryName
+          $env:Path = "$($par2.DirectoryName);$env:Path"
+
+          $versions = @(
+            "7z: $(& $seven | Select-Object -First 2)",
+            "par2: $(& $par2.FullName --version 2>&1 | Select-Object -First 2)",
+            "ffmpeg: $(& $ffmpegExe -version | Select-Object -First 1)",
+            "par2-source: animetosho/par2cmdline-turbo v1.5.0 win-x64 ($url)"
+          )
+          $versions | Set-Content -Path tool-versions.txt -Encoding utf8
+          Get-Content tool-versions.txt
+          # where.exe is a new process. Get-Command can still remember the miss
+          # from before winget installed ffmpeg.
+          foreach ($name in @("7z", "par2", "ffmpeg")) {
+            $resolved = @(where.exe $name 2>$null) | Select-Object -First 1
+            if (-not $resolved) {
+              throw "$name is required on PATH"
+            }
+          }
+
+      - name: Real-tool pytest
+        run: python -m pytest -q --junitxml=windows-real-tools.xml tests/test_par2_and_parity.py tests/test_video_archive_safety.py tests/test_naming_layout.py tests/test_quarantine_restore.py tests/test_external_tools_optional.py tests/test_policy_matrix.py tests/test_write_activity.py tests/test_journal_durability.py
+
+      - name: Fail if a required test was skipped
+        run: python scripts/assert_junit_executed.py windows-real-tools.xml
+
+      - name: Upload tool versions
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-tool-versions
+          path: tool-versions.txt

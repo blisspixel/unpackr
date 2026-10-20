@@ -132,20 +132,20 @@ def test_check_comments_file_variants(monkeypatch, doc, capsys, tmp_path):
     monkeypatch.setattr(doctor, "bundled_config_dir", lambda: cfg_dir)
 
     doc.check_comments_file()
-    assert any("No comments file" in w for w in doc.warnings)
+    assert doc.warnings == []
+    assert capsys.readouterr().out == ""
 
     (cfg_dir / "comments.json").write_text(json.dumps({"comments": ["a", "b"]}), encoding="utf-8")
     doc.warnings = []
     doc.passed = []
     doc.check_comments_file()
-    out = capsys.readouterr().out
-    assert "2 comments loaded" in out
-    assert "Easter egg comments" in doc.passed
+    assert capsys.readouterr().out == ""
+    assert "Easter egg comments" not in doc.passed
 
     (cfg_dir / "comments.json").write_text("{bad", encoding="utf-8")
     doc.warnings = []
     doc.check_comments_file()
-    assert any("invalid json" in w.lower() for w in doc.warnings)
+    assert doc.warnings == []
 
 
 def test_check_core_modules_missing(monkeypatch, doc, capsys):

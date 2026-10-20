@@ -106,7 +106,13 @@ class TestPlanAccuracy:
         plan.add_loose_video(tmp_path / "loose.mkv")
         plan.display_detailed()
         out = capsys.readouterr().out
-        for text in ("FOLDERS TO PROCESS", "FOLDERS TO REMOVE (1", "FOLDERS KEPT AS-IS (1", "LOOSE VIDEOS (1", "2 archive file(s)"):
+        for text in (
+            "FOLDERS TO PROCESS",
+            "FOLDERS TO QUARANTINE (1",
+            "FOLDERS KEPT AS-IS (1",
+            "LOOSE VIDEOS (1",
+            "2 archive file(s)",
+        ):
             assert text in out, text
         assert "RAR extract" not in out
 
@@ -135,7 +141,7 @@ class TestDestinationAndCountdown:
         )
         assert result.returncode == 0, result.stdout[-1500:]
         assert (tmp_path / "new").is_dir() and "Created destination" in result.stdout
-        assert "Starting processing in" not in result.stdout
+        assert "Starting in" not in result.stdout
 
     def test_missing_parent_is_an_error(self, tmp_path):
         (tmp_path / "src").mkdir()

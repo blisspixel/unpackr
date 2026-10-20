@@ -9,7 +9,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from functools import wraps
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, ParamSpec, TypeVar, cast
 
 
 class ValidationError(Exception):
@@ -505,7 +505,11 @@ class ErrorRecovery:
             return default
 
 
-def defensive_wrapper[**P, R](func: Callable[P, R]) -> Callable[P, R | bool | None]:
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
+def defensive_wrapper(func: Callable[_P, _R]) -> Callable[_P, _R | bool | None]:
     """
     Decorator to wrap functions with defensive error handling.
 
@@ -517,7 +521,7 @@ def defensive_wrapper[**P, R](func: Callable[P, R]) -> Callable[P, R | bool | No
     """
 
     @wraps(func)
-    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R | bool | None:
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R | bool | None:
         try:
             # Log function entry
             logging.debug(f"[DEFENSIVE] Entering {func.__name__}")

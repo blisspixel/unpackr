@@ -221,8 +221,8 @@ def test_cancellation_flag(runner: SafetyTestRunner):
     """Test cancellation flag behavior in UnpackrApp."""
     print(f"\n{Fore.YELLOW}[Cancellation Flag Tests]{Style.RESET_ALL}")
 
-    from unpackr.core import Config
     from unpackr import UnpackrApp
+    from unpackr.core import Config
 
     # Create app with default config
     config = Config(None)

@@ -8,6 +8,8 @@ Collects planned operations and displays them in a structured, readable format.
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from unpackr.utils.presentation import removal_verb, rule
+
 
 @dataclass
 class DryRunPlan:
@@ -18,6 +20,7 @@ class DryRunPlan:
         default_factory=list[tuple[Path, int]]
     )  # (archive_path, size_bytes)
     archives_to_skip: list[tuple[Path, str]] = field(default_factory=list[tuple[Path, str]])  # (archive_path, reason)
+    archives_to_remove: list[tuple[Path, str]] = field(default_factory=list[tuple[Path, str]])
 
     # Video operations
     videos_to_move: list[tuple[Path, int, str]] = field(
@@ -25,6 +28,7 @@ class DryRunPlan:
     )  # (video_path, size_bytes, resolution)
     videos_to_skip: list[tuple[Path, str]] = field(default_factory=list[tuple[Path, str]])  # (video_path, reason)
     videos_to_delete: list[tuple[Path, str]] = field(default_factory=list[tuple[Path, str]])  # (sample_path, reason)
+    videos_to_hold: list[tuple[Path, str]] = field(default_factory=list[tuple[Path, str]])  # still being written
     video_destinations: dict[str, str] = field(default_factory=dict[str, str])  # str(video) -> relative destination
 
     # Cleanup operations
@@ -40,8 +44,12 @@ class DryRunPlan:
         self.archives_to_extract.append((archive, size_bytes))
 
     def add_archive_skip(self, archive: Path, reason: str) -> None:
-        """Record skipped archive."""
+        """Record an archive left in place."""
         self.archives_to_skip.append((archive, reason))
+
+    def add_archive_remove(self, archive: Path, reason: str) -> None:
+        """Record a damaged set the live run would remove."""
+        self.archives_to_remove.append((archive, reason))
 
     def add_video_move(self, video: Path, size_bytes: int, resolution: str = "unknown", destination: str = "") -> None:
         """Record video move (destination: final path relative to the destination folder)."""
@@ -56,6 +64,10 @@ class DryRunPlan:
     def add_video_delete(self, video: Path, reason: str) -> None:
         """Record video deletion."""
         self.videos_to_delete.append((video, reason))
+
+    def add_video_hold(self, video: Path, reason: str) -> None:
+        """Record a video left in place because it is still being written."""
+        self.videos_to_hold.append((video, reason))
 
     def add_junk_file(self, file: Path) -> None:
         """Record junk file."""
@@ -84,11 +96,13 @@ class DryRunPlan:
         else:
             return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
 
-    def print_summary(self) -> None:
-        """Print formatted dry-run summary."""
-        print("\n" + "=" * 80)
+    def print_summary(self, delete_mode: str = "quarantine") -> None:
+        """Print formatted dry-run summary. The removal verb follows delete_mode."""
+        verb = removal_verb(delete_mode)
+        line = rule()
+        print("\n" + line)
         print("DRY RUN SUMMARY")
-        print("=" * 80)
+        print(line)
 
         # PAR2 Section
         if self.par2_to_process:
@@ -98,20 +112,25 @@ class DryRunPlan:
                 print(f"  Process: {folder.name} ({count} PAR2 files)")
 
         # Archives Section
-        if self.archives_to_extract or self.archives_to_skip:
+        if self.archives_to_extract or self.archives_to_skip or self.archives_to_remove:
             total_size = sum(size for _, size in self.archives_to_extract)
             print(f"\nARCHIVES ({len(self.archives_to_extract)} to extract, {self.format_size(total_size)}):")
 
             for archive, size in self.archives_to_extract:
                 print(f"  Extract: {archive.name} ({self.format_size(size)})")
 
+            if self.archives_to_remove:
+                print(f"\n  DAMAGED, RE-DOWNLOAD ({len(self.archives_to_remove)}):")
+                for archive, reason in self.archives_to_remove:
+                    print(f"    {verb}: {archive.name} - {reason}")
+
             if self.archives_to_skip:
-                print(f"\n  SKIPPED ({len(self.archives_to_skip)}):")
+                print(f"\n  KEPT ({len(self.archives_to_skip)}):")
                 for archive, reason in self.archives_to_skip:
-                    print(f"    Skip: {archive.name} - {reason}")
+                    print(f"    Keep: {archive.name} - {reason}")
 
         # Videos Section
-        if self.videos_to_move or self.videos_to_skip or self.videos_to_delete:
+        if self.videos_to_move or self.videos_to_skip or self.videos_to_delete or self.videos_to_hold:
             total_size = sum(size for _, size, _ in self.videos_to_move)
             print(f"\nVIDEOS ({len(self.videos_to_move)} to move, {self.format_size(total_size)}):")
 
@@ -122,14 +141,19 @@ class DryRunPlan:
                     print(f"        -> {self.video_destinations[str(video)]}")
 
             if self.videos_to_delete:
-                print(f"\n  DELETE SAMPLES ({len(self.videos_to_delete)}):")
+                print(f"\n  {verb.upper()} SAMPLES ({len(self.videos_to_delete)}):")
                 for video, reason in self.videos_to_delete:
-                    print(f"    Delete: {video.name} - {reason}")
+                    print(f"    {verb}: {video.name} - {reason}")
+
+            if self.videos_to_hold:
+                print(f"\n  HOLD ({len(self.videos_to_hold)}):")
+                for video, reason in self.videos_to_hold:
+                    print(f"    Hold: {video.name} - {reason}")
 
             if self.videos_to_skip:
-                print(f"\n  SKIPPED ({len(self.videos_to_skip)}):")
+                print(f"\n  KEPT ({len(self.videos_to_skip)}):")
                 for video, reason in self.videos_to_skip:
-                    print(f"    Skip: {video.name} - {reason}")
+                    print(f"    Keep: {video.name} - {reason}")
 
         # Cleanup Section
         if self.junk_files or self.folders_to_delete or self.folders_to_keep:
@@ -143,10 +167,10 @@ class DryRunPlan:
                     by_extension[ext] = by_extension.get(ext, 0) + 1
 
                 junk_summary = ", ".join(f"{count} {ext}" for ext, count in sorted(by_extension.items()))
-                print(f"  Delete {len(self.junk_files)} junk files ({junk_summary})")
+                print(f"  {verb} {len(self.junk_files)} junk files ({junk_summary})")
 
             if self.folders_to_delete:
-                print(f"  Delete {len(self.folders_to_delete)} empty/junk folders")
+                print(f"  {verb} {len(self.folders_to_delete)} empty/junk folders")
                 for folder in self.folders_to_delete[:5]:  # Show first 5
                     print(f"    - {folder.name}")
                 if len(self.folders_to_delete) > 5:
@@ -169,12 +193,16 @@ class DryRunPlan:
                 print(f"  Destination used: {self.format_size(dest_used)}")
 
         # Summary counts
-        print("\n" + "-" * 80)
+        print("\n" + rule("-"))
         print("SUMMARY:")
-        print(f"  Archives: {len(self.archives_to_extract)} extract, {len(self.archives_to_skip)} skip")
         print(
-            f"  Videos: {len(self.videos_to_move)} move, {len(self.videos_to_delete)} delete, {len(self.videos_to_skip)} skip"
+            f"  Archives: {len(self.archives_to_extract)} extract, "
+            f"{len(self.archives_to_remove)} {verb.lower()}, {len(self.archives_to_skip)} kept"
+        )
+        print(
+            f"  Videos: {len(self.videos_to_move)} move, {len(self.videos_to_delete)} {verb.lower()}, "
+            f"{len(self.videos_to_hold)} hold, {len(self.videos_to_skip)} kept"
         )
         print(f"  Cleanup: {len(self.junk_files)} junk files, {len(self.folders_to_delete)} folders")
         print(f"  Protected: {len(self.folders_to_keep)} content folders kept")
-        print("=" * 80 + "\n")
+        print(rule() + "\n")

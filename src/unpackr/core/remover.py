@@ -18,6 +18,7 @@ import logging
 import os
 import shutil
 import time
+import uuid
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -58,24 +59,114 @@ def _tree_size(path: Path) -> tuple[int, int]:
     return files, total
 
 
+class RecoveryPrepareError(OSError):
+    """The recovery record could not be prepared. The original path was not touched."""
+
+
 class RunJournal:
-    """Append-only JSON Lines record of one run's removals and moves."""
+    """Append-only JSON Lines record of one run's removals and moves.
+
+    A prepared sidecar is written and fsynced before any byte moves. The JSONL
+    line is the completed record. If that append fails, the sidecar is enough
+    for ``restore`` to replay the action. A partial JSONL line is ignored;
+    it never hides a sidecar that was already written.
+    """
 
     def __init__(self, source_root: Path, run_id: str) -> None:
         self.path = source_root / RUNS_DIR / f"{run_id}.jsonl"
+        self.pending_dir = source_root / RUNS_DIR / f"{run_id}.pending"
         self.run_id = run_id
+        self.source_root = source_root
+        # Test hook: names of the next operations that should raise OSError.
+        self.failures: list[str] = []
 
-    def write(self, entry: dict[str, Any]) -> None:
+    def _take(self, kind: str) -> bool:
+        if self.failures and self.failures[0] == kind:
+            self.failures.pop(0)
+            return True
+        return False
+
+    def _refuse_symlink(self, path: Path) -> None:
+        """Refuse to write recovery state through a symlink that could leave the source tree."""
+        if path.exists() and path.is_symlink():
+            raise RecoveryPrepareError(f"refusing to use symlink for recovery state: {path}")
+        root = self.source_root.resolve()
+        if path.exists():
+            resolved = path.resolve()
+            if os.path.commonpath([str(resolved), str(root)]) != str(root):
+                raise RecoveryPrepareError(f"recovery path escapes the source tree: {path}")
+
+    def _atomic_write(self, path: Path, entry: dict[str, Any]) -> None:
+        self._refuse_symlink(path.parent)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._refuse_symlink(path.parent)
+        temporary = path.with_name(path.name + ".tmp")
+        payload = json.dumps(entry, sort_keys=True) + "\n"
+        with open(temporary, "w", encoding="utf-8") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+
+    def prepare(self, entry: dict[str, Any]) -> str:
+        """Durably record an action before the bytes move. Raises if nothing was stored."""
+        if self._take("prepare"):
+            raise RecoveryPrepareError("injected prepare failure")
+        action_id = str(entry.get("id") or uuid.uuid4().hex)
+        record = {
+            "time": datetime.now().isoformat(timespec="seconds"),
+            **entry,
+            "id": action_id,
+            "state": "prepared",
+        }
+        self._atomic_write(self.pending_dir / f"{action_id}.json", record)
+        return action_id
+
+    def complete(self, action_id: str, entry: dict[str, Any]) -> None:
+        """Record that the relocation finished. The prepared sidecar stays if this cannot."""
+        record = {
+            "time": datetime.now().isoformat(timespec="seconds"),
+            **entry,
+            "id": action_id,
+            "state": "complete",
+        }
+        if self._take("complete"):
+            raise OSError("injected complete failure")
+        self._atomic_write(self.pending_dir / f"{action_id}.complete.json", record)
+        if self._take("complete-append"):
+            raise OSError("injected complete-append failure")
+        self._append(record)
+        prepared = self.pending_dir / f"{action_id}.json"
+        with contextlib.suppress(OSError):
+            prepared.unlink(missing_ok=True)
+
+    def abort(self, action_id: str) -> None:
+        """Forget a prepared action whose relocation did not happen."""
+        note = {"id": action_id, "state": "aborted", "time": datetime.now().isoformat(timespec="seconds")}
+        with contextlib.suppress(OSError):
+            self._atomic_write(self.pending_dir / f"{action_id}.aborted.json", note)
+            (self.pending_dir / f"{action_id}.json").unlink(missing_ok=True)
+
+    def _append(self, entry: dict[str, Any]) -> None:
+        self._refuse_symlink(self.path.parent)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        entry = {"time": datetime.now().isoformat(timespec="seconds"), **entry}
         with open(self.path, "a", encoding="utf-8") as handle:
             handle.write(json.dumps(entry, sort_keys=True) + "\n")
             handle.flush()
+            os.fsync(handle.fileno())
+
+    def write(self, entry: dict[str, Any]) -> None:
+        """Append one completed record. Used by callers that already relocated nothing sensitive."""
+        self._append({"time": datetime.now().isoformat(timespec="seconds"), "state": "complete", **entry})
 
     @staticmethod
     def read(path: Path) -> list[dict[str, Any]]:
         entries: list[dict[str, Any]] = []
-        for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return entries
+        for line in text.splitlines():
             line = line.strip()
             if not line:
                 continue
@@ -87,6 +178,22 @@ class RunJournal:
                 entries.append(cast(dict[str, Any], entry))
             else:
                 logging.warning(f"Skipping unreadable journal line in {path}")
+        return entries
+
+    def read_sidecars(self) -> list[dict[str, Any]]:
+        entries: list[dict[str, Any]] = []
+        if not self.pending_dir.is_dir():
+            return entries
+        for path in sorted(self.pending_dir.glob("*.json")):
+            if path.name.endswith(".tmp"):
+                continue
+            try:
+                entry = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                logging.warning(f"Skipping unreadable recovery sidecar {path}")
+                continue
+            if isinstance(entry, dict):
+                entries.append(cast(dict[str, Any], entry))
         return entries
 
 
@@ -101,6 +208,9 @@ class Remover:
     quarantined_files: int = 0
     quarantined_bytes: int = 0
     trashed_files: int = 0
+    removed_files: int = 0
+    removed_bytes: int = 0
+    recovery_unconfirmed: bool = False
 
     def __post_init__(self) -> None:
         if self.mode not in DELETE_MODES:
@@ -134,13 +244,62 @@ class Remover:
             counter += 1
         return target
 
-    def _journal(self, op: str, path: Path, reason_code: str, **extra: Any) -> None:
+    def _count_removed(self, files: int, size: int) -> None:
+        self.removed_files += files
+        self.removed_bytes += size
+
+    def _prepare(self, entry: dict[str, Any]) -> str | None:
         if self.journal is None:
+            return None
+        return self.journal.prepare(entry)
+
+    def _finish(self, action_id: str | None, entry: dict[str, Any]) -> None:
+        if self.journal is None or action_id is None:
             return
         try:
-            self.journal.write({"op": op, "src": str(path), "reason": reason_code, **extra})
-        except OSError as e:
-            logging.warning(f"Could not write run journal {self.journal.path}: {e}")
+            self.journal.complete(action_id, entry)
+        except OSError as exc:
+            self.recovery_unconfirmed = True
+            logging.error(f"Recovery record for {entry.get('src')} is incomplete: {exc}")
+
+    def prepare_move(self, source: Path, destination: Path) -> str | None:
+        """Record a destination move before it happens. Raises RecoveryPrepareError on failure."""
+        try:
+            stat = source.stat()
+            extra: dict[str, Any] = {"bytes": stat.st_size, "mtime": stat.st_mtime}
+        except OSError:
+            extra = {}
+        return self._prepare(
+            {"op": "moved", "src": str(source), "reason": "video_moved", "dst": str(destination), **extra}
+        )
+
+    def finish_move(self, action_id: str | None, source: Path, destination: Path) -> None:
+        extra: dict[str, Any] = {"dst": str(destination)}
+        try:
+            stat = destination.stat()
+            extra["bytes"] = stat.st_size
+            extra["mtime"] = stat.st_mtime
+        except OSError:
+            pass
+        self._finish(action_id, {"op": "moved", "src": str(source), "reason": "video_moved", **extra})
+
+    def abort_move(self, action_id: str | None) -> None:
+        if self.journal is not None and action_id is not None:
+            self.journal.abort(action_id)
+
+    def _fail_relocation(self, action_id: str | None, path: Path) -> None:
+        """Abort only while the original is still in place.
+
+        Once the original is gone the prepared record is the only way restore can
+        replay the action, so it stays and the run is marked unconfirmed.
+        """
+        if path.exists():
+            self.abort_move(action_id)
+            return
+        self.recovery_unconfirmed = True
+        logging.error(
+            f"Recovery record for {path} is unconfirmed: the original is gone and the completion record was not written"
+        )
 
     def remove(
         self,
@@ -150,39 +309,106 @@ class Remover:
     ) -> str:
         """Remove a file or folder. Returns the disposal used ("quarantine", "trash" or "permanent").
 
+        The recovery record is prepared before anything is relocated. A prepare
+        failure leaves the original untouched and raises RecoveryPrepareError.
+        If the relocation finishes and the completion record cannot be written,
+        the prepared record stays so restore can replay it, and
+        ``recovery_unconfirmed`` is set.
+
         ``permanent`` performs a permanent delete for this kind of path; it is used in
         permanent mode. Raises OSError (including PermissionError) when the path stays.
         """
         files, size = _tree_size(path)
         if self.mode == "quarantine":
+            if self.source_root is not None:
+                quarantine_root = self.source_root / QUARANTINE_DIR
+                if quarantine_root.is_symlink():
+                    raise RecoveryPrepareError(f"refusing to quarantine through symlink {quarantine_root}")
             target = self._quarantine_target(path)
+            action_id = self._prepare(
+                {
+                    "op": "quarantined",
+                    "src": str(path),
+                    "reason": reason_code,
+                    "dst": str(target),
+                    "files": files,
+                    "bytes": size,
+                }
+            )
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(path), str(target))
+            try:
+                shutil.move(str(path), str(target))
+            except Exception:
+                if path.exists() and target.exists():
+                    _discard_partial(target)
+                self._fail_relocation(action_id, path)
+                raise
             self.quarantined_files += files
             self.quarantined_bytes += size
-            self._journal("quarantined", path, reason_code, dst=str(target), files=files, bytes=size)
+            self._count_removed(files, size)
+            self._finish(
+                action_id,
+                {
+                    "op": "quarantined",
+                    "src": str(path),
+                    "reason": reason_code,
+                    "dst": str(target),
+                    "files": files,
+                    "bytes": size,
+                },
+            )
             return "quarantine"
         if self.mode == "trash":
-            target = send_to_trash(path)
+            action_id = self._prepare(
+                {"op": "trashed", "src": str(path), "reason": reason_code, "files": files, "bytes": size}
+            )
+            try:
+                target = send_to_trash(path)
+            except Exception:
+                self._fail_relocation(action_id, path)
+                raise
             self.trashed_files += files
-            self._journal("trashed", path, reason_code, dst=str(target), files=files, bytes=size)
+            self._count_removed(files, size)
+            self._finish(
+                action_id,
+                {
+                    "op": "trashed",
+                    "src": str(path),
+                    "reason": reason_code,
+                    "dst": str(target),
+                    "files": files,
+                    "bytes": size,
+                },
+            )
             return "trash"
-        if permanent is not None:
-            permanent(path)
-        elif path.is_dir() and not path.is_symlink():
-            shutil.rmtree(path)
-        else:
-            path.unlink()
-        self._journal("deleted", path, reason_code, files=files, bytes=size)
+        action_id = self._prepare(
+            {"op": "deleted", "src": str(path), "reason": reason_code, "files": files, "bytes": size}
+        )
+        try:
+            if permanent is not None:
+                permanent(path)
+            elif path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+        except Exception:
+            self._fail_relocation(action_id, path)
+            raise
+        self._count_removed(files, size)
+        self._finish(
+            action_id, {"op": "deleted", "src": str(path), "reason": reason_code, "files": files, "bytes": size}
+        )
         return "permanent"
 
     def record_move(self, source: Path, destination: Path) -> None:
-        """Journal a video moved to the destination so restore can reverse it."""
+        """Journal a video that has already been moved. Prefer prepare_move before the move."""
         try:
-            stat = destination.stat()
-            self._journal("moved", source, "video_moved", dst=str(destination), bytes=stat.st_size, mtime=stat.st_mtime)
-        except OSError:
-            self._journal("moved", source, "video_moved", dst=str(destination))
+            action_id = self.prepare_move(source, destination)
+        except RecoveryPrepareError as exc:
+            self.recovery_unconfirmed = True
+            logging.error(f"Could not prepare recovery record for {source}: {exc}")
+            return
+        self.finish_move(action_id, source, destination)
 
 
 # ---------------------------------------------------------------------------
@@ -206,11 +432,24 @@ def list_runs(source_root: Path) -> list[RunInfo]:
     infos: list[RunInfo] = []
     for journal in sorted(runs_dir.glob("*.jsonl"), reverse=True):
         counts: dict[str, int] = {}
-        for entry in RunJournal.read(journal):
-            counts[entry.get("op", "?")] = counts.get(entry.get("op", "?"), 0) + 1
+        for entry in load_run_entries(source_root, journal.stem):
+            counts[str(entry.get("op", "?"))] = counts.get(str(entry.get("op", "?")), 0) + 1
         qdir = source_root / QUARANTINE_DIR / journal.stem
         qfiles, qbytes = _tree_size(qdir) if qdir.exists() else (0, 0)
         infos.append(RunInfo(journal.stem, journal, counts, qfiles, qbytes))
+    seen = {info.run_id for info in infos}
+    for pending in sorted(runs_dir.glob("*.pending"), reverse=True):
+        if not pending.is_dir():
+            continue
+        run_id = pending.name[: -len(".pending")]
+        if run_id in seen:
+            continue
+        counts = {}
+        for entry in load_run_entries(source_root, run_id):
+            counts[str(entry.get("op", "?"))] = counts.get(str(entry.get("op", "?")), 0) + 1
+        qdir = source_root / QUARANTINE_DIR / run_id
+        qfiles, qbytes = _tree_size(qdir) if qdir.exists() else (0, 0)
+        infos.append(RunInfo(run_id, runs_dir / f"{run_id}.jsonl", counts, qfiles, qbytes))
     return infos
 
 
@@ -223,12 +462,13 @@ class RestoreResult:
 def restore_run(source_root: Path, run_id: str, path_glob: str | None = None, dry_run: bool = False) -> RestoreResult:
     """Put quarantined files back and reverse moves for one run, newest action first."""
     journal = source_root / RUNS_DIR / f"{run_id}.jsonl"
-    if not journal.is_file():
+    pending = source_root / RUNS_DIR / f"{run_id}.pending"
+    if not journal.is_file() and not pending.is_dir():
         raise FileNotFoundError(f"No journal for run {run_id} in {source_root / RUNS_DIR}")
     quarantine_root = (source_root / QUARANTINE_DIR).resolve()
     result = RestoreResult()
 
-    for entry in reversed(RunJournal.read(journal)):
+    for entry in reversed(load_run_entries(source_root, run_id)):
         op = entry.get("op")
         src = Path(entry.get("src", ""))
         dst = Path(entry["dst"]) if entry.get("dst") else None
@@ -312,12 +552,97 @@ def purge_quarantine(source_root: Path, retention_days: int, now: datetime | Non
             continue
         if _run_time(run_dir) >= cutoff:
             continue
+        if run_recovery_unresolved(source_root, run_dir.name):
+            logging.warning(f"Keeping quarantined run {run_dir.name}: its recovery record is incomplete")
+            continue
         _files, size = _tree_size(run_dir)
         shutil.rmtree(run_dir)
         removed += 1
         freed += size
         logging.info(f"Purged quarantined run {run_dir.name} ({size / (1024 * 1024):.1f}MB)")
     return removed, freed
+
+
+def _discard_partial(path: Path) -> None:
+    """Remove a copy left behind when a relocation fails and the original is still in place."""
+    try:
+        if path.is_symlink() or path.is_file():
+            path.unlink()
+        elif path.is_dir():
+            shutil.rmtree(path)
+    except OSError as exc:
+        logging.error(f"Could not remove partial relocation {path}: {exc}")
+
+
+def _sidecar_entries(pending_dir: Path) -> list[dict[str, Any]]:
+    if not pending_dir.is_dir() or pending_dir.is_symlink():
+        return []
+    entries: list[dict[str, Any]] = []
+    for path in sorted(pending_dir.glob("*.json")):
+        if path.name.endswith(".tmp") or path.is_symlink():
+            continue
+        try:
+            entry = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            logging.warning(f"Skipping unreadable recovery sidecar {path}")
+            continue
+        if isinstance(entry, dict):
+            entries.append(cast(dict[str, Any], entry))
+    return entries
+
+
+def load_run_entries(source_root: Path, run_id: str) -> list[dict[str, Any]]:
+    """Completed and still-prepared actions for one run, one record each.
+
+    A prepared sidecar wins when the JSONL line never landed. An aborted
+    action is omitted. Legacy lines without an id are kept as-is.
+    """
+    journal = source_root / RUNS_DIR / f"{run_id}.jsonl"
+    raw = RunJournal.read(journal) if journal.is_file() else []
+    raw.extend(_sidecar_entries(source_root / RUNS_DIR / f"{run_id}.pending"))
+    rank = {"prepared": 1, "complete": 2, "aborted": 3}
+    legacy: list[dict[str, Any]] = []
+    chosen: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for entry in raw:
+        action_id = entry.get("id")
+        if not isinstance(action_id, str) or not action_id:
+            if entry.get("state") != "aborted":
+                legacy.append(entry)
+            continue
+        state = str(entry.get("state") or "complete")
+        if action_id not in chosen:
+            order.append(action_id)
+            chosen[action_id] = {**entry, "state": state}
+            continue
+        current = chosen[action_id]
+        if rank.get(state, 0) >= rank.get(str(current.get("state")), 0):
+            chosen[action_id] = {**current, **entry, "state": state}
+    actions = list(legacy)
+    actions.extend(chosen[action_id] for action_id in order if chosen[action_id].get("state") != "aborted")
+    return actions
+
+
+def run_recovery_unresolved(source_root: Path, run_id: str) -> bool:
+    """True when a prepared record has no completed or aborted partner.
+
+    Those quarantined bytes must not be purged: restore can still replay them.
+    A quarantine directory with no pending record keeps the historical purge.
+    """
+    pending = source_root / RUNS_DIR / f"{run_id}.pending"
+    if not pending.is_dir() or pending.is_symlink():
+        return False
+    prepared: set[str] = set()
+    done: set[str] = set()
+    for path in pending.glob("*.json"):
+        name = path.name
+        if name.endswith(".complete.json"):
+            done.add(name[: -len(".complete.json")])
+        elif name.endswith(".aborted.json"):
+            done.add(name[: -len(".aborted.json")])
+        elif name.endswith(".json"):
+            prepared.add(name[: -len(".json")])
+    return bool(prepared - done)
 
 
 def iter_quarantine(source_root: Path) -> Iterator[Path]:

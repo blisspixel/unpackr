@@ -9,17 +9,17 @@ reproducibly testable."
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Iterable
 from unittest.mock import Mock, patch
 
 import pytest
 
+from unpackr import UnpackrApp
 from unpackr.core.archive_processor import ArchiveProcessor
 from unpackr.core.config import Config
 from unpackr.core.video_processor import VideoProcessor
-from unpackr import UnpackrApp
 from unpackr.utils import filesystem_policy as fsp
 
 # ---------------------------------------------------------------------------
@@ -127,21 +127,20 @@ class TestArchivePartSelectionMatrix:
 
     def _extracted_names(self, processor, folder: Path) -> list[str]:
         names: list[str] = []
-        with patch.object(processor, "_validate_archive_paths", return_value=True):
-            with patch(
-                "unpackr.core.archive_processor.SubprocessSafety.run_with_timeout",
-                return_value=(True, "", "", 0),
-            ) as mock_run:
-                processor.process_rar_files(folder)
-                for call in mock_run.call_args_list:
-                    args = call.args[0] if call.args else call[0][0]
-                    # command: [7z, "x", archive, "-o...", "-aoa"]
-                    for token in args:
-                        token_s = str(token)
-                        lower = token_s.lower()
-                        if lower.endswith(".rar") or lower.endswith(".7z") or ".7z." in lower:
-                            names.append(Path(token_s).name)
-                            break
+        with patch.object(processor, "_validate_archive_paths", return_value=True), patch(
+            "unpackr.core.archive_processor.SubprocessSafety.run_with_timeout",
+            return_value=(True, "", "", 0),
+        ) as mock_run:
+            processor.process_rar_files(folder)
+            for call in mock_run.call_args_list:
+                args = call.args[0] if call.args else call[0][0]
+                # command: [7z, "x", archive, "-o...", "-aoa"]
+                for token in args:
+                    token_s = str(token)
+                    lower = token_s.lower()
+                    if lower.endswith(".rar") or lower.endswith(".7z") or ".7z." in lower:
+                        names.append(Path(token_s).name)
+                        break
         return names
 
     def test_only_first_rar_parts_extracted(self, processor, tmp_path):

@@ -170,5 +170,5 @@ See [BENCHMARKS.md](BENCHMARKS.md).
 ## CI Expectations
 
 - Windows: full regression suite + coverage gate
-- Linux: full regression suite + coverage gate on 3.12 + real-tool checks (`7zip`/`par2`/`ffmpeg`)
+- Linux: full regression suite + coverage gate on 3.11 + real-tool checks (`7zip`/`par2`/`ffmpeg`)
 - macOS: expanded platform/safety/doctor/archive suite + optional real-tool checks

@@ -15,7 +15,7 @@ from typing import Any
 import psutil
 
 from unpackr.core.junk_rules import junk_name_reason
-from unpackr.core.remover import Remover
+from unpackr.core.remover import RecoveryPrepareError, Remover
 from unpackr.core.run_report import RunReport
 from unpackr.core.safety_invariants import InvariantEnforcer
 from unpackr.utils.defensive import ErrorRecovery, InputValidator, StateValidator, ValidationError
@@ -593,6 +593,9 @@ class FileHandler:
                 logging.info(f"Successfully removed folder {folder} ({self.delete_mode})")
                 self._note_folder_removed(folder, reason_code)
                 return True
+            except RecoveryPrepareError as e:
+                logging.error(f"Left {folder} in place; recovery record was not prepared: {e}")
+                return False
             except PermissionError as e:
                 # File is locked - try killing processes holding it
                 logging.warning(f"Permission denied deleting {folder} on attempt {attempt + 1}: {e}")
@@ -834,6 +837,7 @@ class FileHandler:
             logging.warning(f"Cannot check disk space: {e}")
 
         # Perform move with defensive error recovery
+        prepared_id: str | None = None
         try:
             # Sanitize filename before moving
             sanitized_name = self.sanitize_filename(target_name or source.name)
@@ -865,23 +869,31 @@ class FileHandler:
                     counter += 1
                 logging.info(f"Using unique name: {destination_file.name}")
 
+            if self.remover is not None:
+                try:
+                    prepared_id = self.remover.prepare_move(source, destination_file)
+                except RecoveryPrepareError as e:
+                    logging.error(f"Left {source.name} in place; recovery record was not prepared: {e}")
+                    return False
+
             # Use error recovery helper
             if ErrorRecovery.safe_move(source, destination_file):
                 logging.info(f"Moved file: {source.name} -> {destination_file}")
                 self.last_moved_to = destination_file
                 if self.remover is not None:
-                    self.remover.record_move(source, destination_file)
+                    self.remover.finish_move(prepared_id, source, destination_file)
                 return True
-            else:
-                log_error(
-                    what_failed=f"Move failed: {source.name}",
-                    reason="shutil.move() returned None or False",
-                    action="Check file permissions and disk space",
-                    location=source.parent,
-                )
-                return False
+            self._settle_failed_move(source, prepared_id)
+            log_error(
+                what_failed=f"Move failed: {source.name}",
+                reason="shutil.move() returned None or False",
+                action="Check file permissions and disk space",
+                location=source.parent,
+            )
+            return False
 
         except Exception as e:
+            self._settle_failed_move(source, prepared_id)
             log_error(
                 what_failed=f"Error moving file: {source.name}",
                 reason=str(e),
@@ -889,6 +901,19 @@ class FileHandler:
                 location=source.parent,
             )
             return False
+
+    def _settle_failed_move(self, source: Path, prepared_id: str | None) -> None:
+        """Abort a prepared move only while the source is still in place."""
+        if self.remover is None or prepared_id is None:
+            return
+        if source.exists():
+            self.remover.abort_move(prepared_id)
+            return
+        self.remover.recovery_unconfirmed = True
+        logging.error(
+            f"Recovery record for {source.name} is unconfirmed: the original is gone "
+            "and the completion record was not written"
+        )
 
     def delete_video_file_with_retry(
         self,

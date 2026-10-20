@@ -48,7 +48,7 @@ Regenerate:
 python scripts/benchmark_harness.py -o benchmarks/published/local-windows-dev.json
 ```
 
-CI (Linux, Python 3.12) runs a harness **smoke** that only checks schema shape and non-negative metrics. Smoke numbers are not SLAs and must not be compared to operator NAS results.
+CI (Linux, Python 3.11) runs a harness **smoke** that only checks schema shape and non-negative metrics. Smoke numbers are not SLAs and must not be compared to operator NAS results.
 
 ## Required Evidence For Performance PRs
 

@@ -20,7 +20,7 @@ def load_comments():
         print(f"{Fore.RED}Error: comments.json not found at {comments_file}{Style.RESET_ALL}")
         return None
 
-    with open(comments_file, "r", encoding="utf-8") as f:
+    with open(comments_file, encoding="utf-8") as f:
         return json.load(f)
 
 

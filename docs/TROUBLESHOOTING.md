@@ -80,7 +80,7 @@ As a checkout-only fallback, run `unpackr.sh` or `unpackr.bat`. Those wrappers p
 
 From other directories, ensure the Scripts directory for the installation interpreter is in `PATH`. Locate it with `python -c "import sysconfig; print(sysconfig.get_path('scripts'))"`.
 
-If `python` resolves to an older interpreter on Windows, run tools explicitly with `py -3.15 -m ...` or another installed `3.12+` launcher target.
+If `python` resolves to an older interpreter on Windows, run tools explicitly with `py -3.15 -m ...` or another installed `3.11+` launcher target.
 
 ## Diagnostics
 

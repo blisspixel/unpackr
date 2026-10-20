@@ -1,6 +1,5 @@
 """CLI-level regression tests for high-impact runtime behaviors."""
 
-import sys
 import types
 from pathlib import Path
 

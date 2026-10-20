@@ -19,7 +19,14 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from unpackr.core.structured_events import EventAnalyzer, EventBuilder, EventEmitter, EventSeverity, EventType, StructuredEvent
+from unpackr.core.structured_events import (
+    EventAnalyzer,
+    EventBuilder,
+    EventEmitter,
+    EventSeverity,
+    EventType,
+    StructuredEvent,
+)
 
 
 class TestStructuredEvent:
@@ -133,7 +140,7 @@ class TestEventEmitter:
 
         # File should exist and contain JSON line
         assert log_file.exists()
-        with open(log_file, "r") as f:
+        with open(log_file) as f:
             lines = f.readlines()
             assert len(lines) == 1
             data = json.loads(lines[0])

@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 
 from unpackr.core.remover import list_runs, restore_run
+from unpackr.utils.presentation import argument_parser_kwargs
 
 SUBCOMMANDS = ("runs", "restore")
 
@@ -25,15 +26,21 @@ def _source(value: str) -> Path:
 
 
 def build_subcommand_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="unpackr", description="Inspect or undo previous Unpackr runs.")
+    parser = argparse.ArgumentParser(
+        **argument_parser_kwargs(),
+        prog="unpackr",
+        description="Inspect or undo previous Unpackr runs.",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
+    parser_color = argument_parser_kwargs()
 
-    runs = sub.add_parser("runs", help="List recent runs with their actions and quarantined size")
+    runs = sub.add_parser("runs", **parser_color, help="List recent runs with their actions and quarantined size")
     runs.add_argument("--source", "-s", required=True, type=_source, help="Source directory the runs processed")
     runs.add_argument("--json", action="store_true", help="Print JSON")
 
     restore = sub.add_parser(
         "restore",
+        **parser_color,
         help="Put quarantined files back and move videos back from the destination",
         description=(
             "Restore one run. Quarantined files return to their original paths and moved videos return "

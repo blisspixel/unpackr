@@ -4,7 +4,7 @@ Unpackr turns a messy downloads folder into a clean one: it keeps the good conte
 
 ## Version Focus
 
-- Current line: `1.6.x` (latest: `1.6.2`, October 2026) — first-class **Windows, Linux, and macOS**, Python `3.12` to `3.15`
+- Current line: `1.7.x` (latest: `1.7.0`, October 2026) — first-class **Windows, Linux, and macOS**, Python `3.11` to `3.15`
 - Primary objective: delete the junk decisively, never the good file, and make every removal reversible and explained
 
 ## Quality Baseline
@@ -13,9 +13,10 @@ Unpackr turns a messy downloads folder into a clean one: it keeps the good conte
 - The full regression suite must pass before merge.
 - Dependency/version policy is enforced by `unpackr-doctor` and runtime preflight.
 - Installed CLI entry points and documented path flags are covered by regression and CI smoke tests.
-- Python support floor is `3.12+` (CI matrix includes `3.12` through `3.15`).
+- Python support floor is `3.11+` (CI matrix includes `3.11` through `3.15`).
 - Active documentation stays under `docs/`; superseded content belongs in `docs/archive/`.
-- Platform policy lives in `utils/platform_support.py` rather than ad-hoc `sys.platform` checks.
+- Platform policy lives in `src/unpackr/utils/platform_support.py` rather than ad-hoc `sys.platform` checks.
+- Windows real-tool CI is a required job: 7-Zip, PAR2 and ffmpeg are installed, and a skipped real-tool test fails the run.
 
 ## Guiding Principles
 

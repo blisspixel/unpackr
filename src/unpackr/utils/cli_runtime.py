@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import argparse
-import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+from unpackr.utils.presentation import argument_parser_kwargs
+from unpackr.version import __version__
 
 
 def configure_windows_console_utf8() -> None:
@@ -25,7 +28,12 @@ def configure_windows_console_utf8() -> None:
 
             sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer, "strict")
             sys.stderr = codecs.getwriter("utf-8")(sys.stderr.buffer, "strict")
-        os.system("chcp 65001 >nul 2>&1")  # nosec B605 - fixed command for Windows console codepage setup
+        subprocess.run(
+            ["chcp", "65001"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
     except Exception:
         # Terminal-dependent setup; safe fallback is default encoding.
         return
@@ -84,6 +92,7 @@ def build_unpackr_arg_parser() -> argparse.ArgumentParser:
     source_example = example_source_path()
     destination_example = example_destination_path()
     parser = argparse.ArgumentParser(
+        **argument_parser_kwargs(),
         description="Automated video file processing and cleanup tool.",
         epilog="Examples:\n"
         f'  unpackr --source "{source_example}" --destination "{destination_example}"\n'
@@ -91,6 +100,7 @@ def build_unpackr_arg_parser() -> argparse.ArgumentParser:
         "  unpackr  (interactive mode)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.add_argument("--version", action="version", version=f"unpackr {__version__}")
     parser.add_argument("source_pos", nargs="?", help="Source downloads directory (positional)")
     parser.add_argument("dest_pos", nargs="?", help="Destination directory (positional)")
     parser.add_argument("--source", "-s", help="Path to source downloads directory")

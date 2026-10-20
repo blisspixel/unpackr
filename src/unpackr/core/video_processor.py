@@ -9,7 +9,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal, cast, overload
+from typing import Any, Literal, TypeAlias, cast, overload
 
 from unpackr.core.config import ConfigSource
 from unpackr.core.safety_invariants import ValidationCache, ValidationDecision, ValidationResult
@@ -17,10 +17,10 @@ from unpackr.utils.error_messages import log_error
 from unpackr.utils.safety import ProcessTracker, SafetyLimits, SubprocessSafety
 from unpackr.utils.system_check import SystemCheck
 
-type Resolution = tuple[int, int] | None
+Resolution: TypeAlias = tuple[int, int] | None
 # (is_healthy, is_low_quality, quality_reason, resolution)
-type QualityResult = tuple[bool, bool, str | None, Resolution]
-type HealthResult = bool | QualityResult
+QualityResult: TypeAlias = tuple[bool, bool, str | None, Resolution]
+HealthResult: TypeAlias = bool | QualityResult
 
 # ffmpeg stderr phrases that mean the file is damaged or incomplete.
 CORRUPTION_INDICATORS = (

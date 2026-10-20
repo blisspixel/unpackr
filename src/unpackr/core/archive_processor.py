@@ -398,7 +398,7 @@ class ArchiveProcessor:
             log_error(
                 what_failed=f"Incomplete archive set: {archive_set.name}",
                 reason=f"Missing volume(s): {missing}",
-                action="Download the missing volume(s) and run again; the other volumes were kept",
+                action="Re-download the missing volume. The volumes already here will be removed",
                 location=folder,
             )
             return outcome("held", "archive_volume_missing", f"missing {missing}")
@@ -417,7 +417,7 @@ class ArchiveProcessor:
             log_error(
                 what_failed=f"Could not open {archive_file.name}",
                 reason="Archive is password-protected (encrypted headers)",
-                action="Extract it yourself with the password; the volumes were kept",
+                action="Re-download an unprotected copy. These volumes will be removed",
                 location=archive_file.parent,
             )
             return outcome("held", "archive_password", "Archive is password-protected")
@@ -425,7 +425,7 @@ class ArchiveProcessor:
             log_error(
                 what_failed=f"Could not read {archive_file.name}",
                 reason="7-Zip could not list the archive (a volume is missing, it is damaged, or it is password-protected)",
-                action="Check the download is complete; the volumes were kept",
+                action="Re-download the set. These volumes will be removed",
                 location=archive_file.parent,
             )
             return outcome("held", "archive_unlistable", "7-Zip could not list the archive")

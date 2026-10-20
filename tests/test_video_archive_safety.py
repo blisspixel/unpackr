@@ -14,10 +14,8 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
-
-import unpackr.cli as unpackr
 from conftest import bind_app_helpers
-from unpackr.core.remover import Remover
+
 from unpackr.core.archive_processor import (
     ArchiveProcessor,
     classify_extract_failure,
@@ -25,6 +23,7 @@ from unpackr.core.archive_processor import (
 )
 from unpackr.core.config import Config
 from unpackr.core.file_handler import FileHandler
+from unpackr.core.remover import Remover
 from unpackr.core.video_processor import (
     VideoProcessor,
     parse_ffmpeg_duration,
@@ -275,17 +274,7 @@ class TestHeldFolders:
 
 
 def _fake_app(dry_run: bool, **overrides):
-    stats = {
-        k: 0
-        for k in (
-            "videos_moved",
-            "videos_healthy",
-            "videos_corrupt",
-            "videos_failed",
-            "videos_sample",
-            "rars_extracted",
-        )
-    }
+    stats = dict.fromkeys(("videos_moved", "videos_healthy", "videos_corrupt", "videos_failed", "videos_sample", "rars_extracted"), 0)
     app = types.SimpleNamespace(dry_run=dry_run, dry_run_plan=None, stats=stats, **overrides)
     return bind_app_helpers(app)
 
@@ -369,8 +358,8 @@ class TestAppWiring:
         with patch.object(processor, "_validate_archive_paths", return_value=True):
             app._process_archives(tmp_path)
         assert plan.add_archive_extract.call_count == 1  # one entry per set, not per volume
-        assert plan.add_archive_skip.call_count == 1
-        assert "missing clip.7z.002" in plan.add_archive_skip.call_args.args[1]
+        assert plan.add_archive_remove.call_count == 1
+        assert "missing clip.7z.002" in plan.add_archive_remove.call_args.args[1]
 
     def test_finish_issues_warns_when_no_video_is_kept(self):
         app = _fake_app(False)

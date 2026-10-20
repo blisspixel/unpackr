@@ -148,7 +148,7 @@ def test_countdown_shows_visual_feedback(runner: IntegrationTestRunner):
     text = buffer.getvalue()
     runner.test(
         "Countdown: shows each second",
-        all(f"Starting processing in {n} seconds" in text for n in (3, 2, 1)),
+        all(f"Starting in {n} s. Ctrl+C cancels." in text for n in (3, 2, 1)),
         text[-300:],
     )
 
@@ -171,7 +171,7 @@ def test_countdown_shows_visual_feedback(runner: IntegrationTestRunner):
         elapsed = time.time() - started
         runner.test(
             "Countdown: skipped without an interactive terminal",
-            "Starting processing in" not in result.stdout and elapsed < 9,
+            "Starting in" not in result.stdout and elapsed < 9,
             f"elapsed {elapsed:.1f}s",
         )
 
@@ -184,8 +184,8 @@ def test_windows_console_encoding(runner: IntegrationTestRunner):
     print(f"\n{Fore.YELLOW}[Windows Console Encoding Tests]{Style.RESET_ALL}")
 
     # Test that progress UI elements render without crashes
-    from unpackr.core import Config
     from unpackr import UnpackrApp
+    from unpackr.core import Config
 
     _ = Config()
     _ = UnpackrApp(Config())

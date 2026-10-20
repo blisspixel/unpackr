@@ -1,7 +1,7 @@
 r"""
 vhealth - Check videos for corruption, find duplicates, detect samples.
 
-Works on Windows, Linux, and macOS. Requires Python 3.12+ and prefers ffmpeg
+Works on Windows, Linux, and macOS. Requires Python 3.11+ and prefers ffmpeg
 on PATH for full health validation.
 """
 
@@ -15,7 +15,7 @@ import sys
 import threading
 from collections.abc import Callable
 from pathlib import Path
-from typing import NotRequired, TypedDict
+from typing import NotRequired, TypeAlias, TypedDict
 
 from colorama import Fore, Style, init
 
@@ -30,12 +30,13 @@ from unpackr.utils.platform_support import (
     resolve_first_available_tool,
     tool_missing_hint,
 )
+from unpackr.utils.presentation import argument_parser_kwargs
 from unpackr.utils.safety import SubprocessSafety
 from unpackr.version import __version__
 
 init(autoreset=True)
 
-type Resolution = tuple[int, int]
+Resolution: TypeAlias = tuple[int, int]
 
 
 class VHealthCounts(TypedDict):
@@ -199,7 +200,7 @@ class VideoHealthChecker:
                         print(
                             f"  {len(self.low_res_videos)} low-res {Style.DIM}(below {min_resolution}){Style.RESET_ALL}"
                         )
-                    print(f"  {Fore.WHITE}{remaining_count}{Style.RESET_ALL} {Style.DIM}remaining{Style.RESET_ALL}\n")
+                    print(f"  {remaining_count} {Style.DIM}remaining{Style.RESET_ALL}\n")
 
                     # Auto-delete if --clean flag, otherwise ask
                     if auto_clean:
@@ -999,6 +1000,7 @@ def build_vhealth_arg_parser() -> argparse.ArgumentParser:
     """Create the vhealth CLI parser with platform-appropriate examples."""
     sample_root = example_destination_path()
     parser = argparse.ArgumentParser(
+        **argument_parser_kwargs(),
         description=(
             "Check videos for corruption, find duplicates, and detect samples/low-res files. "
             f"Runs on {platform_label()} (Windows/Linux/macOS supported)."
