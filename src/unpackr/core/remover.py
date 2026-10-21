@@ -425,31 +425,45 @@ class RunInfo:
     quarantine_bytes: int
 
 
+def _run_id_time(run_id: str, hint: Path | None = None) -> float:
+    """Chronology of a run id. Timestamp ids use their clock; anything else uses mtime."""
+    try:
+        return datetime.strptime(run_id, RUN_ID_FORMAT).timestamp()
+    except ValueError:
+        if hint is not None:
+            try:
+                return hint.stat().st_mtime
+            except OSError:
+                return 0.0
+        return 0.0
+
+
 def list_runs(source_root: Path) -> list[RunInfo]:
+    """Newest run id first, whether its records are a journal, sidecars, or both."""
     runs_dir = source_root / RUNS_DIR
     if not runs_dir.is_dir():
         return []
-    infos: list[RunInfo] = []
-    for journal in sorted(runs_dir.glob("*.jsonl"), reverse=True):
-        counts: dict[str, int] = {}
-        for entry in load_run_entries(source_root, journal.stem):
-            counts[str(entry.get("op", "?"))] = counts.get(str(entry.get("op", "?")), 0) + 1
-        qdir = source_root / QUARANTINE_DIR / journal.stem
-        qfiles, qbytes = _tree_size(qdir) if qdir.exists() else (0, 0)
-        infos.append(RunInfo(journal.stem, journal, counts, qfiles, qbytes))
-    seen = {info.run_id for info in infos}
-    for pending in sorted(runs_dir.glob("*.pending"), reverse=True):
-        if not pending.is_dir():
+    found: dict[str, Path] = {}
+    hints: dict[str, Path] = {}
+    for journal in runs_dir.glob("*.jsonl"):
+        found[journal.stem] = journal
+        hints[journal.stem] = journal
+    for pending in runs_dir.glob("*.pending"):
+        if not pending.is_dir() or pending.is_symlink():
             continue
         run_id = pending.name[: -len(".pending")]
-        if run_id in seen:
-            continue
-        counts = {}
+        found.setdefault(run_id, runs_dir / f"{run_id}.jsonl")
+        hints.setdefault(run_id, pending)
+    ordered = sorted(found, key=lambda run_id: (_run_id_time(run_id, hints.get(run_id)), run_id), reverse=True)
+    infos: list[RunInfo] = []
+    for run_id in ordered:
+        counts: dict[str, int] = {}
         for entry in load_run_entries(source_root, run_id):
-            counts[str(entry.get("op", "?"))] = counts.get(str(entry.get("op", "?")), 0) + 1
+            op = str(entry.get("op", "?"))
+            counts[op] = counts.get(op, 0) + 1
         qdir = source_root / QUARANTINE_DIR / run_id
         qfiles, qbytes = _tree_size(qdir) if qdir.exists() else (0, 0)
-        infos.append(RunInfo(run_id, runs_dir / f"{run_id}.jsonl", counts, qfiles, qbytes))
+        infos.append(RunInfo(run_id, found[run_id], counts, qfiles, qbytes))
     return infos
 
 
@@ -528,12 +542,13 @@ def _prune_empty_dirs(root: Path) -> None:
 
 def _run_time(run_dir: Path) -> float:
     try:
-        return datetime.strptime(run_dir.name[: len("YYYYmmdd-HHMMSS")], RUN_ID_FORMAT).timestamp()
+        datetime.strptime(run_dir.name, RUN_ID_FORMAT)
     except ValueError:
         try:
             return run_dir.stat().st_mtime
         except OSError:
             return time.time()
+    return _run_id_time(run_dir.name)
 
 
 def purge_quarantine(source_root: Path, retention_days: int, now: datetime | None = None) -> tuple[int, int]:

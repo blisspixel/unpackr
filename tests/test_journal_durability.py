@@ -13,10 +13,12 @@ from unpackr.core.remover import (
     RUNS_DIR,
     RecoveryPrepareError,
     Remover,
+    list_runs,
     load_run_entries,
     purge_quarantine,
     restore_run,
 )
+from unpackr.utils.cli_subcommands import run_subcommand
 
 
 def test_prepare_failure_leaves_the_original(tmp_path: Path):
@@ -134,6 +136,66 @@ def test_permanent_prepare_failure_does_not_delete(tmp_path: Path):
     with pytest.raises(RecoveryPrepareError):
         remover.remove(source, "junk_extension")
     assert source.read_bytes() == b"keep"
+
+
+def _quarantine_record(source: Path, run_id: str, name: str, kind: str) -> Path:
+    """A synthetic quarantined file. ``kind`` is ``jsonl``, ``prepared``, or ``complete``."""
+    held = source / QUARANTINE_DIR / run_id / name
+    held.parent.mkdir(parents=True, exist_ok=True)
+    held.write_bytes(name.encode())
+    record = {
+        "id": f"id-{name}",
+        "state": "prepared" if kind == "prepared" else "complete",
+        "op": "quarantined",
+        "src": str(source / name),
+        "dst": str(held),
+    }
+    if kind == "jsonl":
+        journal = source / RUNS_DIR / f"{run_id}.jsonl"
+        journal.parent.mkdir(parents=True, exist_ok=True)
+        journal.write_text(json.dumps(record) + "\n", encoding="utf-8")
+    else:
+        pending = source / RUNS_DIR / f"{run_id}.pending"
+        pending.mkdir(parents=True, exist_ok=True)
+        filename = "id.json" if kind == "prepared" else "id.complete.json"
+        (pending / filename).write_text(json.dumps(record), encoding="utf-8")
+    return held
+
+
+def test_jsonl_runs_stay_newest_first(tmp_path: Path):
+    _quarantine_record(tmp_path, "20261020-010000", "old.nfo", "jsonl")
+    _quarantine_record(tmp_path, "20261020-020000", "new.nfo", "jsonl")
+    assert [info.run_id for info in list_runs(tmp_path)] == ["20261020-020000", "20261020-010000"]
+
+
+def test_a_run_with_a_journal_and_sidecars_is_listed_once(tmp_path: Path):
+    _quarantine_record(tmp_path, "20261020-010000", "note.nfo", "jsonl")
+    _quarantine_record(tmp_path, "20261020-010000", "note.nfo", "prepared")
+    infos = list_runs(tmp_path)
+    assert [info.run_id for info in infos] == ["20261020-010000"]
+    assert infos[0].counts == {"quarantined": 1}
+
+
+@pytest.mark.parametrize("kind", ["prepared", "complete"])
+def test_restore_latest_prefers_a_newer_sidecar_only_run(tmp_path: Path, capsys, kind: str):
+    older = _quarantine_record(tmp_path, "20261020-010000", "old.nfo", "jsonl")
+    newer = _quarantine_record(tmp_path, "20261020-020000", "new.nfo", kind)
+    before = {path: path.read_bytes() for path in (older, newer)}
+
+    assert run_subcommand(["runs", "--source", str(tmp_path), "--json"]) == 0
+    listed = json.loads(capsys.readouterr().out)
+    assert [item["run_id"] for item in listed] == ["20261020-020000", "20261020-010000"]
+
+    assert run_subcommand(["restore", "latest", "--source", str(tmp_path), "--dry-run", "--json"]) == 0
+    latest = json.loads(capsys.readouterr().out)
+    assert run_subcommand(["restore", "20261020-020000", "--source", str(tmp_path), "--dry-run", "--json"]) == 0
+    explicit = json.loads(capsys.readouterr().out)
+
+    assert latest["run_id"] == "20261020-020000"
+    assert latest == explicit
+    assert latest["restored"] == [str(tmp_path / "new.nfo")]
+    assert not (tmp_path / "new.nfo").exists()
+    assert {path: path.read_bytes() for path in (older, newer)} == before
 
 
 def test_relocation_failure_aborts_only_while_the_source_remains(tmp_path: Path, monkeypatch):
