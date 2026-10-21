@@ -10,7 +10,7 @@ Commercial/enterprise products require separate license from Nick Seal.
 
 Unpackr turns a messy downloads folder (Usenet, torrents, whatever landed there) into a clean one. It repairs and unpacks archives, checks every video, moves the good ones to your library, keeps the music, photos and documents it finds, and **deletes everything else**. Deleting the junk is the point. It runs on **Windows, Linux, and macOS**.
 
-Point it at a downloads folder, not at folders you curate by hand, and run it yourself when you are ready to clean. Anything unfinished or broken (`.part`, `.!qB`, half-written files, archives that cannot be unpacked, damaged videos) is treated as junk. Unpackr is meant to be run by hand, not on a schedule.
+Point it at a downloads folder, not at folders you curate by hand, and run it yourself when you are ready to clean. Marker files (`.part`, `.!qB`), archives that cannot be unpacked, and damaged videos are junk. A video still being written under its final name is kept (`video_still_writing`) until a later run. Unpackr is meant to be run by hand, not on a schedule.
 
 ![Unpackr live dashboard mock](docs/assets/unpackr-dashboard.png)
 
@@ -18,9 +18,9 @@ Point it at a downloads folder, not at folders you curate by hand, and run it yo
 
 ## What It Does
 
-- **Keeps** videos that play (moved to the destination, renamed sensibly), music, photo and document collections, and anything it does not recognise.
+- **Keeps** videos that play (moved to the destination, renamed sensibly), music, photo and document collections, anything it does not recognise, and a final-name video that is still being written.
 - **Repairs and unpacks** RAR, 7z and zip sets, using PAR2 to fix damaged or obfuscated (renamed) volumes.
-- **Deletes** samples, previews, trailers, damaged or truncated videos, unfinished downloads, archive volumes after a clean extraction, `.par2`/`.nfo`/`.sfv` and tracker spam, bait executables, and the folders left empty.
+- **Deletes** samples, previews, trailers, damaged or truncated videos, unfinished download markers such as `.part` and `.!qB`, archive volumes after a clean extraction, `.par2`/`.nfo`/`.sfv` and tracker spam, bait executables, and the folders left empty.
 - **Undo is one command away**: removals go to a quarantine folder for 14 days by default (`unpackr restore latest --source "~/Downloads"`). Use `--dry-run` to see the plan first.
 
 ## Requirements

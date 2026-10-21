@@ -16,7 +16,7 @@ Unpackr turns a messy downloads folder into a clean one: it keeps the good conte
 - Python support floor is `3.11+` (CI matrix includes `3.11` through `3.15`).
 - Active documentation stays under `docs/`; superseded content belongs in `docs/archive/`.
 - Platform policy lives in `src/unpackr/utils/platform_support.py` rather than ad-hoc `sys.platform` checks.
-- Windows real-tool CI is a required job: 7-Zip, PAR2 and ffmpeg are installed, and a skipped real-tool test fails the run.
+- Windows real-tool CI is a required job: 7-Zip, PAR2 and ffmpeg are installed, and a skip because one of those tools is missing fails the run.
 
 ## Guiding Principles
 
@@ -107,9 +107,12 @@ Status:
 
 - The timer/service mode is gone: one rule for every run, "clean now". Removed `unpackr service`, `--unattended`, `--notify`, `settle_minutes` and `notify`.
 
+### Done: Windows Real-Tool Gate (`1.7.0`)
+
+- The Windows Quality job installs 7-Zip, PAR2 (animetosho par2cmdline-turbo 1.5.0) and ffmpeg, then runs the repair, restore, and video checks with those tools. A skip because one of them is missing fails the job. A skip that belongs to another platform does not.
+
 ### Next
 
-- Real-tool CI on Windows (7-Zip, par2 and ffmpeg are installed on Linux and macOS runners only).
 - Concurrency stays deferred until a real multi-archive workload is measured with and without it.
 
 ## Cross-Platform Implementation Plan

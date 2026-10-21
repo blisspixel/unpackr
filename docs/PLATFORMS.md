@@ -169,6 +169,6 @@ See [BENCHMARKS.md](BENCHMARKS.md).
 
 ## CI Expectations
 
-- Windows: full regression suite + coverage gate
+- Windows: full regression suite + coverage gate, plus a required real-tool job (`7zip`/`par2`/`ffmpeg`). A skip because one of those tools is missing fails the job.
 - Linux: full regression suite + coverage gate on 3.11 + real-tool checks (`7zip`/`par2`/`ffmpeg`)
 - macOS: expanded platform/safety/doctor/archive suite + optional real-tool checks

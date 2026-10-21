@@ -51,6 +51,7 @@ Usenet and torrent releases are mostly not the video you wanted. Each top-level 
 | Item | Configurable? |
 |------|---------------|
 | Videos that pass validation | Moved to destination |
+| A final-name video still being written | Kept for this run (`video_still_writing`). A later run decides |
 | Folders with music, however few files | Yes: `min_music_files` (default 1) |
 | Folders with photos, however few | Yes: `min_image_files` (default 1) |
 | Folders with documents | Yes: `min_documents` (default 1) |

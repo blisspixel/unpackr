@@ -4,6 +4,8 @@ Release dates are included where recorded.
 
 ## Unreleased
 
+- The README matches the safety contract: unfinished-download markers are junk, and a final-name video that is still being written is kept.
+
 ## v1.7.0 (2026-10-20)
 
 - Python 3.11 through 3.15. 3.10 is retired and is not shimmed. **Migration:** a 3.11 interpreter is enough; 3.12 is no longer required.
