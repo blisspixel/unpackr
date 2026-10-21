@@ -63,6 +63,6 @@ Required state:
 - Every CI matrix lane launches all three installed console entry points with `--help`.
 - Linux `3.11` (the oldest supported version) runs the full pre-commit quality gate.
 - Windows runs the full regression suite and coverage gate.
-- Linux runs the full regression suite (coverage gate on Python `3.11`) and installs `7zip`/`par2`/`ffmpeg` for optional real-tool checks. Windows has a required real-tool job that fails when those tests skip.
+- Linux runs the full regression suite (coverage gate on Python `3.11`) and installs `7zip`/`par2`/`ffmpeg` for optional real-tool checks. Windows has a required real-tool job that fails when a test skips because 7-Zip, PAR2, or ffmpeg is missing.
 - macOS runs an expanded platform/safety/doctor/archive suite plus optional real-tool checks when Homebrew tools install cleanly.
 - Optional tool tests live in `tests/test_external_tools_optional.py` and skip when tools are absent. `UNPACKR_REQUIRE_REAL_TOOLS=1` turns that skip into a failure. The Windows real-tool job sets it.

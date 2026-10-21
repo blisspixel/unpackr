@@ -85,6 +85,27 @@ def test_exit_codes_doc_is_linked_from_docs_index():
     assert "unpackr --json" in exit_doc or "--json" in exit_doc
 
 
+def test_readme_keeps_a_final_name_video_that_is_still_being_written():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "video_still_writing" in readme
+    assert "half-written files" not in readme
+    assert "unfinished download markers" in readme
+
+
+def test_roadmap_records_the_windows_real_tool_gate_as_done():
+    roadmap = (ROOT / "ROADMAP.md").read_text(encoding="utf-8")
+    assert "Linux and macOS runners only" not in roadmap
+    next_section = roadmap.split("### Next", 1)[1].split("### ", 1)[0]
+    assert "Real-tool CI on Windows" not in next_section
+    assert "Concurrency stays deferred" in next_section
+    assert "Done: Windows Real-Tool Gate" in roadmap
+
+
+def test_platforms_doc_requires_the_windows_real_tool_job():
+    platforms = (ROOT / "docs" / "PLATFORMS.md").read_text(encoding="utf-8")
+    assert "required real-tool job" in platforms
+
+
 def test_benchmarks_doc_requires_evidence_before_concurrency():
     benchmarks = (ROOT / "docs" / "BENCHMARKS.md").read_text(encoding="utf-8")
     lowered = benchmarks.lower()
