@@ -75,7 +75,7 @@ Live runs add `removal`: `mode`, `run_id`, `journal`, `quarantine_path`, `quaran
 | Command | Exit |
 |---------|------|
 | `unpackr runs --source DIR [--json]` | `0` |
-| `unpackr restore RUN_ID\|latest --source DIR [--path GLOB] [--dry-run] [--json]` | `0` when the journal exists (skipped items are listed), `1` when no journal or no runs exist |
+| `unpackr restore RUN_ID\|latest --source DIR [--path GLOB] [--dry-run] [--json]` | `0` when the run has a journal or recovery sidecars (skipped items are listed), `1` when that run is missing or no runs exist |
 
 ### Per-file items
 

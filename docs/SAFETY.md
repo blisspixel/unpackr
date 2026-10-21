@@ -17,7 +17,7 @@ With the default `delete_mode: "quarantine"`, nothing a live run removes is dest
 ## Operating Guidance
 
 - Point Unpackr at a downloads folder. A manual run means "clean now".
-- `--dry-run` shows every decision without changing anything. Undo the last run with `unpackr restore latest --source <dir>`.
+- `--dry-run` shows every decision without changing anything. Undo the newest run with `unpackr restore latest --source <dir>`. That includes a run whose records are only recovery sidecars.
 
 ## Junk, Bait And Unfinished Downloads
 

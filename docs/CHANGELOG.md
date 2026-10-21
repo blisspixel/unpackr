@@ -5,6 +5,7 @@ Release dates are included where recorded.
 ## Unreleased
 
 - The README matches the safety contract: unfinished-download markers are junk, and a final-name video that is still being written is kept.
+- `unpackr restore latest` selects the newest run, including one whose recovery records are only sidecars.
 
 ## v1.7.0 (2026-10-20)
 
